@@ -43,16 +43,21 @@ jobs:
           cd android
           ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee gradle_output.log
 
-      - name: Salvar Log no Repositorio para Diagnostico
+      - name: Publicar Release no GitHub com APK e Logs
         if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          git config user.name "github-actions"
-          git config user.email "github-actions@github.com"
-          git checkout -B debug-log
-          cp android/gradle_output.log ./build_error.log || echo "Sem log do gradle" > build_error.log
-          git add build_error.log
-          git commit -m "debug: log da compilacao android gradle" || true
-          git push -f origin debug-log || true
+          TAG="v1.0.$(date +%s)"
+          FILES=()
+          [ -f android/gradle_output.log ] && FILES+=(android/gradle_output.log)
+          for f in $(find android/ -name "*.apk" 2>/dev/null); do
+            FILES+=("$f")
+          done
+          
+          if [ ${#FILES[@]} -gt 0 ]; then
+            gh release create "$TAG" "${FILES[@]}" --title "FINN AI App ($TAG)" --notes "Download do APK instalável e log do build"
+          fi
 
       - name: Fazer Upload do APK e Logs
         if: always()
