@@ -35,17 +35,16 @@ jobs:
       - name: Compilar APK Android (Gradle)
         run: |
           cd android
-          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee gradle_run.log
+          ./gradlew assembleDebug --no-daemon --stacktrace
 
-      - name: Salvar Log Completo se Falhar
-        if: failure()
+      - name: Listar Arquivos APK Gerados
         run: |
-          echo "=== ULTIMAS 120 LINHAS DO LOG ==="
-          tail -n 120 android/gradle_run.log
+          echo "=== ARQUIVOS APK ENCONTRADOS ==="
+          find android/ -name "*.apk" -ls
 
       - name: Fazer Upload do APK como Artefato de Download
         uses: actions/upload-artifact@v4
         with:
-          name: finn-ai-app-debug.apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          name: finn-ai-app-debug
+          path: android/**/*.apk
           retention-days: 30
