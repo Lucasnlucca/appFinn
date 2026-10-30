@@ -14,11 +14,20 @@ jobs:
       - name: Checkout Código Fonte
         uses: actions/checkout@v4
 
+      - name: Configurar Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
       - name: Configurar Java 21 (JDK)
         uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
           java-version: '21'
+
+      - name: Instalar Dependências do Monorepo
+        run: npm ci
 
       - name: Permissões de Execução no Gradlew
         run: chmod +x android/gradlew
