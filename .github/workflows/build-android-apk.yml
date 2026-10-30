@@ -20,11 +20,11 @@ jobs:
           node-version: 20
           cache: 'npm'
 
-      - name: Configurar Java 21 (JDK)
+      - name: Configurar Java 17 (JDK)
         uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
-          java-version: '21'
+          java-version: '17'
 
       - name: Instalar Dependências do Monorepo
         run: npm ci
