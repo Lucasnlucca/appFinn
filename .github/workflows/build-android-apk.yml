@@ -35,7 +35,13 @@ jobs:
       - name: Compilar APK Android (Gradle)
         run: |
           cd android
-          ./gradlew assembleDebug --no-daemon --stacktrace
+          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee gradle_run.log
+
+      - name: Salvar Log Completo se Falhar
+        if: failure()
+        run: |
+          echo "=== ULTIMAS 120 LINHAS DO LOG ==="
+          tail -n 120 android/gradle_run.log
 
       - name: Fazer Upload do APK como Artefato de Download
         uses: actions/upload-artifact@v4
