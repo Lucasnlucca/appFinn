@@ -20,11 +20,11 @@ jobs:
           node-version: 20
           cache: 'npm'
 
-      - name: Configurar Java 17 (JDK)
+      - name: Configurar Java 21 (JDK)
         uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
-          java-version: '17'
+          java-version: '21'
 
       - name: Instalar Dependências do Monorepo
         run: npm ci
@@ -44,7 +44,7 @@ jobs:
         run: npm run build --workspace=@finn-ai/web
 
       - name: Sincronizar com Projeto Android (Capacitor)
-        run: npx cap sync android
+        run: npx cap sync android --inline
 
       - name: Permissões de Execução no Gradlew
         run: chmod +x android/gradlew
@@ -52,7 +52,7 @@ jobs:
       - name: Compilar APK Android (Gradle)
         run: |
           cd android
-          ./gradlew assembleDebug --no-daemon
+          ./gradlew assembleDebug --no-daemon --stacktrace
 
       - name: Fazer Upload do APK como Artefato de Download
         uses: actions/upload-artifact@v4
