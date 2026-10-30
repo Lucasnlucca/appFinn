@@ -26,9 +26,6 @@ jobs:
           distribution: 'zulu'
           java-version: '17'
 
-      - name: Configurar Android SDK
-        uses: android-actions/setup-android@v3
-
       - name: Instalar Dependências do Monorepo
         run: npm ci
 
@@ -63,4 +60,3 @@ jobs:
           name: finn-ai-app-debug.apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 30
-
