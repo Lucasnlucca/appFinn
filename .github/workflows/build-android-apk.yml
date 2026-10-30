@@ -37,23 +37,17 @@ jobs:
           set -o pipefail
           cd android
           ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee gradle_output.log
-        continue-on-error: true
 
-      - name: Publicar Log e Verificar APK
+      - name: Salvar Log no Repositorio para Diagnostico
+        if: always()
         run: |
-          echo "### 📄 Log do Gradle" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          tail -n 80 android/gradle_output.log >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          
-          APKS=$(find android/ -name "*.apk" 2>/dev/null)
-          if [ -z "$APKS" ]; then
-            echo "### ❌ Nenhum APK gerado pelo Gradle" >> $GITHUB_STEP_SUMMARY
-            exit 1
-          else
-            echo "### ✅ APK Encontrado:" >> $GITHUB_STEP_SUMMARY
-            echo "$APKS" >> $GITHUB_STEP_SUMMARY
-          fi
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git checkout -B debug-log
+          cp android/gradle_output.log ./build_error.log || echo "Sem log do gradle" > build_error.log
+          git add build_error.log
+          git commit -m "debug: log da compilacao android gradle" || true
+          git push -f origin debug-log || true
 
       - name: Fazer Upload do APK como Artefato de Download
         uses: actions/upload-artifact@v4
