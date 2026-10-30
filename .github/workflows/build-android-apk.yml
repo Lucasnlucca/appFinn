@@ -5,6 +5,9 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build-apk:
     name: Build APK Release & Debug
@@ -13,6 +16,8 @@ jobs:
     steps:
       - name: Checkout Código Fonte
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Configurar Node.js 20
         uses: actions/setup-node@v4
@@ -49,11 +54,13 @@ jobs:
           git commit -m "debug: log da compilacao android gradle" || true
           git push -f origin debug-log || true
 
-      - name: Fazer Upload do APK como Artefato de Download
+      - name: Fazer Upload do APK e Logs
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: finn-ai-app-debug
+          name: build-logs-and-apk
           path: |
+            android/gradle_output.log
             android/app/build/outputs/apk/debug/*.apk
             android/**/*.apk
           retention-days: 30
