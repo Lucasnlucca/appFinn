@@ -35,7 +35,15 @@ jobs:
       - name: Compilar APK Android (Gradle)
         run: |
           cd android
-          ./gradlew assembleDebug --no-daemon --stacktrace
+          ./gradlew assembleDebug --no-daemon --info > gradle_build.log 2>&1 || (cat gradle_build.log | tail -n 80 && exit 1)
+
+      - name: Fazer Upload do Log em caso de falha
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gradle-error-log
+          path: android/gradle_build.log
+          retention-days: 7
 
       - name: Fazer Upload do APK como Artefato de Download
         uses: actions/upload-artifact@v4
