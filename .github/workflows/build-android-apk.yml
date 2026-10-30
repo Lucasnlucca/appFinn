@@ -20,11 +20,11 @@ jobs:
           node-version: 20
           cache: 'npm'
 
-      - name: Configurar Java 17 (JDK)
+      - name: Configurar Java 21 (JDK)
         uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
-          java-version: '17'
+          java-version: '21'
 
       - name: Instalar Dependências do Monorepo
         run: npm ci
@@ -35,7 +35,13 @@ jobs:
       - name: Compilar APK Android (Gradle)
         run: |
           cd android
-          ./gradlew assembleDebug --no-daemon --stacktrace
+          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee gradle_output.log || {
+            echo "### ❌ Falha no Gradle" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            tail -n 80 gradle_output.log >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            exit 1
+          }
 
       - name: Listar Arquivos APK Gerados
         run: |
