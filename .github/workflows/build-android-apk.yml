@@ -1,0 +1,66 @@
+name: Build Android APK (FINN AI)
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-apk:
+    name: Build APK Release & Debug
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Código Fonte
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Configurar Java 17 (JDK)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Configurar Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Instalar Dependências do Monorepo
+        run: npm ci
+
+      - name: Gerar Prisma Client
+        run: npm run db:generate
+
+      - name: Compilar Pacotes Compartilhados
+        run: |
+          npm run build --workspace=@finn-ai/shared
+          npm run build --workspace=@finn-ai/database
+          npm run build --workspace=@finn-ai/ui
+
+      - name: Gerar Exportação Estática do Frontend Web
+        env:
+          NEXT_EXPORT: "true"
+        run: npm run build --workspace=@finn-ai/web
+
+      - name: Sincronizar com Projeto Android (Capacitor)
+        run: npx cap sync android
+
+      - name: Permissões de Execução no Gradlew
+        run: chmod +x android/gradlew
+
+      - name: Compilar APK Android (Gradle)
+        run: |
+          cd android
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Fazer Upload do APK como Artefato de Download
+        uses: actions/upload-artifact@v4
+        with:
+          name: finn-ai-app-debug.apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30
+

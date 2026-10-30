@@ -1,0 +1,21 @@
+{
+  "name": "@finn-ai/ui",
+  "version": "1.0.0",
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch"
+  },
+  "dependencies": {
+    "clsx": "^2.1.1",
+    "tailwind-merge": "^2.3.0"
+  },
+  "devDependencies": {
+    "@finn-ai/config": "*",
+    "react": "^18.3.1",
+    "typescript": "^5.4.5"
+  }
+}
+

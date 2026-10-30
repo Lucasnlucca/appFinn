@@ -1,0 +1,42 @@
+{
+  "name": "finn-ai-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "FINN AI — Gerente Financeiro Familiar com IA e Open Finance",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspaces --if-present",
+    "dev:api": "npm run dev --workspace=@finn-ai/api",
+    "dev:web": "npm run dev --workspace=@finn-ai/web",
+    "build": "npm run build --workspaces --if-present",
+    "build:api": "npm run build --workspace=@finn-ai/api",
+    "build:web": "npm run build --workspace=@finn-ai/web",
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:cov": "jest --coverage",
+    "db:generate": "npm run db:generate --workspace=@finn-ai/database",
+    "db:migrate": "npm run db:migrate --workspace=@finn-ai/database",
+    "db:studio": "npm run db:studio --workspace=@finn-ai/database"
+  },
+  "keywords": [
+    "finance",
+    "open-finance",
+    "pluggy",
+    "gemini",
+    "ai",
+    "nestjs",
+    "nextjs",
+    "family-budget"
+  ],
+  "author": "FINN AI Team",
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "@capacitor/android": "^8.6.0",
+    "@capacitor/cli": "^8.6.0",
+    "@capacitor/core": "^8.6.0"
+  }
+}
