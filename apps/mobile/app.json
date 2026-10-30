@@ -1,0 +1,25 @@
+{
+  "expo": {
+    "name": "FINN AI",
+    "slug": "finn-ai",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "primaryColor": "#10B981",
+    "backgroundColor": "#0B0F19",
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "com.finnai.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#0B0F19",
+        "foregroundImage": "./assets/android-icon-foreground.png"
+      }
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    }
+  }
+}
