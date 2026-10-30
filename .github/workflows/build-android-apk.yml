@@ -40,11 +40,13 @@ jobs:
       - name: Listar Arquivos APK Gerados
         run: |
           echo "=== ARQUIVOS APK ENCONTRADOS ==="
-          find android/ -name "*.apk" -ls
+          ls -la android/app/build/outputs/apk/debug/ || find android/ -name "*.apk"
 
       - name: Fazer Upload do APK como Artefato de Download
         uses: actions/upload-artifact@v4
         with:
           name: finn-ai-app-debug
-          path: android/**/*.apk
+          path: |
+            android/app/build/outputs/apk/debug/*.apk
+            android/**/*.apk
           retention-days: 30
