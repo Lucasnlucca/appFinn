@@ -1,5 +1,7 @@
 // Top-level build file where you can add configuration options common to all sub-projects/modules.
 
+apply from: "variables.gradle"
+
 buildscript {
     
     repositories {
@@ -14,8 +16,6 @@ buildscript {
         // in the individual module build.gradle files
     }
 }
-
-apply from: "variables.gradle"
 
 allprojects {
     repositories {
