@@ -24,3 +24,4 @@ export const COLORS = {
   cardBg: '#131B2E',
   cardBorder: '#1F2B47',
 };
+

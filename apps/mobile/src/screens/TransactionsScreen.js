@@ -14,11 +14,14 @@ import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../theme/colors';
 import { useFinance, CATEGORIES } from '../context/FinanceContext';
 import AddTransactionModal from '../components/AddTransactionModal';
+import EditTransactionModal from '../components/EditTransactionModal';
 
 export default function TransactionsScreen() {
   const insets = useSafeAreaInsets();
-  const { transactions, removeTransaction, activeMember, members } = useFinance();
+  const { transactions, removeTransaction, editTransaction } = useFinance();
   const [modalVisible, setModalVisible] = useState(false);
+  const [editModalVisible, setEditModalVisible] = useState(false);
+  const [selectedTx, setSelectedTx] = useState(null);
   const [filterType, setFilterType] = useState('all'); // 'all' | 'expense' | 'income'
   const [search, setSearch] = useState('');
 
@@ -33,10 +36,15 @@ export default function TransactionsScreen() {
   });
 
   const handleDelete = (id, desc) => {
-    Alert.alert('Excluir Lançamento', `Deseja remover "${desc}"?`, [
+    Alert.alert('Excluir Lançamento', `Deseja realmente remover "${desc}"?`, [
       { text: 'Cancelar', style: 'cancel' },
       { text: 'Excluir', style: 'destructive', onPress: () => removeTransaction(id) },
     ]);
+  };
+
+  const handleEdit = (item) => {
+    setSelectedTx(item);
+    setEditModalVisible(true);
   };
 
   return (
@@ -45,7 +53,10 @@ export default function TransactionsScreen() {
 
       {/* HEADER */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Extrato & Lançamentos</Text>
+        <View>
+          <Text style={styles.headerTitle}>Extrato & Lançamentos</Text>
+          <Text style={styles.headerSubtitle}>Toque em uma movimentação para editar ou excluir</Text>
+        </View>
         <TouchableOpacity style={styles.addBtnHeader} onPress={() => setModalVisible(true)}>
           <Ionicons name="add" size={20} color={COLORS.white} />
         </TouchableOpacity>
@@ -97,7 +108,7 @@ export default function TransactionsScreen() {
             <Ionicons name="folder-open-outline" size={48} color={COLORS.textMuted} />
             <Text style={styles.emptyTitle}>Nenhum registro encontrado</Text>
             <Text style={styles.emptySubtitle}>
-              {search ? 'Tente buscar com outro termo.' : 'Toque no botão + para adicionar uma movimentação.'}
+              {search ? 'Tente buscar com outro termo.' : 'Toque no botão + para adicionar ou envie comprovante para a IA.'}
             </Text>
           </View>
         ) : (
@@ -105,7 +116,12 @@ export default function TransactionsScreen() {
             const cat = CATEGORIES.find((c) => c.id === item.category) || CATEGORIES[6];
             const isExpense = item.type === 'expense';
             return (
-              <View key={item.id} style={styles.txRow}>
+              <TouchableOpacity
+                key={item.id}
+                style={styles.txRow}
+                activeOpacity={0.7}
+                onPress={() => handleEdit(item)}
+              >
                 <View style={[styles.iconWrap, { backgroundColor: `${cat.color}20` }]}>
                   <Ionicons name={cat.icon} size={20} color={cat.color} />
                 </View>
@@ -124,14 +140,22 @@ export default function TransactionsScreen() {
                     {isExpense ? '- ' : '+ '}
                     {formatCurrency(item.amount)}
                   </Text>
-                  <TouchableOpacity
-                    style={styles.trashBtn}
-                    onPress={() => handleDelete(item.id, item.description)}
-                  >
-                    <Ionicons name="trash-outline" size={16} color={COLORS.textMuted} />
-                  </TouchableOpacity>
+                  <View style={styles.actionsPills}>
+                    <TouchableOpacity
+                      style={styles.actionIconBtn}
+                      onPress={() => handleEdit(item)}
+                    >
+                      <Ionicons name="create-outline" size={16} color={COLORS.textSecondary} />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.actionIconBtn}
+                      onPress={() => handleDelete(item.id, item.description)}
+                    >
+                      <Ionicons name="trash-outline" size={16} color={COLORS.expense} />
+                    </TouchableOpacity>
+                  </View>
                 </View>
-              </View>
+              </TouchableOpacity>
             );
           })
         )}
@@ -146,6 +170,16 @@ export default function TransactionsScreen() {
       </TouchableOpacity>
 
       <AddTransactionModal visible={modalVisible} onClose={() => setModalVisible(false)} />
+      <EditTransactionModal
+        visible={editModalVisible}
+        transaction={selectedTx}
+        onClose={() => {
+          setEditModalVisible(false);
+          setSelectedTx(null);
+        }}
+        onSave={(updated) => editTransaction(updated)}
+        onDelete={(id) => removeTransaction(id)}
+      />
     </View>
   );
 }
@@ -169,6 +203,11 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     fontSize: 18,
     fontWeight: '800',
+  },
+  headerSubtitle: {
+    color: COLORS.textSecondary,
+    fontSize: 11,
+    marginTop: 2,
   },
   addBtnHeader: {
     width: 36,
@@ -200,20 +239,20 @@ const styles = StyleSheet.create({
   },
   filterRow: {
     flexDirection: 'row',
+    gap: 8,
     paddingHorizontal: 16,
     paddingVertical: 12,
-    gap: 8,
   },
   filterChip: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
     paddingVertical: 7,
-    borderRadius: 14,
-    backgroundColor: COLORS.surfaceLight,
+    borderRadius: 16,
+    backgroundColor: COLORS.surface,
     borderWidth: 1,
     borderColor: COLORS.surfaceBorder,
   },
   filterChipActive: {
-    backgroundColor: COLORS.primary,
+    backgroundColor: COLORS.primaryLight,
     borderColor: COLORS.primary,
   },
   filterChipText: {
@@ -222,13 +261,29 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   filterChipTextActive: {
-    color: COLORS.white,
-    fontWeight: '700',
+    color: COLORS.primary,
+    fontWeight: '800',
   },
   listContent: {
     paddingHorizontal: 16,
     gap: 10,
-    paddingTop: 4,
+  },
+  emptyWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: 60,
+    gap: 10,
+  },
+  emptyTitle: {
+    color: COLORS.text,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  emptySubtitle: {
+    color: COLORS.textSecondary,
+    fontSize: 13,
+    textAlign: 'center',
+    paddingHorizontal: 30,
   },
   txRow: {
     flexDirection: 'row',
@@ -238,14 +293,14 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1,
     borderColor: COLORS.surfaceBorder,
+    gap: 12,
   },
   iconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
+    width: 44,
+    height: 44,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 12,
   },
   infoCol: {
     flex: 1,
@@ -253,13 +308,13 @@ const styles = StyleSheet.create({
   descText: {
     color: COLORS.text,
     fontSize: 15,
-    fontWeight: '600',
-    marginBottom: 4,
+    fontWeight: '700',
   },
   metaRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
+    gap: 6,
+    marginTop: 4,
   },
   catText: {
     color: COLORS.textMuted,
@@ -272,15 +327,15 @@ const styles = StyleSheet.create({
   authorBadge: {
     color: COLORS.primary,
     fontSize: 11,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   amountCol: {
     alignItems: 'flex-end',
-    gap: 4,
+    gap: 6,
   },
   amountText: {
     fontSize: 15,
-    fontWeight: '700',
+    fontWeight: '800',
   },
   expenseText: {
     color: COLORS.expense,
@@ -288,24 +343,13 @@ const styles = StyleSheet.create({
   incomeText: {
     color: COLORS.income,
   },
-  trashBtn: {
-    padding: 3,
-  },
-  emptyWrap: {
+  actionsPills: {
+    flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 60,
+    gap: 10,
   },
-  emptyTitle: {
-    color: COLORS.text,
-    fontSize: 16,
-    fontWeight: '700',
-    marginTop: 12,
-    marginBottom: 4,
-  },
-  emptySubtitle: {
-    color: COLORS.textMuted,
-    fontSize: 13,
-    textAlign: 'center',
+  actionIconBtn: {
+    padding: 4,
   },
   fab: {
     position: 'absolute',

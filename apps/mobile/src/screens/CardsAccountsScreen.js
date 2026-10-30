@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -13,12 +13,25 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../theme/colors';
 import { useFinance } from '../context/FinanceContext';
+import { getConnectedBanks } from '../services/openFinanceService';
+import OpenFinanceModal from '../components/OpenFinanceModal';
 
 export default function CardsAccountsScreen() {
   const insets = useSafeAreaInsets();
   const { accounts, cards, updateAccountBalance } = useFinance();
   const [editingAcc, setEditingAcc] = useState(null);
   const [newBalance, setNewBalance] = useState('');
+  const [openFinanceVisible, setOpenFinanceVisible] = useState(false);
+  const [connectedBanks, setConnectedBanks] = useState([]);
+
+  useEffect(() => {
+    loadBanks();
+  }, [openFinanceVisible]);
+
+  const loadBanks = async () => {
+    const list = await getConnectedBanks();
+    setConnectedBanks(list);
+  };
 
   const formatCurrency = (val) => {
     return 'R$ ' + (val || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -36,17 +49,71 @@ export default function CardsAccountsScreen() {
       <StatusBar barStyle="light-content" backgroundColor={COLORS.bg} />
 
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Contas & Cartões</Text>
+        <View>
+          <Text style={styles.headerTitle}>Contas & Cartões</Text>
+          <Text style={styles.headerSubtitle}>Gerenciamento bancário e Open Finance do casal</Text>
+        </View>
+        <TouchableOpacity
+          style={styles.openFinanceHeaderBtn}
+          onPress={() => setOpenFinanceVisible(true)}
+        >
+          <Ionicons name="shield-checkmark" size={16} color={COLORS.primary} />
+          <Text style={styles.openFinanceHeaderBtnText}>Open Finance</Text>
+        </TouchableOpacity>
       </View>
 
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 90 }]}
       >
+        {/* BANNER OPEN FINANCE BRASIL */}
+        <View style={styles.openFinanceBanner}>
+          <View style={styles.openFinanceTop}>
+            <View style={styles.ofIconWrap}>
+              <Ionicons name="link" size={20} color={COLORS.primary} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <View style={styles.ofTitleRow}>
+                <Text style={styles.ofTitle}>Open Finance Brasil</Text>
+                <View style={styles.readOnlyBadge}>
+                  <Text style={styles.readOnlyText}>Somente Leitura</Text>
+                </View>
+              </View>
+              <Text style={styles.ofSubtitle}>
+                {connectedBanks.length > 0
+                  ? `${connectedBanks.length} banco(s) conectado(s) e sincronizando transações`
+                  : 'Conecte seus bancos para leitura automática de saldo e extrato'}
+              </Text>
+            </View>
+          </View>
+
+          {connectedBanks.length > 0 && (
+            <View style={styles.connectedBankChips}>
+              {connectedBanks.map((b) => (
+                <View key={b.id} style={styles.bankChip}>
+                  <View style={[styles.bankChipDot, { backgroundColor: b.color }]} />
+                  <Text style={styles.bankChipName}>{b.name}</Text>
+                  <Ionicons name="checkmark-circle" size={14} color={COLORS.primary} />
+                </View>
+              ))}
+            </View>
+          )}
+
+          <TouchableOpacity
+            style={styles.ofActionBtn}
+            onPress={() => setOpenFinanceVisible(true)}
+          >
+            <Text style={styles.ofActionBtnText}>
+              {connectedBanks.length > 0 ? 'Gerenciar Bancos Conectados' : 'Conectar Banco (Nubank, Inter, Itaú...)'}
+            </Text>
+            <Ionicons name="arrow-forward" size={16} color={COLORS.white} />
+          </TouchableOpacity>
+        </View>
+
         {/* SEÇÃO CONTAS BANCÁRIAS */}
         <View style={styles.sectionHead}>
           <Text style={styles.sectionTitle}>Contas do Casal</Text>
-          <Text style={styles.sectionHint}>Toque para ajustar o saldo real</Text>
+          <Text style={styles.sectionHint}>Toque para ajustar o saldo real manualmente</Text>
         </View>
 
         <View style={styles.cardList}>
@@ -73,7 +140,7 @@ export default function CardsAccountsScreen() {
                 <Text style={styles.accountBalance}>{formatCurrency(acc.balance)}</Text>
                 <View style={styles.editRow}>
                   <Ionicons name="pencil" size={12} color={COLORS.primary} />
-                  <Text style={styles.editText}>Editar</Text>
+                  <Text style={styles.editText}>Editar Saldo</Text>
                 </View>
               </View>
             </TouchableOpacity>
@@ -99,7 +166,7 @@ export default function CardsAccountsScreen() {
 
               <View style={styles.cardFooter}>
                 <View>
-                  <Text style={styles.cardMetaLabel}>Limite</Text>
+                  <Text style={styles.cardMetaLabel}>Limite Disponível</Text>
                   <Text style={styles.cardMetaValue}>{formatCurrency(card.limit)}</Text>
                 </View>
 
@@ -151,6 +218,12 @@ export default function CardsAccountsScreen() {
           </View>
         </View>
       </Modal>
+
+      <OpenFinanceModal
+        visible={openFinanceVisible}
+        onClose={() => setOpenFinanceVisible(false)}
+        onBankConnected={() => loadBanks()}
+      />
     </View>
   );
 }
@@ -161,6 +234,9 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.bg,
   },
   header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: 20,
     paddingVertical: 14,
     borderBottomWidth: 1,
@@ -172,9 +248,123 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '800',
   },
+  headerSubtitle: {
+    color: COLORS.textSecondary,
+    fontSize: 11,
+    marginTop: 2,
+  },
+  openFinanceHeaderBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: COLORS.primaryLight,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.3)',
+  },
+  openFinanceHeaderBtnText: {
+    color: COLORS.primary,
+    fontSize: 12,
+    fontWeight: '700',
+  },
   content: {
     paddingHorizontal: 16,
     paddingTop: 16,
+  },
+  openFinanceBanner: {
+    backgroundColor: COLORS.surface,
+    borderRadius: 20,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: COLORS.surfaceBorder,
+    marginBottom: 20,
+  },
+  openFinanceTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  ofIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: COLORS.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  ofTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  ofTitle: {
+    color: COLORS.text,
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  readOnlyBadge: {
+    backgroundColor: 'rgba(59, 130, 246, 0.15)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  readOnlyText: {
+    color: '#3B82F6',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  ofSubtitle: {
+    color: COLORS.textSecondary,
+    fontSize: 12,
+    marginTop: 2,
+    lineHeight: 16,
+  },
+  connectedBankChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.surfaceBorder,
+  },
+  bankChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: COLORS.surfaceLight,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: COLORS.surfaceBorder,
+  },
+  bankChipDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  bankChipName: {
+    color: COLORS.text,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  ofActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: COLORS.primary,
+    height: 44,
+    borderRadius: 12,
+    marginTop: 14,
+  },
+  ofActionBtnText: {
+    color: COLORS.white,
+    fontSize: 13,
+    fontWeight: '800',
   },
   sectionHead: {
     marginBottom: 12,
@@ -198,7 +388,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     backgroundColor: COLORS.surface,
     padding: 16,
-    borderRadius: 18,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: COLORS.surfaceBorder,
   },
@@ -210,8 +400,8 @@ const styles = StyleSheet.create({
   bankIconWrap: {
     width: 42,
     height: 42,
-    borderRadius: 14,
-    backgroundColor: COLORS.primaryLight,
+    borderRadius: 12,
+    backgroundColor: COLORS.surfaceLight,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -219,11 +409,11 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     fontSize: 15,
     fontWeight: '700',
-    marginBottom: 2,
   },
   accountBank: {
     color: COLORS.textMuted,
     fontSize: 12,
+    marginTop: 2,
   },
   accountRight: {
     alignItems: 'flex-end',
@@ -231,141 +421,148 @@ const styles = StyleSheet.create({
   accountBalance: {
     color: COLORS.text,
     fontSize: 16,
-    fontWeight: '700',
-    marginBottom: 4,
+    fontWeight: '800',
   },
   editRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
+    marginTop: 4,
   },
   editText: {
     color: COLORS.primary,
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '600',
   },
   creditCardBox: {
     backgroundColor: COLORS.cardBg,
-    borderRadius: 22,
-    padding: 20,
+    borderRadius: 18,
+    padding: 18,
     borderWidth: 1,
-    borderColor: 'rgba(139, 92, 246, 0.3)',
+    borderColor: COLORS.cardBorder,
   },
   cardTop: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: 16,
   },
   cardChip: {
     width: 40,
-    height: 40,
-    borderRadius: 12,
+    height: 28,
+    borderRadius: 6,
     backgroundColor: 'rgba(139, 92, 246, 0.15)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   cardBank: {
-    color: COLORS.purple,
-    fontSize: 14,
+    color: COLORS.textSecondary,
+    fontSize: 13,
     fontWeight: '700',
   },
   cardName: {
     color: COLORS.text,
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '700',
     marginBottom: 20,
   },
   cardFooter: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'flex-end',
     borderTopWidth: 1,
-    borderTopColor: COLORS.surfaceBorder,
-    paddingTop: 14,
+    borderTopColor: COLORS.cardBorder,
+    paddingTop: 12,
   },
   cardMetaLabel: {
     color: COLORS.textMuted,
-    fontSize: 11,
-    marginBottom: 2,
+    fontSize: 10,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   cardMetaValue: {
-    color: COLORS.textSecondary,
+    color: COLORS.text,
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: '700',
+    marginTop: 2,
   },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.7)',
-    alignItems: 'center',
     justifyContent: 'center',
-    padding: 20,
+    alignItems: 'center',
+    padding: 24,
   },
   modalBox: {
     width: '100%',
     backgroundColor: COLORS.surface,
-    borderRadius: 24,
-    padding: 22,
+    borderRadius: 20,
+    padding: 20,
     borderWidth: 1,
     borderColor: COLORS.surfaceBorder,
   },
   modalTitle: {
     color: COLORS.text,
     fontSize: 18,
-    fontWeight: '700',
-    marginBottom: 4,
+    fontWeight: '800',
   },
   modalSub: {
-    color: COLORS.textMuted,
+    color: COLORS.textSecondary,
     fontSize: 13,
-    marginBottom: 18,
+    marginTop: 2,
+    marginBottom: 16,
   },
   modalInputWrap: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: COLORS.surfaceLight,
     borderRadius: 14,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
     borderWidth: 1,
     borderColor: COLORS.surfaceBorder,
-    marginBottom: 20,
+    paddingHorizontal: 14,
+    height: 52,
+    marginBottom: 18,
   },
   modalCurrency: {
-    color: COLORS.textSecondary,
-    fontSize: 20,
-    fontWeight: '700',
-    marginRight: 8,
+    color: COLORS.primary,
+    fontSize: 18,
+    fontWeight: '800',
+    marginRight: 6,
   },
   modalInput: {
     flex: 1,
     color: COLORS.text,
-    fontSize: 22,
-    fontWeight: '700',
+    fontSize: 20,
+    fontWeight: '800',
   },
   modalActions: {
     flexDirection: 'row',
-    gap: 12,
+    gap: 10,
   },
   modalCancel: {
     flex: 1,
-    paddingVertical: 14,
-    borderRadius: 14,
-    backgroundColor: COLORS.surfaceLight,
+    paddingVertical: 12,
     alignItems: 'center',
+    borderRadius: 12,
+    backgroundColor: COLORS.surfaceLight,
+    borderWidth: 1,
+    borderColor: COLORS.surfaceBorder,
   },
   modalCancelText: {
     color: COLORS.textSecondary,
     fontWeight: '600',
+    fontSize: 14,
   },
   modalSave: {
     flex: 1,
-    paddingVertical: 14,
-    borderRadius: 14,
-    backgroundColor: COLORS.primary,
+    paddingVertical: 12,
     alignItems: 'center',
+    borderRadius: 12,
+    backgroundColor: COLORS.primary,
   },
   modalSaveText: {
     color: COLORS.white,
-    fontWeight: '700',
+    fontWeight: '800',
+    fontSize: 14,
   },
 });
