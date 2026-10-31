@@ -18,21 +18,20 @@ import { useFinance } from '../context/FinanceContext';
 
 export default function LoginScreen({ onLoginSuccess }) {
   const insets = useSafeAreaInsets();
-  const { setLoggedInUser } = useFinance();
+  const { setLoggedInUser, members } = useFinance();
 
-  const [selectedProfile, setSelectedProfile] = useState('Henrique');
-  const [email, setEmail] = useState('henrique@finn.local');
+  const user1Name = members?.user1 || 'Lucas';
+  const user2Name = members?.user2 || 'Veronica';
+
+  const [selectedProfile, setSelectedProfile] = useState(user1Name);
+  const [email, setEmail] = useState(`${user1Name.toLowerCase()}@finn.local`);
   const [password, setPassword] = useState('12345678');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const handleProfileSelect = (name) => {
     setSelectedProfile(name);
-    if (name === 'Henrique') {
-      setEmail('henrique@finn.local');
-    } else {
-      setEmail('esposa@finn.local');
-    }
+    setEmail(`${name.toLowerCase()}@finn.local`);
   };
 
   const handleLogin = async () => {
@@ -83,44 +82,44 @@ export default function LoginScreen({ onLoginSuccess }) {
             <TouchableOpacity
               style={[
                 styles.profileBtn,
-                selectedProfile === 'Henrique' && styles.profileBtnActive,
+                selectedProfile === user1Name && styles.profileBtnActive,
               ]}
-              onPress={() => handleProfileSelect('Henrique')}
+              onPress={() => handleProfileSelect(user1Name)}
             >
               <Ionicons
                 name="person"
                 size={18}
-                color={selectedProfile === 'Henrique' ? COLORS.primary : COLORS.textMuted}
+                color={selectedProfile === user1Name ? COLORS.primary : COLORS.textMuted}
               />
               <Text
                 style={[
                   styles.profileBtnText,
-                  selectedProfile === 'Henrique' && styles.profileBtnTextActive,
+                  selectedProfile === user1Name && styles.profileBtnTextActive,
                 ]}
               >
-                Henrique
+                {user1Name}
               </Text>
             </TouchableOpacity>
 
             <TouchableOpacity
               style={[
                 styles.profileBtn,
-                selectedProfile === 'Esposa' && styles.profileBtnActive,
+                selectedProfile === user2Name && styles.profileBtnActive,
               ]}
-              onPress={() => handleProfileSelect('Esposa')}
+              onPress={() => handleProfileSelect(user2Name)}
             >
               <Ionicons
                 name="heart"
                 size={18}
-                color={selectedProfile === 'Esposa' ? COLORS.primary : COLORS.textMuted}
+                color={selectedProfile === user2Name ? COLORS.primary : COLORS.textMuted}
               />
               <Text
                 style={[
                   styles.profileBtnText,
-                  selectedProfile === 'Esposa' && styles.profileBtnTextActive,
+                  selectedProfile === user2Name && styles.profileBtnTextActive,
                 ]}
               >
-                Esposa
+                {user2Name}
               </Text>
             </TouchableOpacity>
           </View>

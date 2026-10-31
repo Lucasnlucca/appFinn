@@ -5,12 +5,12 @@ const STORAGE_KEYS = {
   GEMINI_MODEL: '@finn_gemini_model',
 };
 
-// Modelos ativos na API do Google AI Studio
-export const DEFAULT_MODEL = 'gemini-3.5-flash';
-export const FALLBACK_MODEL = 'gemini-3.5-flash-lite';
+// Modelos ativos e velozes do Google AI Studio
+export const DEFAULT_MODEL = 'gemini-3.5-flash-lite';
+export const FALLBACK_MODEL = 'gemini-3.5-flash';
 export const EMERGENCY_MODEL = 'gemini-3.8-flash';
 
-// Chave padrão pré-configurada
+// Chave padrão injetada pelo ambiente
 const BUNDLED_DEFAULT_KEY = 'AIzaSyDOzZL7AxJJ-tL9LGo6nX5MhHJsQCcehbw';
 
 /**
@@ -45,7 +45,6 @@ export async function setGeminiApiKey(key) {
 export async function getGeminiModel() {
   try {
     const saved = await AsyncStorage.getItem(STORAGE_KEYS.GEMINI_MODEL);
-    // Migra modelos legados (2.5 ou 1.5) para 3.5 caso estejam no cache
     if (saved && !saved.includes('2.5') && !saved.includes('1.5')) {
       return saved;
     }
@@ -64,42 +63,47 @@ export async function setGeminiModel(model) {
 }
 
 /**
- * Chamada principal para a API do Google Gemini
+ * Chamada principal para a API do Google Gemini com suporte a multi-turn chat e retry
  */
-async function callGeminiApi({ apiKey, model, parts, systemInstruction, retryCount = 0 }) {
+export async function callGeminiApi({
+  apiKey,
+  model,
+  contents,
+  parts,
+  systemInstruction,
+  retryCount = 0,
+}) {
   const currentKey = apiKey || (await getGeminiApiKey());
   if (!currentKey) {
     throw new Error('CHAVE_GEMINI_AUSENTE');
   }
 
   let selectedModel = model || (await getGeminiModel());
-  // Se for modelo descontinuado, substitui por 3.5
   if (selectedModel.includes('2.5') || selectedModel.includes('1.5')) {
     selectedModel = DEFAULT_MODEL;
   }
 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${selectedModel}:generateContent?key=${currentKey}`;
 
+  // Se passou array de turnos (histórico), usa contents; se passou apenas parts, encapsula em user turn
+  const formattedContents = contents || [{ role: 'user', parts }];
+
   const body = {
     systemInstruction: {
       parts: [
         {
-          text: systemInstruction || `Você é o FINN AI, o assistente financeiro pessoal de inteligência artificial de um casal (Henrique e sua esposa).
-Você ajuda o casal a controlar despesas, manter as contas em dia, economizar e planejar o futuro financeiro familiar.
-Seja sempre simpático, objetivo, preciso com valores em Reais (R$) e focado em praticidade.
-Quando o usuário relatar um gasto, enviar comprovante, foto de nota fiscal, PDF ou áudio de despesa/receita, analise e extraia os dados estruturados no formato JSON quando solicitado.`,
+          text:
+            systemInstruction ||
+            `Você é o FINN AI, um consultor financeiro pessoal inteligente, acolhedor e parceiro do casal.
+Converse com empatia, clareza e praticidade em português brasileiro.
+Ajude o casal a manter os gastos em dia, tomar decisões conscientes e economizar para seus sonhos conjuntos.`,
         },
       ],
     },
-    contents: [
-      {
-        role: 'user',
-        parts,
-      },
-    ],
+    contents: formattedContents,
     generationConfig: {
-      temperature: 0.2,
-      maxOutputTokens: 1024,
+      temperature: 0.4,
+      maxOutputTokens: 1200,
     },
   };
 
@@ -113,27 +117,42 @@ Quando o usuário relatar um gasto, enviar comprovante, foto de nota fiscal, PDF
 
   if (!response.ok) {
     const errText = await response.text();
+    let errJson = {};
+    try {
+      errJson = JSON.parse(errText);
+    } catch {}
 
-    // Fallback para modelos alternativos em caso de 404
-    if (retryCount === 0) {
+    const errMsg = errJson?.error?.message || errText;
+
+    // Detecta se a chave foi desativada pelo Google por vazamento
+    if (response.status === 403 && (errMsg.includes('leaked') || errMsg.includes('PERMISSION_DENIED'))) {
+      throw new Error(
+        'CHAVE_REVOGADA: Esta chave da API foi desativada pelo Google por ter sido exposta. Por favor, crie uma chave gratuita em aistudio.google.com e cole em Configurações > Chave Gemini para reativar o FINN!'
+      );
+    }
+
+    // Fallback automático para outros modelos em caso de 404, 503 ou 429
+    if (retryCount === 0 && selectedModel !== FALLBACK_MODEL) {
       return callGeminiApi({
         apiKey: currentKey,
         model: FALLBACK_MODEL,
+        contents,
         parts,
         systemInstruction,
         retryCount: 1,
       });
-    } else if (retryCount === 1) {
+    } else if (retryCount <= 1 && selectedModel !== EMERGENCY_MODEL) {
       return callGeminiApi({
         apiKey: currentKey,
         model: EMERGENCY_MODEL,
+        contents,
         parts,
         systemInstruction,
         retryCount: 2,
       });
     }
 
-    throw new Error(`Erro na Gemini API (${response.status}): ${errText}`);
+    throw new Error(`Erro na Gemini API (${response.status}): ${errMsg}`);
   }
 
   const data = await response.json();
@@ -143,34 +162,78 @@ Quando o usuário relatar um gasto, enviar comprovante, foto de nota fiscal, PDF
 }
 
 /**
- * Conversa em texto com o FINN AI
+ * Conversa fluida em linguagem natural com memória contextual do chat
  */
-export async function sendTextMessageToGemini({ message, financialContext }) {
-  const systemInstruction = `Você é o FINN AI, assistente financeiro do casal Henrique e Esposa.
-Contexto Financeiro Atual do Casal:
-• Saldo Total em Contas: R$ ${financialContext?.totalBalance?.toFixed(2) || '0,00'}
-• Receitas do Mês: R$ ${financialContext?.totalIncome?.toFixed(2) || '0,00'}
-• Despesas do Mês: R$ ${financialContext?.totalExpense?.toFixed(2) || '0,00'}
-• Membro Ativo Atual: ${financialContext?.activeMember || 'Casal'}
+export async function sendTextMessageToGemini({
+  message,
+  chatHistory = [],
+  financialContext,
+  members = { user1: 'Lucas', user2: 'Veronica' },
+}) {
+  const activeUser = financialContext?.activeMember || members.user1;
+  const partnerUser = activeUser === members.user1 ? members.user2 : members.user1;
 
-DIRETRIZES:
-1. Se a mensagem do usuário indicar um registro financeiro (ex: "gastei 45 no mercado", "recebi 200 de freela", "paguei 90 de luz"), você DEVE responder com uma instrução JSON clara dentro de um bloco \`\`\`json:
-\`\`\`json
-{
-  "action": "TRANSACTION_DETECTED",
-  "data": {
-    "description": "Nome do estabelecimento ou serviço",
-    "amount": 45.00,
-    "type": "expense" ou "income",
-    "category": "alimentacao" | "moradia" | "transporte" | "saude" | "lazer" | "salario" | "outros"
-  },
-  "reply": "Texto amigável confirmando o que entendeu"
-}
-\`\`\`
-2. Caso seja uma pergunta comum, pedido de conselho ou consulta sobre as finanças do casal, responda diretamente em texto em tom amigável e encorajador.`;
+  // Monta resumo das contas e das últimas movimentações
+  const accountsText = (financialContext?.accounts || [])
+    .map((a) => `• ${a.name} (${a.bank}): R$ ${(a.balance || 0).toFixed(2).replace('.', ',')}`)
+    .join('\n');
+
+  const recentTxText = (financialContext?.recentTransactions || [])
+    .slice(0, 5)
+    .map((t) => `• ${t.date || 'Hoje'}: R$ ${t.amount?.toFixed(2).replace('.', ',')} em ${t.description} (${t.category}, por ${t.author})`)
+    .join('\n');
+
+  const systemInstruction = `Você é o FINN AI, um consultor financeiro pessoal inteligente, empático e bem-humorado dedicado ao casal ${members.user1} e ${members.user2}.
+Você conversa como um especialista financeiro de verdade, amigo da família, com linguagem natural, calorosa e fluida em português brasileiro.
+Quem está falando com você agora é o(a) ${activeUser}.
+
+DADOS FINANCEIROS EM TEMPO REAL DO CASAL:
+• Membros: ${members.user1} e ${members.user2}
+• Quem está usando agora: ${activeUser}
+• Saldo Total em Contas: R$ ${(financialContext?.totalBalance || 0).toFixed(2).replace('.', ',')}
+• Detalhes das Contas:
+${accountsText || '• Nenhuma conta bancária sincronizada'}
+• Receitas do Mês: R$ ${(financialContext?.totalIncome || 0).toFixed(2).replace('.', ',')}
+• Despesas do Mês: R$ ${(financialContext?.totalExpense || 0).toFixed(2).replace('.', ',')}
+• Sobra Líquida: R$ ${((financialContext?.totalIncome || 0) - (financialContext?.totalExpense || 0)).toFixed(2).replace('.', ',')}
+• Últimos Lançamentos:
+${recentTxText || '• Nenhum lançamento recente'}
+
+REGRAS DE CONVERSAÇÃO COM IA:
+1. NUNCA responda como um robô que apenas cita comandos. Converse naturalmente sobre qualquer assunto: dúvidas do casal, planejamento de viagens, compras, conselhos de economia, dúvidas sobre parcelamentos, ou simplesmente troque uma ideia leve e construtiva sobre finanças.
+2. Quando perguntarem sobre o saldo, despesas ou quanto sobrou, use os dados reais acima com precisão e dê um conselho construtivo.
+3. REGISTRO DE DESPESA OU RECEITA:
+Quando o usuário disser que gastou ou recebeu dinheiro (ex: "gastei 45 no mercado", "paguei 80 de luz", "almocei com a Veronica 90 reais", "recebi 300 de freela"), você DEVE:
+   a) Responder primeiro com uma frase humana, simpática e amigável confirmando o que entendeu (ex: "Anotado! Já registrei o almoço de vocês dois. Aproveitaram? 😋").
+   b) No FINAL ABSOLUTO da sua mensagem, inclua a tag oculta estruturada:
+   [TRANSACTION: {"description": "Nome da despesa/receita", "amount": 45.00, "type": "expense", "category": "alimentacao", "author": "${activeUser}"}]
+   (Categorias disponíveis: alimentacao, moradia, transporte, saude, lazer, salario, outros).
+4. O aplicativo irá ler a tag [TRANSACTION: ...] automaticamente para atualizar o extrato bancário do casal e ocultar a tag do chat para o usuário ver apenas a sua conversa amigável.`;
+
+  // Constrói o histórico multi-turn das últimas 8 mensagens para manter o contexto da conversa
+  const contents = [];
+
+  const recentHistory = chatHistory.slice(-8);
+  for (const m of recentHistory) {
+    if (m.id === 'welcome' || m.id === 'reset') continue;
+    // Remove tags de transação do histórico para a IA ler apenas o texto puro
+    const cleanHistoryText = (m.text || '').replace(/\[TRANSACTION:[\s\S]*?\]/gi, '').trim();
+    if (!cleanHistoryText) continue;
+
+    contents.push({
+      role: m.sender === 'user' ? 'user' : 'model',
+      parts: [{ text: cleanHistoryText }],
+    });
+  }
+
+  // Adiciona a mensagem atual do usuário
+  contents.push({
+    role: 'user',
+    parts: [{ text: message }],
+  });
 
   return await callGeminiApi({
-    parts: [{ text: message }],
+    contents,
     systemInstruction,
   });
 }
@@ -178,30 +241,20 @@ DIRETRIZES:
 /**
  * Analisa imagem de Comprovante de Pagamento (PIX, Máquina de Cartão, Recibo)
  */
-export async function analyzeReceiptImage({ base64Image, mimeType = 'image/jpeg', financialContext }) {
-  const prompt = `Analise atentamente esta imagem de comprovante bancário / recibo de compra / cupom fiscal.
-Extraia os seguintes dados financeiros e responda OBRIGATORIAMENTE em JSON válido:
+export async function analyzeReceiptImage({
+  base64Image,
+  mimeType = 'image/jpeg',
+  financialContext,
+  members = { user1: 'Lucas', user2: 'Veronica' },
+}) {
+  const activeUser = financialContext?.activeMember || members.user1;
+  const prompt = `Analise atentamente esta foto/print de comprovante bancário, recibo ou cupom fiscal.
+Responda de forma gentil e amigável em português explicando o que identificou.
+E no FINAL ABSOLUTO da mensagem, adicione a tag estruturada:
+[TRANSACTION: {"description": "Nome do favorecido/loja", "amount": 0.00, "type": "expense", "category": "alimentacao", "author": "${activeUser}"}]
 
-\`\`\`json
-{
-  "action": "TRANSACTION_DETECTED",
-  "data": {
-    "description": "Nome da empresa/beneficiário/estabelecimento",
-    "amount": 0.00,
-    "type": "expense",
-    "category": "alimentacao" | "moradia" | "transporte" | "saude" | "lazer" | "outros",
-    "date": "YYYY-MM-DD"
-  },
-  "reply": "Resumo em uma frase do comprovante analisado com valor e favorecido."
-}
-\`\`\`
-Se a imagem não for um comprovante ou não contiver valores legíveis, responda:
-\`\`\`json
-{
-  "action": "INVALID_RECEIPT",
-  "reply": "Não consegui identificar um comprovante legível nesta imagem. Por favor, envie uma foto nítida."
-}
-\`\`\``;
+Categorias disponíveis: alimentacao, moradia, transporte, saude, lazer, outros.
+Se não conseguir ler nenhum valor no comprovante, responda educadamente pedindo uma foto mais nítida.`;
 
   return await callGeminiApi({
     parts: [
@@ -219,24 +272,16 @@ Se a imagem não for um comprovante ou não contiver valores legíveis, responda
 /**
  * Analisa documento PDF (Boleto, Nota Fiscal, Extrato)
  */
-export async function analyzeInvoicePdf({ base64Pdf, financialContext }) {
-  const prompt = `Analise este documento PDF financeiro (boleto, nota fiscal eletrônica ou fatura).
-Extraia os dados da fatura/compra e retorne OBRIGATORIAMENTE em JSON:
-
-\`\`\`json
-{
-  "action": "TRANSACTION_DETECTED",
-  "data": {
-    "description": "Emissor/Cedente da fatura ou produto principal",
-    "amount": 0.00,
-    "type": "expense",
-    "category": "moradia" | "alimentacao" | "transporte" | "saude" | "lazer" | "outros",
-    "date": "YYYY-MM-DD"
-  },
-  "reply": "Resumo explicativo do boleto ou nota fiscal com valor e vencimento."
-}
-\`\`\`
-Se o PDF não tiver dados financeiros, informe educadamente em JSON.`;
+export async function analyzeInvoicePdf({
+  base64Pdf,
+  financialContext,
+  members = { user1: 'Lucas', user2: 'Veronica' },
+}) {
+  const activeUser = financialContext?.activeMember || members.user1;
+  const prompt = `Analise este documento PDF financeiro (boleto bancário ou fatura de serviços).
+Explique educadamente quem é o cedente/emissor e o valor principal.
+E no FINAL ABSOLUTO da mensagem, adicione a tag estruturada:
+[TRANSACTION: {"description": "Nome da empresa/serviço", "amount": 0.00, "type": "expense", "category": "moradia", "author": "${activeUser}"}]`;
 
   return await callGeminiApi({
     parts: [
@@ -254,25 +299,18 @@ Se o PDF não tiver dados financeiros, informe educadamente em JSON.`;
 /**
  * Processa Áudio gravado de voz do usuário
  */
-export async function analyzeVoiceAudio({ base64Audio, mimeType = 'audio/m4a', financialContext }) {
-  const prompt = `Ouça atentamente este áudio gravado por um dos cônjuges (Henrique ou sua esposa).
-Transcreva o que foi falado e verifique se há um comando de gasto, receita ou dúvida financeira.
-Retorne OBRIGATORIAMENTE em JSON:
-
-\`\`\`json
-{
-  "transcription": "Texto transcrito com exatidão do que a pessoa falou",
-  "action": "TRANSACTION_DETECTED" ou "QUESTION",
-  "data": {
-    "description": "Nome da despesa ou receita citada",
-    "amount": 0.00,
-    "type": "expense" ou "income",
-    "category": "alimentacao" | "moradia" | "transporte" | "saude" | "lazer" | "salario" | "outros"
-  },
-  "reply": "Resposta atenciosa do assistente FINN ao que foi falado"
-}
-\`\`\`
-Se a pessoa apenas fez uma pergunta, coloque "action": "QUESTION" e preencha "reply" com a resposta apropriada com base nas finanças do casal.`;
+export async function analyzeVoiceAudio({
+  base64Audio,
+  mimeType = 'audio/m4a',
+  financialContext,
+  members = { user1: 'Lucas', user2: 'Veronica' },
+}) {
+  const activeUser = financialContext?.activeMember || members.user1;
+  const prompt = `Ouça atentamente este áudio gravado por um dos membros do casal (${members.user1} ou ${members.user2}).
+1. Responda com simpatia e naturalidade ao que a pessoa disse.
+2. Se a pessoa relatou um gasto ou receita (ex: "FINN, almocei com a Veronica e paguei 60 reais"), confirme o lançamento com carinho e adicione no FINAL da mensagem:
+[TRANSACTION: {"description": "Descrição do gasto", "amount": 60.00, "type": "expense", "category": "alimentacao", "author": "${activeUser}"}]
+3. Se a pessoa apenas fez uma pergunta por voz, responda à dúvida financeira dela naturalmente sem a tag de transação.`;
 
   return await callGeminiApi({
     parts: [

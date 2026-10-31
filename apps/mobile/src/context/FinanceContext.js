@@ -49,14 +49,14 @@ export function FinanceProvider({ children }) {
   const [transactions, setTransactions] = useState([]);
   const [accounts, setAccounts] = useState(INITIAL_ACCOUNTS);
   const [cards, setCards] = useState(INITIAL_CARDS);
-  const [activeMember, setActiveMember] = useState('Casal'); // 'Casal' | 'Henrique' | 'Esposa'
-  const [members, setMembers] = useState({ user1: 'Henrique', user2: 'Esposa' });
+  const [activeMember, setActiveMember] = useState('Casal'); // 'Casal' | 'Lucas' | 'Veronica'
+  const [members, setMembers] = useState({ user1: 'Lucas', user2: 'Veronica' });
   const [loggedInUser, setLoggedInUser] = useState(null);
   const [aiChat, setAiChat] = useState([
     {
       id: 'welcome',
       sender: 'ai',
-      text: 'Olá! Sou o FINN AI, o assistente financeiro de vocês dois com inteligência artificial do Google. Você pode digitar mensagens, enviar prints de comprovantes, PDFs de contas ou mandar áudio com seus gastos!',
+      text: 'Olá! Sou o FINN AI, o consultor financeiro com inteligência artificial de vocês dois. Posso tirar dúvidas sobre o orçamento familiar, sugerir como economizar ou registrar despesas quando vocês enviarem mensagens, prints de comprovantes ou áudio de voz!',
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     },
   ]);
@@ -98,9 +98,9 @@ export function FinanceProvider({ children }) {
       id: txData.id || 'tx-' + Date.now(),
       description: txData.description,
       amount: parseFloat(txData.amount) || 0,
-      type: txData.type, // 'expense' | 'income'
+      type: txData.type || 'expense', // 'expense' | 'income'
       category: txData.category || 'outros',
-      author: txData.author || (loggedInUser?.name || activeMember),
+      author: txData.author || (loggedInUser?.name || activeMember === 'Casal' ? members.user1 : activeMember),
       date: txData.date || new Date().toISOString().split('T')[0],
       accountId: txData.accountId || accounts[0]?.id,
     };
@@ -142,9 +142,7 @@ export function FinanceProvider({ children }) {
       setAccounts((prev) => {
         const updated = prev.map((acc) => {
           if (acc.id === updatedTx.accountId) {
-            // Remove o efeito antigo
             const oldDelta = oldTx.type === 'income' ? -oldTx.amount : oldTx.amount;
-            // Aplica o novo efeito
             const newDelta = updatedTx.type === 'income' ? updatedTx.amount : -updatedTx.amount;
             return { ...acc, balance: (acc.balance || 0) + oldDelta + newDelta };
           }
@@ -155,11 +153,10 @@ export function FinanceProvider({ children }) {
       });
     }
 
-    // Sincroniza com Appwrite
     syncTransactionToAppwrite(updatedTx).catch(() => {});
   };
 
-  // Remover transação (requisito explícito)
+  // Remover transação
   const removeTransaction = async (id) => {
     const target = transactions.find((t) => t.id === id);
     const nextList = transactions.filter((t) => t.id !== id);
@@ -201,7 +198,7 @@ export function FinanceProvider({ children }) {
       {
         id: 'reset',
         sender: 'ai',
-        text: 'Histórico zerado com sucesso! Agora você e sua esposa podem começar o planejamento limpo.',
+        text: 'Histórico zerado com sucesso! Agora você e seu cônjuge podem começar o planejamento limpo.',
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       },
     ]);
@@ -240,7 +237,7 @@ export function FinanceProvider({ children }) {
   const totalBalance = accounts.reduce((sum, a) => sum + (a.balance || 0), 0);
 
   // ==========================================
-  // PROCESSAMENTO DE IA MULTIMODAL (GOOGLE GEMINI)
+  // PROCESSAMENTO DE IA CONVERSACIONAL (GOOGLE GEMINI)
   // ==========================================
   const sendAiMessage = async (userText) => {
     if (!userText.trim()) return;
@@ -255,76 +252,61 @@ export function FinanceProvider({ children }) {
     const nextChat = [...aiChat, userMsg];
     setAiChat(nextChat);
 
-    const finContext = { totalBalance, totalIncome, totalExpense, activeMember };
+    const finContext = {
+      totalBalance,
+      totalIncome,
+      totalExpense,
+      activeMember,
+      accounts,
+      recentTransactions: transactions.slice(0, 5),
+    };
+
     let aiReplyText = '';
     let draftTx = null;
 
     try {
-      const apiKey = await getGeminiApiKey();
+      const rawResponse = await sendTextMessageToGemini({
+        message: userText,
+        chatHistory: aiChat,
+        financialContext: finContext,
+        members,
+      });
 
-      if (apiKey) {
-        // Usa a API do Google Gemini
-        const rawResponse = await sendTextMessageToGemini({
-          message: userText,
-          financialContext: finContext,
-        });
+      // Extrai tag de transação estruturada gerada naturalmente pela IA
+      let cleanReply = rawResponse;
+      const txMatch = rawResponse.match(/\[TRANSACTION:\s*(\{[\s\S]*?\})\]/i);
 
-        // Verifica se o Gemini retornou JSON estruturado de lançamento
-        const jsonMatch = rawResponse.match(/```json\s*([\s\S]*?)\s*```/) || rawResponse.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          try {
-            const parsed = JSON.parse(jsonMatch[1] || jsonMatch[0]);
-            if (parsed.action === 'TRANSACTION_DETECTED' && parsed.data) {
-              draftTx = await addTransaction({
-                description: parsed.data.description,
-                amount: parsed.data.amount,
-                type: parsed.data.type || 'expense',
-                category: parsed.data.category || 'outros',
-                author: loggedInUser?.name || activeMember,
-              });
-              aiReplyText = parsed.reply || `✅ Lançado: R$ ${parsed.data.amount.toFixed(2)} em ${parsed.data.description}!`;
-            } else {
-              aiReplyText = parsed.reply || rawResponse;
-            }
-          } catch {
-            aiReplyText = rawResponse;
+      if (txMatch) {
+        try {
+          const parsed = JSON.parse(txMatch[1]);
+          if (parsed.amount) {
+            draftTx = await addTransaction({
+              description: parsed.description || 'Lançamento',
+              amount: parseFloat(parsed.amount) || 0,
+              type: parsed.type || 'expense',
+              category: parsed.category || 'outros',
+              author: parsed.author || (loggedInUser?.name || activeMember === 'Casal' ? members.user1 : activeMember),
+            });
           }
-        } else {
-          aiReplyText = rawResponse;
-        }
-      } else {
-        // Fallback local caso chave ainda não tenha sido colada em Configurações
-        const lower = userText.toLowerCase();
-        const expenseRegex = /(?:gastei|comprei|paguei|lan[çc]ar|despesa de)\s*(?:r\$)?\s*(\d+(?:[.,]\d+)?)\s*(?:em|no|na|de|com)?\s*(.*)/i;
-        const match = userText.match(expenseRegex);
-
-        if (match) {
-          const val = parseFloat(match[1].replace(',', '.'));
-          const desc = match[2]?.trim() || 'Despesa rápida';
-
-          let cat = 'alimentacao';
-          if (desc.includes('uber') || desc.includes('gasolina') || desc.includes('combustivel')) cat = 'transporte';
-          else if (desc.includes('farmacia') || desc.includes('remedio')) cat = 'saude';
-          else if (desc.includes('luz') || desc.includes('agua') || desc.includes('internet') || desc.includes('aluguel')) cat = 'moradia';
-          else if (desc.includes('cinema') || desc.includes('bar') || desc.includes('restaurante')) cat = 'lazer';
-
-          draftTx = await addTransaction({
-            description: desc.charAt(0).toUpperCase() + desc.slice(1),
-            amount: val,
-            type: 'expense',
-            category: cat,
-            author: loggedInUser?.name || activeMember,
-          });
-
-          aiReplyText = `✅ Anotado! Registrei uma despesa de R$ ${val.toFixed(2).replace('.', ',')} em "${desc}" para ${loggedInUser?.name || activeMember}.\n\n*(Dica: Conecte sua chave do Google Gemini em Configurações para respostas com IA multimodal completa!)*`;
-        } else if (lower.includes('saldo') || lower.includes('quanto temos')) {
-          aiReplyText = `💰 Resumo financeiro do casal:\n• Saldo total em contas: R$ ${totalBalance.toFixed(2).replace('.', ',')}\n• Receitas do mês: R$ ${totalIncome.toFixed(2).replace('.', ',')}\n• Despesas do mês: R$ ${totalExpense.toFixed(2).replace('.', ',')}\n• Sobra líquida: R$ ${(totalIncome - totalExpense).toFixed(2).replace('.', ',')}`;
-        } else {
-          aiReplyText = `Entendido! Você pode me dizer algo como "Gastei 50 no almoço" para eu anotar direto, enviar fotos de comprovantes ou áudio!`;
+          cleanReply = rawResponse.replace(txMatch[0], '').trim();
+        } catch (e) {
+          console.warn('Erro ao ler tag da transação:', e);
         }
       }
+
+      aiReplyText = cleanReply || rawResponse;
     } catch (err) {
-      aiReplyText = `Desculpe, tive uma instabilidade: ${err.message}. Mas suas finanças continuam seguras!`;
+      if (err.message?.includes('CHAVE_REVOGADA')) {
+        aiReplyText =
+          '⚠️ **Chave da API Revogada pelo Google**\n\n' +
+          'A sua chave de API anterior foi desativada pelo Google por ter sido identificada publicamente no repositório.\n\n' +
+          '**Como reativar o FINN em 1 minuto:**\n' +
+          '1. Acesse **aistudio.google.com/app/apikey** e gere uma nova chave gratuita.\n' +
+          '2. Cole ela na aba **Configurações > Chave Gemini** no app.\n\n' +
+          'Assim que colar, o FINN voltará a conversar naturalmente e analisar seus comprovantes!';
+      } else {
+        aiReplyText = `Ops! Não consegui conectar com o Google Gemini (${err.message}). Por favor, confira sua chave em Configurações.`;
+      }
     }
 
     const aiMsg = {
@@ -345,7 +327,7 @@ export function FinanceProvider({ children }) {
     const userMsg = {
       id: 'msg-' + Date.now(),
       sender: 'user',
-      text: '📷 [Comprovante / Print anexado]',
+      text: '📷 [Comprovante / Print enviado]',
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     };
 
@@ -356,37 +338,40 @@ export function FinanceProvider({ children }) {
     let draftTx = null;
 
     try {
-      const apiKey = await getGeminiApiKey();
-      if (!apiKey) {
-        aiReplyText = 'Para analisar comprovantes e prints, por favor informe sua chave do Google Gemini na aba de Configurações.';
-      } else {
-        const raw = await analyzeReceiptImage({
-          base64Image,
-          mimeType,
-          financialContext: { totalBalance, totalIncome, totalExpense, activeMember },
-        });
+      const raw = await analyzeReceiptImage({
+        base64Image,
+        mimeType,
+        financialContext: { totalBalance, totalIncome, totalExpense, activeMember },
+        members,
+      });
 
-        const jsonMatch = raw.match(/```json\s*([\s\S]*?)\s*```/) || raw.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          const parsed = JSON.parse(jsonMatch[1] || jsonMatch[0]);
-          if (parsed.action === 'TRANSACTION_DETECTED' && parsed.data) {
+      let cleanReply = raw;
+      const txMatch = raw.match(/\[TRANSACTION:\s*(\{[\s\S]*?\})\]/i);
+      if (txMatch) {
+        try {
+          const parsed = JSON.parse(txMatch[1]);
+          if (parsed.amount) {
             draftTx = await addTransaction({
-              description: parsed.data.description,
-              amount: parsed.data.amount,
-              type: parsed.data.type || 'expense',
-              category: parsed.data.category || 'outros',
-              author: loggedInUser?.name || activeMember,
+              description: parsed.description || 'Comprovante',
+              amount: parseFloat(parsed.amount) || 0,
+              type: parsed.type || 'expense',
+              category: parsed.category || 'outros',
+              author: parsed.author || (loggedInUser?.name || activeMember === 'Casal' ? members.user1 : activeMember),
             });
-            aiReplyText = `🧾 Comprovante analisado pelo Google Gemini!\n• Estabelecimento: ${parsed.data.description}\n• Valor: R$ ${parsed.data.amount.toFixed(2).replace('.', ',')}\n• Categoria: ${parsed.data.category}\n\n✅ Lançamento adicionado ao extrato do casal!`;
-          } else {
-            aiReplyText = parsed.reply || raw;
           }
-        } else {
-          aiReplyText = raw;
+          cleanReply = raw.replace(txMatch[0], '').trim();
+        } catch (e) {
+          console.warn('Erro ao ler tag do comprovante:', e);
         }
       }
+
+      aiReplyText = cleanReply || raw;
     } catch (e) {
-      aiReplyText = `Erro ao ler comprovante com o Gemini: ${e.message}`;
+      if (e.message?.includes('CHAVE_REVOGADA')) {
+        aiReplyText = '⚠️ Chave da API revogada pelo Google. Por favor, gere uma nova em aistudio.google.com e cole em Configurações.';
+      } else {
+        aiReplyText = `Erro ao ler comprovante com o Gemini: ${e.message}`;
+      }
     }
 
     const aiMsg = {
@@ -407,7 +392,7 @@ export function FinanceProvider({ children }) {
     const userMsg = {
       id: 'msg-' + Date.now(),
       sender: 'user',
-      text: '📄 [Documento PDF / Boleto anexado]',
+      text: '📄 [Boleto / Nota Fiscal anexada]',
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     };
 
@@ -418,36 +403,35 @@ export function FinanceProvider({ children }) {
     let draftTx = null;
 
     try {
-      const apiKey = await getGeminiApiKey();
-      if (!apiKey) {
-        aiReplyText = 'Para analisar faturas em PDF, configure sua chave do Google Gemini em Configurações.';
-      } else {
-        const raw = await analyzeInvoicePdf({
-          base64Pdf,
-          financialContext: { totalBalance, totalIncome, totalExpense, activeMember },
-        });
+      const raw = await analyzeInvoicePdf({
+        base64Pdf,
+        financialContext: { totalBalance, totalIncome, totalExpense, activeMember },
+        members,
+      });
 
-        const jsonMatch = raw.match(/```json\s*([\s\S]*?)\s*```/) || raw.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          const parsed = JSON.parse(jsonMatch[1] || jsonMatch[0]);
-          if (parsed.action === 'TRANSACTION_DETECTED' && parsed.data) {
+      let cleanReply = raw;
+      const txMatch = raw.match(/\[TRANSACTION:\s*(\{[\s\S]*?\})\]/i);
+      if (txMatch) {
+        try {
+          const parsed = JSON.parse(txMatch[1]);
+          if (parsed.amount) {
             draftTx = await addTransaction({
-              description: parsed.data.description,
-              amount: parsed.data.amount,
-              type: parsed.data.type || 'expense',
-              category: parsed.data.category || 'moradia',
-              author: loggedInUser?.name || activeMember,
+              description: parsed.description || 'Boleto / Fatura',
+              amount: parseFloat(parsed.amount) || 0,
+              type: parsed.type || 'expense',
+              category: parsed.category || 'moradia',
+              author: parsed.author || (loggedInUser?.name || activeMember === 'Casal' ? members.user1 : activeMember),
             });
-            aiReplyText = `📑 Boleto / Fatura lida com sucesso!\n• Cedente: ${parsed.data.description}\n• Valor: R$ ${parsed.data.amount.toFixed(2).replace('.', ',')}\n\n✅ Lançado automaticamente para controle do casal!`;
-          } else {
-            aiReplyText = parsed.reply || raw;
           }
-        } else {
-          aiReplyText = raw;
+          cleanReply = raw.replace(txMatch[0], '').trim();
+        } catch (e) {
+          console.warn('Erro ao ler tag do boleto:', e);
         }
       }
+
+      aiReplyText = cleanReply || raw;
     } catch (e) {
-      aiReplyText = `Erro ao ler PDF com o Gemini: ${e.message}`;
+      aiReplyText = `Erro ao ler documento: ${e.message}`;
     }
 
     const aiMsg = {
@@ -468,7 +452,7 @@ export function FinanceProvider({ children }) {
     const userMsg = {
       id: 'msg-' + Date.now(),
       sender: 'user',
-      text: '🎙️ [Mensagem de Voz Gravada]',
+      text: '🎙️ [Áudio de Voz Enviado]',
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     };
 
@@ -479,37 +463,34 @@ export function FinanceProvider({ children }) {
     let draftTx = null;
 
     try {
-      const apiKey = await getGeminiApiKey();
-      if (!apiKey) {
-        aiReplyText = 'Para processar mensagens de voz com a IA do Google Gemini, adicione a sua chave nas Configurações.';
-      } else {
-        const raw = await analyzeVoiceAudio({
-          base64Audio,
-          mimeType,
-          financialContext: { totalBalance, totalIncome, totalExpense, activeMember },
-        });
+      const raw = await analyzeVoiceAudio({
+        base64Audio,
+        mimeType,
+        financialContext: { totalBalance, totalIncome, totalExpense, activeMember },
+        members,
+      });
 
-        const jsonMatch = raw.match(/```json\s*([\s\S]*?)\s*```/) || raw.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          const parsed = JSON.parse(jsonMatch[1] || jsonMatch[0]);
-          const transcript = parsed.transcription ? `🗣️ *"${parsed.transcription}"*\n\n` : '';
-
-          if (parsed.action === 'TRANSACTION_DETECTED' && parsed.data) {
+      let cleanReply = raw;
+      const txMatch = raw.match(/\[TRANSACTION:\s*(\{[\s\S]*?\})\]/i);
+      if (txMatch) {
+        try {
+          const parsed = JSON.parse(txMatch[1]);
+          if (parsed.amount) {
             draftTx = await addTransaction({
-              description: parsed.data.description,
-              amount: parsed.data.amount,
-              type: parsed.data.type || 'expense',
-              category: parsed.data.category || 'outros',
-              author: loggedInUser?.name || activeMember,
+              description: parsed.description || 'Gasto por Voz',
+              amount: parseFloat(parsed.amount) || 0,
+              type: parsed.type || 'expense',
+              category: parsed.category || 'outros',
+              author: parsed.author || (loggedInUser?.name || activeMember === 'Casal' ? members.user1 : activeMember),
             });
-            aiReplyText = `${transcript}✅ Entendi perfeitamente e registrei:\n• ${parsed.data.description}: R$ ${parsed.data.amount.toFixed(2).replace('.', ',')}`;
-          } else {
-            aiReplyText = `${transcript}${parsed.reply || raw}`;
           }
-        } else {
-          aiReplyText = raw;
+          cleanReply = raw.replace(txMatch[0], '').trim();
+        } catch (e) {
+          console.warn('Erro ao ler tag do áudio:', e);
         }
       }
+
+      aiReplyText = cleanReply || raw;
     } catch (e) {
       aiReplyText = `Erro ao processar áudio: ${e.message}`;
     }

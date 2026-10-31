@@ -22,7 +22,61 @@ import { Audio } from 'expo-av';
 import { COLORS } from '../theme/colors';
 import { useFinance } from '../context/FinanceContext';
 
-export default function FinnAIScreen() {
+function FormattedMessage({ text, isUser, navigation }) {
+  if (isUser) {
+    return <Text style={[styles.bubbleText, styles.userBubbleText]}>{text}</Text>;
+  }
+
+  const isKeyWarning = text.includes('Chave') || text.includes('aistudio.google.com') || text.includes('Revogada');
+  const paragraphs = text.split('\n');
+
+  return (
+    <View style={styles.formattedWrap}>
+      {paragraphs.map((paragraph, pIdx) => {
+        if (!paragraph.trim()) {
+          return <View key={pIdx} style={{ height: 6 }} />;
+        }
+
+        const parts = paragraph.split(/(\*\*.*?\*\*)/g);
+        const isBullet = paragraph.trim().startsWith('•') || paragraph.trim().startsWith('-');
+
+        return (
+          <Text
+            key={pIdx}
+            style={[
+              styles.bubbleText,
+              styles.aiBubbleText,
+              isBullet && styles.bulletText,
+            ]}
+          >
+            {parts.map((part, partIdx) => {
+              if (part.startsWith('**') && part.endsWith('**')) {
+                return (
+                  <Text key={partIdx} style={styles.boldAiText}>
+                    {part.slice(2, -2)}
+                  </Text>
+                );
+              }
+              return part;
+            })}
+          </Text>
+        );
+      })}
+
+      {isKeyWarning && navigation && (
+        <TouchableOpacity
+          style={styles.keyWarningActionBtn}
+          onPress={() => navigation.navigate('Settings')}
+        >
+          <Ionicons name="key-outline" size={15} color={COLORS.primary} />
+          <Text style={styles.keyWarningActionText}>Ir para Configurações e Colar Chave</Text>
+        </TouchableOpacity>
+      )}
+    </View>
+  );
+}
+
+export default function FinnAIScreen({ navigation }) {
   const insets = useSafeAreaInsets();
   const {
     aiChat,
@@ -63,7 +117,7 @@ export default function FinnAIScreen() {
     if (!text.trim() || analyzing) return;
     setInputText('');
     setAnalyzing(true);
-    setAnalyzingStatus('Google Gemini pensando...');
+    setAnalyzingStatus('FINN pensando...');
     try {
       await sendAiMessage(text.trim());
     } finally {
@@ -112,9 +166,8 @@ export default function FinnAIScreen() {
       if (!result.canceled && result.assets && result.assets.length > 0) {
         const asset = result.assets[0];
         setAnalyzing(true);
-        setAnalyzingStatus('Lendo fatura / boleto em PDF...');
+        setAnalyzingStatus('Lendo boleto / fatura em PDF...');
 
-        // Converte o arquivo PDF em base64
         const base64 = await FileSystem.readAsStringAsync(asset.uri, {
           encoding: FileSystem.EncodingType.Base64,
         });
@@ -162,7 +215,7 @@ export default function FinnAIScreen() {
     try {
       clearInterval(timerRef.current);
       setAnalyzing(true);
-      setAnalyzingStatus('Ouvindo e transcrevendo áudio com o Gemini...');
+      setAnalyzingStatus('Ouvindo áudio com o Google Gemini...');
 
       await recording.stopAndUnloadAsync();
       const uri = recording.getURI();
@@ -187,18 +240,16 @@ export default function FinnAIScreen() {
     try {
       clearInterval(timerRef.current);
       await recording.stopAndUnloadAsync();
-    } catch {
-      // cancel silently
-    }
+    } catch {}
     setRecording(null);
     setRecordingDuration(0);
   };
 
   const quickPrompts = [
-    'Gastei 55 no mercado',
     'Qual o nosso saldo atual?',
-    'Como podemos economizar?',
-    'Lançar 120 de energia',
+    'Gastei 55 no mercado',
+    'O que acha de pedirmos pizza?',
+    'Como podemos economizar esse mês?',
   ];
 
   return (
@@ -220,10 +271,17 @@ export default function FinnAIScreen() {
               </View>
             </View>
             <Text style={styles.headerSubtitle}>
-              Assistente Multimodal ({loggedInUser?.name || members.user1} & {members.user2})
+              Assistente do Casal ({members.user1} & {members.user2})
             </Text>
           </View>
         </View>
+
+        <TouchableOpacity
+          style={styles.settingsMiniBtn}
+          onPress={() => navigation?.navigate('Settings')}
+        >
+          <Ionicons name="settings-outline" size={18} color={COLORS.textSecondary} />
+        </TouchableOpacity>
       </View>
 
       {/* CHAT MESSAGES SCROLL */}
@@ -246,9 +304,7 @@ export default function FinnAIScreen() {
                 </View>
               )}
               <View style={[styles.bubble, isUser ? styles.userBubble : styles.aiBubble]}>
-                <Text style={[styles.bubbleText, isUser ? styles.userBubbleText : styles.aiBubbleText]}>
-                  {msg.text}
-                </Text>
+                <FormattedMessage text={msg.text} isUser={isUser} navigation={navigation} />
 
                 {/* Card de Transação Lançada Automaticamente */}
                 {msg.transaction && (
@@ -318,17 +374,17 @@ export default function FinnAIScreen() {
           {/* BARRA DE ATALHOS MULTIMODAIS (PRINT, PDF, ÁUDIO) */}
           <View style={styles.multimodalBar}>
             <TouchableOpacity style={styles.multimodalBtn} onPress={handlePickReceipt} disabled={analyzing}>
-              <Ionicons name="camera-outline" size={18} color={COLORS.primary} />
+              <Ionicons name="camera-outline" size={17} color={COLORS.primary} />
               <Text style={styles.multimodalBtnText}>Comprovante</Text>
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.multimodalBtn} onPress={handlePickPdf} disabled={analyzing}>
-              <Ionicons name="document-text-outline" size={18} color="#3B82F6" />
+              <Ionicons name="document-text-outline" size={17} color="#3B82F6" />
               <Text style={styles.multimodalBtnText}>Boleto / PDF</Text>
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.multimodalBtn} onPress={startRecording} disabled={analyzing}>
-              <Ionicons name="mic-outline" size={18} color="#EC4899" />
+              <Ionicons name="mic-outline" size={17} color="#EC4899" />
               <Text style={styles.multimodalBtnText}>Gravar Áudio</Text>
             </TouchableOpacity>
           </View>
@@ -362,7 +418,7 @@ export default function FinnAIScreen() {
             <View style={[styles.inputBar, { paddingBottom: Math.max(insets.bottom, 12) }]}>
               <TextInput
                 style={styles.textInput}
-                placeholder='Fale ou peça ao FINN (ex: "Gastei 45 no almoço")...'
+                placeholder={`Fale com o FINN (${members.user1} ou ${members.user2})...`}
                 placeholderTextColor={COLORS.textMuted}
                 value={inputText}
                 onChangeText={setInputText}
@@ -450,6 +506,16 @@ const styles = StyleSheet.create({
     fontSize: 11,
     marginTop: 2,
   },
+  settingsMiniBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    backgroundColor: COLORS.surfaceLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.surfaceBorder,
+  },
   chatScroll: {
     flex: 1,
   },
@@ -495,6 +561,9 @@ const styles = StyleSheet.create({
     borderColor: COLORS.surfaceBorder,
     borderBottomLeftRadius: 4,
   },
+  formattedWrap: {
+    gap: 4,
+  },
   bubbleText: {
     fontSize: 14,
     lineHeight: 20,
@@ -506,9 +575,33 @@ const styles = StyleSheet.create({
   aiBubbleText: {
     color: COLORS.text,
   },
+  boldAiText: {
+    fontWeight: '800',
+    color: COLORS.white,
+  },
+  bulletText: {
+    paddingLeft: 6,
+  },
+  keyWarningActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: COLORS.primaryLight,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 10,
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.3)',
+  },
+  keyWarningActionText: {
+    color: COLORS.primary,
+    fontSize: 12,
+    fontWeight: '700',
+  },
   timeText: {
     fontSize: 10,
-    marginTop: 4,
+    marginTop: 6,
   },
   userTimeText: {
     color: 'rgba(255,255,255,0.7)',
