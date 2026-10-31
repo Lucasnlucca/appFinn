@@ -15,6 +15,7 @@ import TransactionsScreen from './src/screens/TransactionsScreen';
 import PlanningScreen from './src/screens/PlanningScreen';
 import FinnAIScreen from './src/screens/FinnAIScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
+import CardsAccountsScreen from './src/screens/CardsAccountsScreen';
 import LoginScreen from './src/screens/LoginScreen';
 import AddTransactionModal from './src/components/AddTransactionModal';
 
@@ -81,7 +82,7 @@ function MainTabs({ navigation }) {
               iconName = focused ? 'receipt' : 'receipt-outline';
             } else if (route.name === 'Planning') {
               iconName = focused ? 'grid' : 'grid-outline';
-            } else if (route.name === 'Settings') {
+            } else if (route.name === 'Mais' || route.name === 'Settings') {
               iconName = focused ? 'menu' : 'menu-outline';
             }
 
@@ -124,7 +125,7 @@ function MainTabs({ navigation }) {
 
         {/* 5. Mais */}
         <Tab.Screen
-          name="Settings"
+          name="Mais"
           component={SettingsScreen}
           options={{ tabBarLabel: 'Mais' }}
         />
@@ -162,6 +163,8 @@ function MainAppContent() {
     <NavigationContainer>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         <Stack.Screen name="MainTabs" component={MainTabs} />
+        <Stack.Screen name="Settings" component={SettingsScreen} />
+        <Stack.Screen name="CardsAccounts" component={CardsAccountsScreen} />
         <Stack.Screen
           name="FinnAI"
           component={FinnAIScreen}

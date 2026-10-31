@@ -129,7 +129,7 @@ export default function HomeScreen({ navigation }) {
 
           <TouchableOpacity
             style={styles.avatarCircle}
-            onPress={() => navigation.navigate('Settings')}
+            onPress={() => navigation.navigate('Mais')}
           >
             <Text style={styles.avatarText}>
               {currentUserName.charAt(0).toUpperCase()}
