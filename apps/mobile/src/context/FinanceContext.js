@@ -623,6 +623,7 @@ Responda de forma clara, motivadora e estruturada em tópicos!`;
     const finalChat = [...nextChat, aiMsg];
     setAiChat(finalChat);
     await AsyncStorage.setItem(STORAGE_KEYS.AI_CHAT, JSON.stringify(finalChat));
+    return { text: aiReplyText, transaction: draftTx };
   };
 
   const processReceiptMedia = async (base64Image, mimeType = 'image/jpeg') => {
@@ -683,6 +684,7 @@ Responda de forma clara, motivadora e estruturada em tópicos!`;
     const finalChat = [...nextChat, aiMsg];
     setAiChat(finalChat);
     await AsyncStorage.setItem(STORAGE_KEYS.AI_CHAT, JSON.stringify(finalChat));
+    return { text: aiReplyText, transaction: draftTx };
   };
 
   const processPdfInvoice = async (base64Pdf) => {
@@ -742,6 +744,7 @@ Responda de forma clara, motivadora e estruturada em tópicos!`;
     const finalChat = [...nextChat, aiMsg];
     setAiChat(finalChat);
     await AsyncStorage.setItem(STORAGE_KEYS.AI_CHAT, JSON.stringify(finalChat));
+    return { text: aiReplyText, transaction: draftTx };
   };
 
   const processAudioMessage = async (base64Audio, mimeType = 'audio/m4a') => {
@@ -802,6 +805,7 @@ Responda de forma clara, motivadora e estruturada em tópicos!`;
     const finalChat = [...nextChat, aiMsg];
     setAiChat(finalChat);
     await AsyncStorage.setItem(STORAGE_KEYS.AI_CHAT, JSON.stringify(finalChat));
+    return { text: aiReplyText, transaction: draftTx };
   };
 
   return (

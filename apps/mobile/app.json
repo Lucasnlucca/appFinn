@@ -9,14 +9,20 @@
     "primaryColor": "#10B981",
     "backgroundColor": "#0B0F19",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "FINN precisa do microfone para gravar áudios estilo WhatsApp e conversar por voz com a IA financeira."
+      }
     },
     "android": {
       "package": "com.finnai.app",
       "adaptiveIcon": {
         "backgroundColor": "#0B0F19",
         "foregroundImage": "./assets/android-icon-foreground.png"
-      }
+      },
+      "permissions": [
+        "RECORD_AUDIO"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
