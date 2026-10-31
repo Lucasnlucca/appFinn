@@ -57,9 +57,9 @@ const INITIAL_COFRINHOS = [
 export const CATEGORIES = [
   { id: 'sem_categoria', label: 'Sem categoria', icon: 'help-circle-outline', emoji: '✓', color: '#94A3B8', budget: 300.00 },
   { id: 'alimentacao', label: 'Alimentação', icon: 'restaurant-outline', emoji: '🍔', color: '#F97316', budget: 1200.00 },
-  { id: 'assinaturas', label: 'Assinaturas', icon: 'film-outline', emoji: '🎬', color: '#8B5CF6', budget: 250.00 },
+  { id: 'assinaturas', label: 'Assinaturas', icon: 'repeat-outline', emoji: '🔁', color: '#8B5CF6', budget: 250.00 },
   { id: 'educacao', label: 'Educação', icon: 'school-outline', emoji: '📚', color: '#EC4899', budget: 500.00 },
-  { id: 'financiamento', label: 'Financiamento', icon: 'pricetag-outline', emoji: '🏷️', color: '#EAB308', budget: 1500.00 },
+  { id: 'financiamento', label: 'Financiamento', icon: 'card-outline', emoji: '💳', color: '#EAB308', budget: 1500.00 },
   { id: 'lazer', label: 'Lazer', icon: 'game-controller-outline', emoji: '🎮', color: '#10B981', budget: 400.00 },
   { id: 'moradia', label: 'Moradia', icon: 'home-outline', emoji: '🏠', color: '#3B82F6', budget: 2200.00 },
   { id: 'outros', label: 'Outros', icon: 'cube-outline', emoji: '📦', color: '#64748B', budget: 300.00 },
@@ -67,7 +67,7 @@ export const CATEGORIES = [
   { id: 'presentes', label: 'Presentes', icon: 'gift-outline', emoji: '🎁', color: '#F43F5E', budget: 200.00 },
   { id: 'receita', label: 'Receita', icon: 'cash-outline', emoji: '💰', color: '#10B981', budget: 0 },
   { id: 'saude', label: 'Saúde', icon: 'medkit-outline', emoji: '💊', color: '#EF4444', budget: 400.00 },
-  { id: 'transporte', label: 'Transporte', icon: 'car-outline', emoji: '🚕', color: '#06B6D4', budget: 600.00 },
+  { id: 'transporte', label: 'Transporte', icon: 'car-sport-outline', emoji: '🚗', color: '#06B6D4', budget: 600.00 },
   { id: 'vestuario', label: 'Vestuário', icon: 'shirt-outline', emoji: '👕', color: '#6366F1', budget: 350.00 },
   { id: 'viagem', label: 'Viagem', icon: 'airplane-outline', emoji: '✈️', color: '#14B8A6', budget: 800.00 },
 ];
@@ -543,6 +543,44 @@ Responda de forma clara, motivadora e estruturada em tópicos!`;
   // ==========================================
   // IA MULTIMODAL GEMINI
   // ==========================================
+  const parseAndRegisterAiTransactions = async (rawText, defaultAuthor) => {
+    if (!rawText) return { cleanText: '', transactions: [] };
+
+    const regex = /\[TRANSACTION:\s*(\{[\s\S]*?\})\]/gi;
+    const matches = [...rawText.matchAll(regex)];
+    const createdList = [];
+
+    for (const match of matches) {
+      try {
+        const jsonStr = match[1].replace(/\r?\n/g, ' ').trim();
+        const parsed = JSON.parse(jsonStr);
+        if (parsed && parsed.amount) {
+          const tx = await addTransaction({
+            description: parsed.description || 'Movimentação via IA',
+            amount: parseFloat(parsed.amount) || 0,
+            type: parsed.type === 'income' ? 'income' : 'expense',
+            category: parsed.category || 'outros',
+            author: parsed.author || defaultAuthor,
+          });
+          if (tx) createdList.push(tx);
+        }
+      } catch (err) {
+        console.warn('Erro ao processar tag TRANSACTION:', err);
+      }
+    }
+
+    const cleanText =
+      rawText.replace(/\[TRANSACTION:\s*\{[\s\S]*?\}\]/gi, '').trim() ||
+      (createdList.length > 0
+        ? `Prontinho! Registrei ${createdList.length === 1 ? 'o lançamento' : `os ${createdList.length} lançamentos`} no extrato.`
+        : rawText);
+
+    return {
+      cleanText,
+      transactions: createdList,
+    };
+  };
+
   const sendAiMessage = async (userText) => {
     if (!userText.trim()) return;
 
@@ -566,7 +604,7 @@ Responda de forma clara, motivadora e estruturada em tópicos!`;
     };
 
     let aiReplyText = '';
-    let draftTx = null;
+    let createdTxs = [];
 
     try {
       const rawResponse = await sendTextMessageToGemini({
@@ -576,28 +614,12 @@ Responda de forma clara, motivadora e estruturada em tópicos!`;
         members,
       });
 
-      let cleanReply = rawResponse;
-      const txMatch = rawResponse.match(/\[TRANSACTION:\s*(\{[\s\S]*?\})\]/i);
-
-      if (txMatch) {
-        try {
-          const parsed = JSON.parse(txMatch[1]);
-          if (parsed.amount) {
-            draftTx = await addTransaction({
-              description: parsed.description || 'Lançamento',
-              amount: parseFloat(parsed.amount) || 0,
-              type: parsed.type || 'expense',
-              category: parsed.category || 'outros',
-              author: parsed.author || (loggedInUser?.name || activeMember === 'Casal' ? members.user1 : activeMember),
-            });
-          }
-          cleanReply = rawResponse.replace(txMatch[0], '').trim();
-        } catch (e) {
-          console.warn('Erro ao ler tag da transação:', e);
-        }
-      }
-
-      aiReplyText = cleanReply || rawResponse;
+      const parsedResult = await parseAndRegisterAiTransactions(
+        rawResponse,
+        loggedInUser?.name || activeMember === 'Casal' ? members.user1 : activeMember
+      );
+      createdTxs = parsedResult.transactions;
+      aiReplyText = parsedResult.cleanText || rawResponse;
     } catch (err) {
       if (err.message?.includes('CHAVE_REVOGADA')) {
         aiReplyText =
@@ -617,13 +639,14 @@ Responda de forma clara, motivadora e estruturada em tópicos!`;
       sender: 'ai',
       text: aiReplyText,
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      transaction: draftTx,
+      transaction: createdTxs[0] || null,
+      transactions: createdTxs,
     };
 
     const finalChat = [...nextChat, aiMsg];
     setAiChat(finalChat);
     await AsyncStorage.setItem(STORAGE_KEYS.AI_CHAT, JSON.stringify(finalChat));
-    return { text: aiReplyText, transaction: draftTx };
+    return { text: aiReplyText, transaction: createdTxs[0] || null, transactions: createdTxs };
   };
 
   const processReceiptMedia = async (base64Image, mimeType = 'image/jpeg') => {
@@ -638,7 +661,7 @@ Responda de forma clara, motivadora e estruturada em tópicos!`;
     setAiChat(nextChat);
 
     let aiReplyText = '';
-    let draftTx = null;
+    let createdTxs = [];
 
     try {
       const raw = await analyzeReceiptImage({
@@ -648,27 +671,12 @@ Responda de forma clara, motivadora e estruturada em tópicos!`;
         members,
       });
 
-      let cleanReply = raw;
-      const txMatch = raw.match(/\[TRANSACTION:\s*(\{[\s\S]*?\})\]/i);
-      if (txMatch) {
-        try {
-          const parsed = JSON.parse(txMatch[1]);
-          if (parsed.amount) {
-            draftTx = await addTransaction({
-              description: parsed.description || 'Comprovante',
-              amount: parseFloat(parsed.amount) || 0,
-              type: parsed.type || 'expense',
-              category: parsed.category || 'outros',
-              author: parsed.author || (loggedInUser?.name || activeMember === 'Casal' ? members.user1 : activeMember),
-            });
-          }
-          cleanReply = raw.replace(txMatch[0], '').trim();
-        } catch (e) {
-          console.warn('Erro ao ler tag do comprovante:', e);
-        }
-      }
-
-      aiReplyText = cleanReply || raw;
+      const parsedResult = await parseAndRegisterAiTransactions(
+        raw,
+        loggedInUser?.name || (activeMember === 'Casal' ? members.user1 : activeMember)
+      );
+      createdTxs = parsedResult.transactions;
+      aiReplyText = parsedResult.cleanText || raw;
     } catch (e) {
       aiReplyText = `Erro ao ler comprovante: ${e.message}`;
     }
@@ -678,13 +686,14 @@ Responda de forma clara, motivadora e estruturada em tópicos!`;
       sender: 'ai',
       text: aiReplyText,
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      transaction: draftTx,
+      transaction: createdTxs[0] || null,
+      transactions: createdTxs,
     };
 
     const finalChat = [...nextChat, aiMsg];
     setAiChat(finalChat);
     await AsyncStorage.setItem(STORAGE_KEYS.AI_CHAT, JSON.stringify(finalChat));
-    return { text: aiReplyText, transaction: draftTx };
+    return { text: aiReplyText, transaction: createdTxs[0] || null, transactions: createdTxs };
   };
 
   const processPdfInvoice = async (base64Pdf) => {
@@ -699,7 +708,7 @@ Responda de forma clara, motivadora e estruturada em tópicos!`;
     setAiChat(nextChat);
 
     let aiReplyText = '';
-    let draftTx = null;
+    let createdTxs = [];
 
     try {
       const raw = await analyzeInvoicePdf({
@@ -708,27 +717,12 @@ Responda de forma clara, motivadora e estruturada em tópicos!`;
         members,
       });
 
-      let cleanReply = raw;
-      const txMatch = raw.match(/\[TRANSACTION:\s*(\{[\s\S]*?\})\]/i);
-      if (txMatch) {
-        try {
-          const parsed = JSON.parse(txMatch[1]);
-          if (parsed.amount) {
-            draftTx = await addTransaction({
-              description: parsed.description || 'Boleto / Fatura',
-              amount: parseFloat(parsed.amount) || 0,
-              type: parsed.type || 'expense',
-              category: parsed.category || 'moradia',
-              author: parsed.author || (loggedInUser?.name || activeMember === 'Casal' ? members.user1 : activeMember),
-            });
-          }
-          cleanReply = raw.replace(txMatch[0], '').trim();
-        } catch (e) {
-          console.warn('Erro ao ler tag do boleto:', e);
-        }
-      }
-
-      aiReplyText = cleanReply || raw;
+      const parsedResult = await parseAndRegisterAiTransactions(
+        raw,
+        loggedInUser?.name || (activeMember === 'Casal' ? members.user1 : activeMember)
+      );
+      createdTxs = parsedResult.transactions;
+      aiReplyText = parsedResult.cleanText || raw;
     } catch (e) {
       aiReplyText = `Erro ao ler documento: ${e.message}`;
     }
@@ -738,13 +732,14 @@ Responda de forma clara, motivadora e estruturada em tópicos!`;
       sender: 'ai',
       text: aiReplyText,
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      transaction: draftTx,
+      transaction: createdTxs[0] || null,
+      transactions: createdTxs,
     };
 
     const finalChat = [...nextChat, aiMsg];
     setAiChat(finalChat);
     await AsyncStorage.setItem(STORAGE_KEYS.AI_CHAT, JSON.stringify(finalChat));
-    return { text: aiReplyText, transaction: draftTx };
+    return { text: aiReplyText, transaction: createdTxs[0] || null, transactions: createdTxs };
   };
 
   const processAudioMessage = async (base64Audio, mimeType = 'audio/m4a') => {
@@ -759,7 +754,7 @@ Responda de forma clara, motivadora e estruturada em tópicos!`;
     setAiChat(nextChat);
 
     let aiReplyText = '';
-    let draftTx = null;
+    let createdTxs = [];
 
     try {
       const raw = await analyzeVoiceAudio({
@@ -769,27 +764,12 @@ Responda de forma clara, motivadora e estruturada em tópicos!`;
         members,
       });
 
-      let cleanReply = raw;
-      const txMatch = raw.match(/\[TRANSACTION:\s*(\{[\s\S]*?\})\]/i);
-      if (txMatch) {
-        try {
-          const parsed = JSON.parse(txMatch[1]);
-          if (parsed.amount) {
-            draftTx = await addTransaction({
-              description: parsed.description || 'Gasto por Voz',
-              amount: parseFloat(parsed.amount) || 0,
-              type: parsed.type || 'expense',
-              category: parsed.category || 'outros',
-              author: parsed.author || (loggedInUser?.name || activeMember === 'Casal' ? members.user1 : activeMember),
-            });
-          }
-          cleanReply = raw.replace(txMatch[0], '').trim();
-        } catch (e) {
-          console.warn('Erro ao ler tag do áudio:', e);
-        }
-      }
-
-      aiReplyText = cleanReply || raw;
+      const parsedResult = await parseAndRegisterAiTransactions(
+        raw,
+        loggedInUser?.name || (activeMember === 'Casal' ? members.user1 : activeMember)
+      );
+      createdTxs = parsedResult.transactions;
+      aiReplyText = parsedResult.cleanText || raw;
     } catch (e) {
       aiReplyText = `Erro ao processar áudio: ${e.message}`;
     }
@@ -799,13 +779,14 @@ Responda de forma clara, motivadora e estruturada em tópicos!`;
       sender: 'ai',
       text: aiReplyText,
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      transaction: draftTx,
+      transaction: createdTxs[0] || null,
+      transactions: createdTxs,
     };
 
     const finalChat = [...nextChat, aiMsg];
     setAiChat(finalChat);
     await AsyncStorage.setItem(STORAGE_KEYS.AI_CHAT, JSON.stringify(finalChat));
-    return { text: aiReplyText, transaction: draftTx };
+    return { text: aiReplyText, transaction: createdTxs[0] || null, transactions: createdTxs };
   };
 
   return (

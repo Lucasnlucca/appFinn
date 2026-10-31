@@ -69,8 +69,12 @@ function FormattedMessage({ text, isUser, navigation, onSpeak, isSpeaking }) {
     return <Text style={[styles.bubbleText, styles.userBubbleText]}>{text}</Text>;
   }
 
-  const isKeyWarning = text.includes('Chave') || text.includes('aistudio.google.com') || text.includes('Revogada');
-  const paragraphs = text.split('\n');
+  // Sanitiza qualquer tag [TRANSACTION: ...] caso venha no texto bruto ou do histórico
+  const safeText = (text || '').replace(/\[TRANSACTION:\s*\{[\s\S]*?\}\]/gi, '').trim();
+  const displayText = safeText || 'Lançamento registrado com sucesso!';
+
+  const isKeyWarning = displayText.includes('Chave') || displayText.includes('aistudio.google.com') || displayText.includes('Revogada');
+  const paragraphs = displayText.split('\n');
 
   return (
     <View style={styles.formattedWrap}>
@@ -623,30 +627,33 @@ export default function FinnAIScreen({ navigation }) {
                   isSpeaking={speakingMsgId === msg.id}
                 />
 
-                {/* Card de Transação Lançada Automaticamente */}
-                {msg.transaction && (
-                  <View style={styles.txCardInChat}>
+                {/* Cards de Transações Lançadas Automaticamente (suporta 1 ou múltiplos lançamentos) */}
+                {((msg.transactions && msg.transactions.length > 0)
+                  ? msg.transactions
+                  : (msg.transaction ? [msg.transaction] : [])
+                ).map((tx, txIdx) => (
+                  <View key={tx.id || `tx-${txIdx}`} style={styles.txCardInChat}>
                     <View style={styles.txCardHeader}>
                       <Ionicons
-                        name={msg.transaction.type === 'income' ? 'arrow-up-circle' : 'arrow-down-circle'}
+                        name={tx.type === 'income' ? 'arrow-up-circle' : 'arrow-down-circle'}
                         size={16}
-                        color={msg.transaction.type === 'income' ? COLORS.income : COLORS.expense}
+                        color={tx.type === 'income' ? COLORS.income : COLORS.expense}
                       />
-                      <Text style={styles.txCardDesc}>{msg.transaction.description}</Text>
+                      <Text style={styles.txCardDesc}>{tx.description}</Text>
                       <Text
                         style={[
                           styles.txCardAmount,
-                          { color: msg.transaction.type === 'income' ? COLORS.income : COLORS.expense },
+                          { color: tx.type === 'income' ? COLORS.income : COLORS.expense },
                         ]}
                       >
-                        R$ {msg.transaction.amount?.toFixed(2).replace('.', ',')}
+                        R$ {(tx.amount || 0).toFixed(2).replace('.', ',')}
                       </Text>
                     </View>
                     <Text style={styles.txCardSub}>
-                      Lançado para {msg.transaction.author} • Extrato atualizado
+                      Lançado para {tx.author || 'Casal'} • Extrato atualizado
                     </Text>
                   </View>
-                )}
+                ))}
 
                 <Text style={[styles.timeText, isUser ? styles.userTimeText : styles.aiTimeText]}>
                   {msg.time}

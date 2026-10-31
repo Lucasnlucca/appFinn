@@ -204,12 +204,13 @@ ${recentTxText || '• Nenhum lançamento recente'}
 REGRAS DE CONVERSAÇÃO COM IA:
 1. NUNCA responda como um robô que apenas cita comandos. Converse naturalmente sobre qualquer assunto: dúvidas do casal, planejamento de viagens, compras, conselhos de economia, dúvidas sobre parcelamentos, ou simplesmente troque uma ideia leve e construtiva sobre finanças.
 2. Quando perguntarem sobre o saldo, despesas ou quanto sobrou, use os dados reais acima com precisão e dê um conselho construtivo.
-3. REGISTRO DE DESPESA OU RECEITA:
-Quando o usuário disser que gastou ou recebeu dinheiro (ex: "gastei 45 no mercado", "paguei 80 de luz", "almocei com a Veronica 90 reais", "recebi 300 de freela"), você DEVE:
-   a) Responder primeiro com uma frase humana, simpática e amigável confirmando o que entendeu (ex: "Anotado! Já registrei o almoço de vocês dois. Aproveitaram? 😋").
-   b) No FINAL ABSOLUTO da sua mensagem, inclua a tag oculta estruturada:
+3. REGISTRO DE DESPESA OU RECEITA (INCLUINDO MÚLTIPLOS ITENS):
+Quando o usuário disser que gastou ou recebeu dinheiro (ex: "gastei 45 no mercado", "comprei bolo de 45 e show de 150", "recebi 300 de freela"), você DEVE:
+   a) Responder primeiro com uma frase humana, simpática e amigável confirmando o que entendeu.
+   b) No FINAL ABSOLUTO da sua mensagem, inclua a tag oculta estruturada (uma tag separada para cada gasto/receita, sem quebras de linha dentro do JSON):
    [TRANSACTION: {"description": "Nome da despesa/receita", "amount": 45.00, "type": "expense", "category": "alimentacao", "author": "${activeUser}"}]
-   (Categorias disponíveis: alimentacao, moradia, transporte, saude, lazer, salario, outros).
+   Se houver mais de um gasto relatado, adicione uma linha de tag [TRANSACTION: ...] para cada um!
+   (Categorias válidas: alimentacao, assinaturas, educacao, financiamento, lazer, moradia, outros, pets, presentes, receita, saude, transporte, vestuario, viagem).
 4. O aplicativo irá ler a tag [TRANSACTION: ...] automaticamente para atualizar o extrato bancário do casal e ocultar a tag do chat para o usuário ver apenas a sua conversa amigável.`;
 
   // Constrói o histórico multi-turn das últimas 8 mensagens para manter o contexto da conversa
@@ -312,10 +313,17 @@ export async function analyzeVoiceAudio({
 Ouça com total atenção este áudio gravado por um dos membros (${activeUser}):
 1. No início da sua resposta, transcreva o que você ouviu com clareza para que a pessoa confirme que você entendeu (ex: 🎙️ *Você disse: "..."*).
 2. Responda com simpatia e naturalidade ao que a pessoa falou.
-3. Se a pessoa relatou um gasto ou receita (ex: "gastei 45 reais na farmácia", "recebi 500 do freela"), confirme o lançamento com carinho e adicione OBRIGATORIAMENTE no FINAL da mensagem:
-[TRANSACTION: {"description": "Descrição do gasto/receita", "amount": 45.00, "type": "expense", "category": "alimentacao", "author": "${activeUser}"}]
-(Altere "expense" para "income" se for entrada, e categorize entre: moradia, alimentacao, educacao, transporte, lazer, outros).
-4. Se a pessoa apenas fez uma pergunta por voz (ex: "quanto sobrou do orçamento?", "podemos jantar fora?"), responda à dúvida financeira dela naturalmente e com clareza sem a tag de transação.`;
+3. ATENÇÃO A GASTOS E RECEITAS (INCLUINDO MÚLTIPLOS GASTOS):
+Se a pessoa relatou um ou mais gastos/receitas no áudio (por exemplo: comprou um bolo de R$ 45 e um ingresso de show de R$ 150):
+- Confirme amigavelmente cada gasto no texto.
+- No FINAL ABSOLUTO da mensagem, adicione OBRIGATORIAMENTE UMA LINHA DE TAG [TRANSACTION: ...] PARA CADA GASTO OU RECEITA, sem quebras de linha dentro do JSON.
+Exemplo:
+[TRANSACTION: {"description": "Bolo", "amount": 45.00, "type": "expense", "category": "alimentacao", "author": "${activeUser}"}]
+[TRANSACTION: {"description": "Ingresso do show", "amount": 150.00, "type": "expense", "category": "lazer", "author": "${activeUser}"}]
+
+Categorias válidas: alimentacao, assinaturas, educacao, financiamento, lazer, moradia, outros, pets, presentes, receita, saude, transporte, vestuario, viagem.
+(Altere "type" para "income" se for entrada de dinheiro ou freelance).
+4. Se a pessoa apenas fez uma pergunta por voz (ex: "quanto sobrou?", "posso gastar hoje?"), responda à dúvida financeira dela naturalmente e com clareza sem nenhuma tag de transação.`;
 
   return await callGeminiApi({
     parts: [
