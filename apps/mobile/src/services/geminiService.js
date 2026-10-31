@@ -308,11 +308,14 @@ export async function analyzeVoiceAudio({
   members = { user1: 'Lucas', user2: 'Veronica' },
 }) {
   const activeUser = financialContext?.activeMember || members.user1;
-  const prompt = `Ouça atentamente este áudio gravado por um dos membros do casal (${members.user1} ou ${members.user2}).
-1. Responda com simpatia e naturalidade ao que a pessoa disse.
-2. Se a pessoa relatou um gasto ou receita (ex: "FINN, almocei com a Veronica e paguei 60 reais"), confirme o lançamento com carinho e adicione no FINAL da mensagem:
-[TRANSACTION: {"description": "Descrição do gasto", "amount": 60.00, "type": "expense", "category": "alimentacao", "author": "${activeUser}"}]
-3. Se a pessoa apenas fez uma pergunta por voz, responda à dúvida financeira dela naturalmente sem a tag de transação.`;
+  const prompt = `Você é o FINN, o assistente financeiro pessoal e inteligente do casal ${members.user1} e ${members.user2}.
+Ouça com total atenção este áudio gravado por um dos membros (${activeUser}):
+1. No início da sua resposta, transcreva o que você ouviu com clareza para que a pessoa confirme que você entendeu (ex: 🎙️ *Você disse: "..."*).
+2. Responda com simpatia e naturalidade ao que a pessoa falou.
+3. Se a pessoa relatou um gasto ou receita (ex: "gastei 45 reais na farmácia", "recebi 500 do freela"), confirme o lançamento com carinho e adicione OBRIGATORIAMENTE no FINAL da mensagem:
+[TRANSACTION: {"description": "Descrição do gasto/receita", "amount": 45.00, "type": "expense", "category": "alimentacao", "author": "${activeUser}"}]
+(Altere "expense" para "income" se for entrada, e categorize entre: moradia, alimentacao, educacao, transporte, lazer, outros).
+4. Se a pessoa apenas fez uma pergunta por voz (ex: "quanto sobrou do orçamento?", "podemos jantar fora?"), responda à dúvida financeira dela naturalmente e com clareza sem a tag de transação.`;
 
   return await callGeminiApi({
     parts: [
