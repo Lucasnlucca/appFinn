@@ -19,7 +19,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
+import { File } from 'expo-file-system';
 import {
   useAudioRecorder,
   RecordingPresets,
@@ -27,6 +28,27 @@ import {
   setAudioModeAsync,
 } from 'expo-audio';
 import * as Speech from 'expo-speech';
+
+// Função segura para ler qualquer arquivo em Base64 compatível com Expo SDK 58 (legacy + new File API)
+async function readFileAsBase64(uri) {
+  try {
+    if (FileSystem?.readAsStringAsync) {
+      return await FileSystem.readAsStringAsync(uri, {
+        encoding: FileSystem.EncodingType?.Base64 || 'base64',
+      });
+    }
+  } catch (err) {
+    console.warn('readAsStringAsync legacy fallback:', err);
+  }
+
+  try {
+    const file = new File(uri);
+    return await file.base64();
+  } catch (err) {
+    console.warn('File.base64 failed:', err);
+    throw err;
+  }
+}
 
 import { COLORS } from '../theme/colors';
 import { useFinance } from '../context/FinanceContext';
@@ -305,10 +327,7 @@ export default function FinnAIScreen({ navigation }) {
         setAnalyzing(true);
         setAnalyzingStatus('Lendo boleto / fatura em PDF...');
 
-        const base64 = await FileSystem.readAsStringAsync(asset.uri, {
-          encoding: FileSystem.EncodingType.Base64,
-        });
-
+        const base64 = await readFileAsBase64(asset.uri);
         await processPdfInvoice(base64);
       }
     } catch (e) {
@@ -331,10 +350,7 @@ export default function FinnAIScreen({ navigation }) {
         setAnalyzing(true);
         setAnalyzingStatus('Ouvindo áudio com o Google Gemini...');
 
-        const base64Audio = await FileSystem.readAsStringAsync(asset.uri, {
-          encoding: FileSystem.EncodingType.Base64,
-        });
-
+        const base64Audio = await readFileAsBase64(asset.uri);
         const mime = asset.mimeType || 'audio/m4a';
         await processAudioMessage(base64Audio, mime);
       }
@@ -394,9 +410,7 @@ export default function FinnAIScreen({ navigation }) {
       const uri = audioRecorder.uri;
 
       if (uri) {
-        const base64Audio = await FileSystem.readAsStringAsync(uri, {
-          encoding: FileSystem.EncodingType.Base64,
-        });
+        const base64Audio = await readFileAsBase64(uri);
         const result = await processAudioMessage(base64Audio, 'audio/m4a');
         if (result?.text) {
           // Fala a resposta automaticamente se for mensagem por voz
@@ -463,9 +477,7 @@ export default function FinnAIScreen({ navigation }) {
         const uri = audioRecorder.uri;
 
         if (uri) {
-          const base64Audio = await FileSystem.readAsStringAsync(uri, {
-            encoding: FileSystem.EncodingType.Base64,
-          });
+          const base64Audio = await readFileAsBase64(uri);
           const res = await processAudioMessage(base64Audio, 'audio/m4a');
 
           if (res?.text) {
