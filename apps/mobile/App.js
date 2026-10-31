@@ -70,8 +70,11 @@ function MainTabs({ navigation }) {
             fontWeight: '600',
           },
           tabBarIcon: ({ focused, color, size }) => {
-            let iconName;
+            if (route.name === 'AddAction') {
+              return null;
+            }
 
+            let iconName = 'ellipse-outline';
             if (route.name === 'Home') {
               iconName = focused ? 'home' : 'home-outline';
             } else if (route.name === 'Transactions') {

@@ -522,9 +522,6 @@ export default function HomeScreen({ navigation }) {
           </View>
         </View>
       </Modal>
-        visible={modalVisible}
-        onClose={() => setModalVisible(false)}
-      />
     </View>
   );
 }
