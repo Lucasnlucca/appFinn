@@ -18,15 +18,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
 
-// Carregador seguro para evitar crash do 'ExponentAV' no Expo Go
-function getAudioModule() {
-  try {
-    const av = require('expo-av');
-    return av?.Audio || null;
-  } catch (e) {
-    return null;
-  }
-}
+// Selecionador de áudio via DocumentPicker seguro para Expo Go sem dependência nativa
 
 import { COLORS } from '../theme/colors';
 import { useFinance } from '../context/FinanceContext';
@@ -217,53 +209,9 @@ export default function FinnAIScreen({ navigation }) {
     }
   };
 
-  // 4. GRAVAÇÃO DE ÁUDIO DE VOZ NATIVO
+  // 4. ÁUDIO DE VOZ (COMPATÍVEL COM EXPO GO & ARQUIVOS DE VOZ)
   const startRecording = async () => {
-    const AudioModule = getAudioModule();
-    if (!AudioModule) {
-      Alert.alert(
-        'Mensagem de Voz',
-        'Deseja selecionar um arquivo de áudio gravado (ex: WhatsApp ou Gravador de Voz) para a IA FINN escutar?',
-        [
-          { text: 'Cancelar', style: 'cancel' },
-          { text: 'Escolher Áudio', onPress: handlePickAudio },
-        ]
-      );
-      return;
-    }
-
-    try {
-      const permission = await AudioModule.requestPermissionsAsync();
-      if (!permission.granted) {
-        Alert.alert('Microfone', 'Permissão de microfone necessária para mensagens de voz.');
-        return;
-      }
-
-      await AudioModule.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-      });
-
-      const { recording: newRecording } = await AudioModule.Recording.createAsync(
-        AudioModule.RecordingOptionsPresets.HIGH_QUALITY
-      );
-
-      setRecording(newRecording);
-      setRecordingDuration(0);
-
-      timerRef.current = setInterval(() => {
-        setRecordingDuration((prev) => prev + 1);
-      }, 1000);
-    } catch (err) {
-      Alert.alert(
-        'Gravação Indisponível',
-        'Deseja selecionar um áudio gravado para a IA analisar?',
-        [
-          { text: 'Cancelar', style: 'cancel' },
-          { text: 'Selecionar Áudio', onPress: handlePickAudio },
-        ]
-      );
-    }
+    handlePickAudio();
   };
 
   const stopRecordingAndSend = async () => {
@@ -447,9 +395,9 @@ export default function FinnAIScreen({ navigation }) {
               <Text style={styles.multimodalBtnText}>Boleto / PDF</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.multimodalBtn} onPress={startRecording} disabled={analyzing}>
+            <TouchableOpacity style={styles.multimodalBtn} onPress={handlePickAudio} disabled={analyzing}>
               <Ionicons name="mic-outline" size={17} color="#EC4899" />
-              <Text style={styles.multimodalBtnText}>Gravar Áudio</Text>
+              <Text style={styles.multimodalBtnText}>Áudio / Voz</Text>
             </TouchableOpacity>
           </View>
 
