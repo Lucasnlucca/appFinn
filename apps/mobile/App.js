@@ -1,7 +1,8 @@
-import React from 'react';
-import { View, StyleSheet, Platform, ActivityIndicator, Text } from 'react-native';
+import React, { useState } from 'react';
+import { View, StyleSheet, Platform, ActivityIndicator, Text, TouchableOpacity } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
@@ -11,47 +12,58 @@ import { FinanceProvider, useFinance } from './src/context/FinanceContext';
 
 import HomeScreen from './src/screens/HomeScreen';
 import TransactionsScreen from './src/screens/TransactionsScreen';
+import PlanningScreen from './src/screens/PlanningScreen';
 import FinnAIScreen from './src/screens/FinnAIScreen';
-import CardsAccountsScreen from './src/screens/CardsAccountsScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 import LoginScreen from './src/screens/LoginScreen';
+import AddTransactionModal from './src/components/AddTransactionModal';
 
 const Tab = createBottomTabNavigator();
+const Stack = createNativeStackNavigator();
 
-function MainAppContent() {
-  const { loggedInUser, loaded } = useFinance();
+// Botão central elevado azul marinho com '+'
+function CustomAddTabButton({ onPress }) {
+  return (
+    <View style={styles.addTabBtnContainer} pointerEvents="box-none">
+      <TouchableOpacity
+        style={styles.addTabBtn}
+        onPress={onPress}
+        activeOpacity={0.85}
+      >
+        <Ionicons name="add" size={28} color={COLORS.white} />
+      </TouchableOpacity>
+    </View>
+  );
+}
 
-  if (!loaded) {
-    return (
-      <View style={styles.splashContainer}>
-        <View style={styles.splashBadge}>
-          <Ionicons name="sparkles" size={36} color={COLORS.primary} />
-        </View>
-        <Text style={styles.splashTitle}>FINN AI</Text>
-        <ActivityIndicator size="small" color={COLORS.primary} style={{ marginTop: 16 }} />
-      </View>
-    );
-  }
+// Dummy screen para a tab central
+function EmptyAddScreen() {
+  return null;
+}
 
-  if (!loggedInUser) {
-    return <LoginScreen />;
-  }
+function MainTabs({ navigation }) {
+  const [modalVisible, setModalVisible] = useState(false);
 
   return (
-    <NavigationContainer>
+    <View style={{ flex: 1 }}>
       <Tab.Navigator
         screenOptions={({ route }) => ({
           headerShown: false,
           tabBarShowLabel: true,
-          tabBarActiveTintColor: COLORS.primary,
+          tabBarActiveTintColor: COLORS.navy,
           tabBarInactiveTintColor: COLORS.textMuted,
           tabBarStyle: {
-            backgroundColor: COLORS.surface,
+            backgroundColor: COLORS.white,
             borderTopColor: COLORS.surfaceBorder,
             borderTopWidth: 1,
-            height: Platform.OS === 'ios' ? 88 : 68,
-            paddingBottom: Platform.OS === 'ios' ? 28 : 10,
+            height: Platform.OS === 'ios' ? 86 : 66,
+            paddingBottom: Platform.OS === 'ios' ? 26 : 10,
             paddingTop: 8,
+            elevation: 8,
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: -2 },
+            shadowOpacity: 0.05,
+            shadowRadius: 6,
           },
           tabBarLabelStyle: {
             fontSize: 11,
@@ -64,55 +76,98 @@ function MainAppContent() {
               iconName = focused ? 'home' : 'home-outline';
             } else if (route.name === 'Transactions') {
               iconName = focused ? 'receipt' : 'receipt-outline';
-            } else if (route.name === 'FinnAI') {
-              return (
-                <View style={styles.aiTabBtn}>
-                  <Ionicons name="sparkles" size={20} color={COLORS.white} />
-                </View>
-              );
-            } else if (route.name === 'CardsAccounts') {
-              iconName = focused ? 'wallet' : 'wallet-outline';
+            } else if (route.name === 'Planning') {
+              iconName = focused ? 'grid' : 'grid-outline';
             } else if (route.name === 'Settings') {
-              iconName = focused ? 'settings' : 'settings-outline';
+              iconName = focused ? 'menu' : 'menu-outline';
             }
 
             return <Ionicons name={iconName} size={22} color={color} />;
           },
         })}
       >
+        {/* 1. Início */}
         <Tab.Screen
           name="Home"
           component={HomeScreen}
           options={{ tabBarLabel: 'Início' }}
         />
+
+        {/* 2. Transações */}
         <Tab.Screen
           name="Transactions"
           component={TransactionsScreen}
-          options={{ tabBarLabel: 'Extrato' }}
+          options={{ tabBarLabel: 'Transações' }}
         />
+
+        {/* 3. Botão Central (+) */}
         <Tab.Screen
-          name="FinnAI"
-          component={FinnAIScreen}
+          name="AddAction"
+          component={EmptyAddScreen}
           options={{
-            tabBarLabel: 'FINN IA',
-            tabBarLabelStyle: {
-              fontSize: 11,
-              fontWeight: '700',
-              color: COLORS.primary,
-            },
+            tabBarLabel: '',
+            tabBarButton: () => (
+              <CustomAddTabButton onPress={() => setModalVisible(true)} />
+            ),
           }}
         />
+
+        {/* 4. Planejamento */}
         <Tab.Screen
-          name="CardsAccounts"
-          component={CardsAccountsScreen}
-          options={{ tabBarLabel: 'Contas' }}
+          name="Planning"
+          component={PlanningScreen}
+          options={{ tabBarLabel: 'Planejamento' }}
         />
+
+        {/* 5. Mais */}
         <Tab.Screen
           name="Settings"
           component={SettingsScreen}
-          options={{ tabBarLabel: 'Config' }}
+          options={{ tabBarLabel: 'Mais' }}
         />
       </Tab.Navigator>
+
+      {/* Modal acionado pelo botão central (+) */}
+      <AddTransactionModal
+        visible={modalVisible}
+        onClose={() => setModalVisible(false)}
+      />
+    </View>
+  );
+}
+
+function MainAppContent() {
+  const { loggedInUser, loaded } = useFinance();
+
+  if (!loaded) {
+    return (
+      <View style={styles.splashContainer}>
+        <View style={styles.splashBadge}>
+          <Ionicons name="sparkles" size={36} color={COLORS.navy} />
+        </View>
+        <Text style={styles.splashTitle}>FINN</Text>
+        <ActivityIndicator size="small" color={COLORS.navy} style={{ marginTop: 16 }} />
+      </View>
+    );
+  }
+
+  if (!loggedInUser) {
+    return <LoginScreen />;
+  }
+
+  return (
+    <NavigationContainer>
+      <Stack.Navigator screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="MainTabs" component={MainTabs} />
+        <Stack.Screen
+          name="FinnAI"
+          component={FinnAIScreen}
+          options={{
+            presentation: 'modal',
+            animation: 'slide_from_bottom',
+          }}
+        />
+      </Stack.Navigator>
     </NavigationContainer>
   );
 }
@@ -121,7 +176,7 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <FinanceProvider>
-        <StatusBar style="light" backgroundColor={COLORS.bg} />
+        <StatusBar style="dark" backgroundColor={COLORS.bg} />
         <MainAppContent />
       </FinanceProvider>
     </SafeAreaProvider>
@@ -139,31 +194,37 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 20,
-    backgroundColor: COLORS.primaryLight,
+    backgroundColor: COLORS.white,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1.5,
-    borderColor: 'rgba(16, 185, 129, 0.4)',
+    borderColor: COLORS.surfaceBorder,
   },
   splashTitle: {
-    color: COLORS.text,
+    color: COLORS.navy,
     fontSize: 24,
     fontWeight: '900',
     marginTop: 14,
     letterSpacing: 1,
   },
-  aiTabBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: COLORS.primary,
+  addTabBtnContainer: {
+    top: -16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  addTabBtn: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: COLORS.navy,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: Platform.OS === 'ios' ? 14 : 12,
-    shadowColor: COLORS.primary,
+    shadowColor: COLORS.navy,
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
+    shadowOpacity: 0.35,
     shadowRadius: 8,
-    elevation: 6,
+    elevation: 8,
+    borderWidth: 3,
+    borderColor: COLORS.white,
   },
 });

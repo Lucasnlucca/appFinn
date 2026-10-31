@@ -42,4 +42,5 @@ Thumbs.db
 backups/
 *.sql.gz
 *.sql
+!packages/database/prisma/*.sql
 

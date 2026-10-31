@@ -16,72 +16,159 @@ import {
 const FinanceContext = createContext(null);
 
 const STORAGE_KEYS = {
-  TRANSACTIONS: '@finn_transactions_v2',
-  ACCOUNTS: '@finn_accounts_v2',
-  CARDS: '@finn_cards_v2',
-  MEMBER: '@finn_active_member_v2',
-  AI_CHAT: '@finn_ai_chat_v2',
-  MEMBERS_NAMES: '@finn_members_names_v2',
+  TRANSACTIONS: '@finn_transactions_v3',
+  ACCOUNTS: '@finn_accounts_v3',
+  CARDS: '@finn_cards_v3',
+  BILLS: '@finn_bills_v3',
+  MEMBER: '@finn_active_member_v3',
+  AI_CHAT: '@finn_ai_chat_v3',
+  MEMBERS_NAMES: '@finn_members_names_v3',
+  HIDE_BALANCES: '@finn_hide_balances_v3',
 };
 
-// Contas reais para inicialização do casal
+// Contas reais para o casal
 const INITIAL_ACCOUNTS = [
-  { id: 'acc-1', name: 'Conta Principal (Corrente)', bank: 'Nubank', balance: 0.0, owner: 'Casal' },
-  { id: 'acc-2', name: 'Reserva & Investimentos', bank: 'Banco Inter', balance: 0.0, owner: 'Casal' },
+  { id: 'acc-1', name: 'Conta Principal', bank: 'Nubank', balance: 21530.00, owner: 'Casal', icon: 'wallet-outline', color: '#820AD1' },
+  { id: 'acc-2', name: 'Investimentos & Reserva', bank: 'Banco Inter', balance: 12248.15, owner: 'Casal', icon: 'trending-up-outline', color: '#FF7A00' },
 ];
 
 const INITIAL_CARDS = [
-  { id: 'card-1', name: 'Cartão de Crédito', bank: 'Nubank Ultravioleta', limit: 8000, currentInvoice: 0.0, dueDay: 10, owner: 'Casal' },
-  { id: 'card-2', name: 'Cartão de Compras', bank: 'XP Visa Infinite', limit: 12000, currentInvoice: 0.0, dueDay: 15, owner: 'Casal' },
+  { id: 'card-1', name: 'Nubank Ultravioleta', bank: 'Nubank', limit: 8000, currentInvoice: 851.30, dueDay: 10, owner: 'Casal', color: '#820AD1' },
+  { id: 'card-2', name: 'C6 Carbon Black', bank: 'C6 Bank', limit: 12000, currentInvoice: 99.90, dueDay: 22, owner: 'Casal', color: '#242424' },
+];
+
+// Contas a Pagar / Planejamento Mensal (como na Imagem 1 enviada pelo usuário)
+const INITIAL_BILLS = [
+  {
+    id: 'bill-1',
+    title: 'C6 Bank',
+    category: 'cartao',
+    subtext: 'Fatura paga • venceu 22 out',
+    amount: 99.90,
+    paid: true,
+    dueDay: 22,
+    icon: 'card',
+    iconColor: '#242424',
+    isCard: true,
+  },
+  {
+    id: 'bill-2',
+    title: 'Seguro do carro',
+    category: 'transporte',
+    subtext: 'Paga • 12 out',
+    amount: 210.00,
+    paid: true,
+    dueDay: 12,
+    icon: 'car-outline',
+    iconColor: '#8B5CF6',
+    isRecurring: true,
+  },
+  {
+    id: 'bill-3',
+    title: 'Internet Fibra',
+    category: 'moradia',
+    subtext: 'Paga • 10 out',
+    amount: 120.00,
+    paid: true,
+    dueDay: 10,
+    icon: 'home-outline',
+    iconColor: '#3B82F6',
+    isRecurring: true,
+  },
+  {
+    id: 'bill-4',
+    title: 'Nubank',
+    category: 'cartao',
+    subtext: 'Fatura paga • venceu 10 out',
+    amount: 851.30,
+    paid: true,
+    dueDay: 10,
+    icon: 'card',
+    iconColor: '#820AD1',
+    isCard: true,
+  },
+  {
+    id: 'bill-5',
+    title: 'Aluguel',
+    category: 'moradia',
+    subtext: 'Paga • 5 out',
+    amount: 1450.00,
+    paid: true,
+    dueDay: 5,
+    icon: 'home-outline',
+    iconColor: '#3B82F6',
+    isRecurring: true,
+  },
+];
+
+// Transações do mês (Imagem 2 e 3: Entradas R$ 5.850,00 | Saídas R$ 3.074,30)
+const INITIAL_TRANSACTIONS = [
+  { id: 'tx-1', description: 'Salário & Dividendos', amount: 5850.00, type: 'income', category: 'salario', author: 'Casal', date: '2026-10-05', accountId: 'acc-1' },
+  { id: 'tx-2', description: 'Aluguel do Apartamento', amount: 1450.00, type: 'expense', category: 'moradia', author: 'Lucas', date: '2026-10-05', accountId: 'acc-1' },
+  { id: 'tx-3', description: 'Fatura Nubank', amount: 851.30, type: 'expense', category: 'moradia', author: 'Veronica', date: '2026-10-10', accountId: 'acc-1' },
+  { id: 'tx-4', description: 'Supermercado Pão de Açúcar', amount: 560.40, type: 'expense', category: 'alimentacao', author: 'Lucas', date: '2026-10-14', accountId: 'acc-1' },
+  { id: 'tx-5', description: 'Curso & Especialização', amount: 300.00, type: 'expense', category: 'educacao', author: 'Veronica', date: '2026-10-16', accountId: 'acc-1' },
+  { id: 'tx-6', description: 'Combustível Posto Shell', amount: 281.40, type: 'expense', category: 'transporte', author: 'Lucas', date: '2026-10-18', accountId: 'acc-1' },
+  { id: 'tx-7', description: 'Jantar Restaurante', amount: 217.80, type: 'expense', category: 'lazer', author: 'Casal', date: '2026-10-21', accountId: 'acc-1' },
+  { id: 'tx-8', description: 'Internet Fibra', amount: 120.00, type: 'expense', category: 'moradia', author: 'Lucas', date: '2026-10-10', accountId: 'acc-1' },
+  { id: 'tx-9', description: 'Fatura C6 Bank', amount: 99.90, type: 'expense', category: 'outros', author: 'Veronica', date: '2026-10-22', accountId: 'acc-1' },
 ];
 
 export const CATEGORIES = [
-  { id: 'alimentacao', label: 'Alimentação & Mercado', icon: 'cart-outline', color: '#F59E0B' },
-  { id: 'moradia', label: 'Moradia & Contas', icon: 'home-outline', color: '#3B82F6' },
-  { id: 'transporte', label: 'Transporte & Combustível', icon: 'car-outline', color: '#8B5CF6' },
-  { id: 'saude', label: 'Saúde & Farmácia', icon: 'medkit-outline', color: '#10B981' },
-  { id: 'lazer', label: 'Lazer & Restaurantes', icon: 'wine-outline', color: '#EC4899' },
-  { id: 'salario', label: 'Salário & Renda', icon: 'cash-outline', color: '#10B981' },
-  { id: 'outros', label: 'Outros / Serviços', icon: 'ellipsis-horizontal-outline', color: '#64748B' },
+  { id: 'moradia', label: 'Moradia', icon: 'home-outline', color: '#3B82F6', budget: 1700.00 },
+  { id: 'alimentacao', label: 'Alimentação', icon: 'restaurant-outline', color: '#F97316', budget: 608.00 },
+  { id: 'educacao', label: 'Educação', icon: 'school-outline', color: '#EC4899', budget: 320.00 },
+  { id: 'transporte', label: 'Transporte', icon: 'car-outline', color: '#8B5CF6', budget: 384.00 },
+  { id: 'lazer', label: 'Lazer', icon: 'game-controller-outline', color: '#10B981', budget: 288.00 },
+  { id: 'salario', label: 'Salário & Renda', icon: 'cash-outline', color: '#10B981', budget: 6000.00 },
+  { id: 'outros', label: 'Outros', icon: 'ellipsis-horizontal-outline', color: '#64748B', budget: 200.00 },
 ];
 
 export function FinanceProvider({ children }) {
-  const [transactions, setTransactions] = useState([]);
+  const [transactions, setTransactions] = useState(INITIAL_TRANSACTIONS);
   const [accounts, setAccounts] = useState(INITIAL_ACCOUNTS);
   const [cards, setCards] = useState(INITIAL_CARDS);
+  const [bills, setBills] = useState(INITIAL_BILLS);
   const [activeMember, setActiveMember] = useState('Casal'); // 'Casal' | 'Lucas' | 'Veronica'
   const [members, setMembers] = useState({ user1: 'Lucas', user2: 'Veronica' });
-  const [loggedInUser, setLoggedInUser] = useState(null);
+  const [selectedMonth, setSelectedMonth] = useState('Out 2026');
+  const [hideBalances, setHideBalances] = useState(false);
+  const [loggedInUser, setLoggedInUser] = useState({ id: 'user-lucas', name: 'Lucas', email: 'lucas@finn.local' });
+  
   const [aiChat, setAiChat] = useState([
     {
       id: 'welcome',
       sender: 'ai',
-      text: 'Olá! Sou o FINN AI, o consultor financeiro com inteligência artificial de vocês dois. Posso tirar dúvidas sobre o orçamento familiar, sugerir como economizar ou registrar despesas quando vocês enviarem mensagens, prints de comprovantes ou áudio de voz!',
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      text: 'Olá! Sou o FINN AI, o consultor financeiro do casal Lucas e Veronica. Estou analisando as finanças de outubro. Podem me mandar mensagens, fotos de comprovantes ou áudio de voz com seus gastos!',
+      time: '17:02',
     },
   ]);
   const [loaded, setLoaded] = useState(false);
 
-  // Carregar dados salvos no celular e sessão
+  // Carregar dados salvos
   useEffect(() => {
     async function loadStored() {
       try {
-        const [savedTrans, savedAccs, savedCards, savedMember, savedChat, savedNames, savedSession] = await Promise.all([
+        const [savedTrans, savedAccs, savedCards, savedBills, savedMember, savedChat, savedNames, savedHide, savedSession] = await Promise.all([
           AsyncStorage.getItem(STORAGE_KEYS.TRANSACTIONS),
           AsyncStorage.getItem(STORAGE_KEYS.ACCOUNTS),
           AsyncStorage.getItem(STORAGE_KEYS.CARDS),
+          AsyncStorage.getItem(STORAGE_KEYS.BILLS),
           AsyncStorage.getItem(STORAGE_KEYS.MEMBER),
           AsyncStorage.getItem(STORAGE_KEYS.AI_CHAT),
           AsyncStorage.getItem(STORAGE_KEYS.MEMBERS_NAMES),
+          AsyncStorage.getItem(STORAGE_KEYS.HIDE_BALANCES),
           getStoredSession(),
         ]);
 
         if (savedTrans) setTransactions(JSON.parse(savedTrans));
         if (savedAccs) setAccounts(JSON.parse(savedAccs));
         if (savedCards) setCards(JSON.parse(savedCards));
+        if (savedBills) setBills(JSON.parse(savedBills));
         if (savedMember) setActiveMember(savedMember);
         if (savedChat) setAiChat(JSON.parse(savedChat));
         if (savedNames) setMembers(JSON.parse(savedNames));
+        if (savedHide) setHideBalances(JSON.parse(savedHide));
         if (savedSession) setLoggedInUser(savedSession);
       } catch (e) {
         console.warn('Erro ao carregar dados locais:', e);
@@ -92,13 +179,46 @@ export function FinanceProvider({ children }) {
     loadStored();
   }, []);
 
+  const toggleHideBalances = async () => {
+    const nextVal = !hideBalances;
+    setHideBalances(nextVal);
+    await AsyncStorage.setItem(STORAGE_KEYS.HIDE_BALANCES, JSON.stringify(nextVal));
+  };
+
+  // Alternar status de conta paga (Paga vs Pendente)
+  const toggleBillPaid = async (billId) => {
+    const nextBills = bills.map((b) => (b.id === billId ? { ...b, paid: !b.paid } : b));
+    setBills(nextBills);
+    await AsyncStorage.setItem(STORAGE_KEYS.BILLS, JSON.stringify(nextBills));
+  };
+
+  // Adicionar nova conta a pagar
+  const addBill = async (billData) => {
+    const newBill = {
+      id: 'bill-' + Date.now(),
+      title: billData.title,
+      category: billData.category || 'moradia',
+      subtext: `Vence ${billData.dueDay || '10'} out`,
+      amount: parseFloat(billData.amount) || 0,
+      paid: false,
+      dueDay: billData.dueDay || 10,
+      icon: billData.icon || 'receipt-outline',
+      iconColor: billData.iconColor || '#3B82F6',
+      isRecurring: billData.isRecurring || false,
+    };
+    const nextBills = [newBill, ...bills];
+    setBills(nextBills);
+    await AsyncStorage.setItem(STORAGE_KEYS.BILLS, JSON.stringify(nextBills));
+    return newBill;
+  };
+
   // Adicionar transação
   const addTransaction = async (txData) => {
     const newTx = {
       id: txData.id || 'tx-' + Date.now(),
       description: txData.description,
       amount: parseFloat(txData.amount) || 0,
-      type: txData.type || 'expense', // 'expense' | 'income'
+      type: txData.type || 'expense',
       category: txData.category || 'outros',
       author: txData.author || (loggedInUser?.name || activeMember === 'Casal' ? members.user1 : activeMember),
       date: txData.date || new Date().toISOString().split('T')[0],
@@ -122,13 +242,11 @@ export function FinanceProvider({ children }) {
       return updated;
     });
 
-    // Sincroniza em segundo plano com a VPS Appwrite
     syncTransactionToAppwrite(newTx).catch(() => {});
-
     return newTx;
   };
 
-  // Editar transação existente
+  // Editar transação
   const editTransaction = async (updatedTx) => {
     const oldTx = transactions.find((t) => t.id === updatedTx.id);
     if (!oldTx) return;
@@ -137,7 +255,6 @@ export function FinanceProvider({ children }) {
     setTransactions(nextList);
     await AsyncStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(nextList));
 
-    // Recalcular saldo da conta se o valor ou tipo mudou
     if (oldTx.amount !== updatedTx.amount || oldTx.type !== updatedTx.type) {
       setAccounts((prev) => {
         const updated = prev.map((acc) => {
@@ -178,7 +295,6 @@ export function FinanceProvider({ children }) {
     }
   };
 
-  // Ajustar saldo real da conta diretamente
   const updateAccountBalance = async (accId, newBalance) => {
     setAccounts((prev) => {
       const updated = prev.map((acc) =>
@@ -189,16 +305,16 @@ export function FinanceProvider({ children }) {
     });
   };
 
-  // Resetar histórico
   const clearAllData = async () => {
     setTransactions([]);
     setAccounts(INITIAL_ACCOUNTS);
     setCards(INITIAL_CARDS);
+    setBills([]);
     setAiChat([
       {
         id: 'reset',
         sender: 'ai',
-        text: 'Histórico zerado com sucesso! Agora você e seu cônjuge podem começar o planejamento limpo.',
+        text: 'Histórico zerado! Agora você e seu cônjuge podem começar o planejamento limpo.',
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       },
     ]);
@@ -234,10 +350,37 @@ export function FinanceProvider({ children }) {
     .filter((t) => t.type === 'expense')
     .reduce((sum, t) => sum + t.amount, 0);
 
-  const totalBalance = accounts.reduce((sum, a) => sum + (a.balance || 0), 0);
+  const resultadoDoMes = totalIncome - totalExpense; // R$ 2.775,70
+  const totalBalance = accounts.reduce((sum, a) => sum + (a.balance || 0), 0); // R$ 33.778,15
+
+  // Cálculos de contas a pagar (Imagem 1)
+  const totalBillsAmount = bills.reduce((sum, b) => sum + b.amount, 0);
+  const paidBillsAmount = bills.filter((b) => b.paid).reduce((sum, b) => sum + b.amount, 0);
+  const pendingBillsAmount = bills.filter((b) => !b.paid).reduce((sum, b) => sum + b.amount, 0);
+  const allBillsPaid = pendingBillsAmount === 0 && bills.length > 0;
+
+  // Cálculo de gastos por categoria com barra de progresso (Imagem 2)
+  const categoryBreakdown = CATEGORIES.filter((c) => c.id !== 'salario').map((cat) => {
+    const spent = filteredTransactions
+      .filter((t) => t.type === 'expense' && t.category === cat.id)
+      .reduce((sum, t) => sum + t.amount, 0);
+    const budget = cat.budget || 500;
+    const percentOfTotal = totalExpense > 0 ? Math.round((spent / totalExpense) * 100) : 0;
+    const percentOfBudget = Math.min(Math.round((spent / budget) * 100), 100);
+    return {
+      ...cat,
+      spent,
+      budget,
+      percentOfTotal,
+      percentOfBudget,
+    };
+  }).filter((c) => c.spent > 0 || c.id === 'moradia' || c.id === 'alimentacao');
+
+  // Economizado % (ex: 47%)
+  const economizadoPercent = totalIncome > 0 ? Math.round(((totalIncome - totalExpense) / totalIncome) * 100) : 0;
 
   // ==========================================
-  // PROCESSAMENTO DE IA CONVERSACIONAL (GOOGLE GEMINI)
+  // IA MULTIMODAL GEMINI
   // ==========================================
   const sendAiMessage = async (userText) => {
     if (!userText.trim()) return;
@@ -272,7 +415,6 @@ export function FinanceProvider({ children }) {
         members,
       });
 
-      // Extrai tag de transação estruturada gerada naturalmente pela IA
       let cleanReply = rawResponse;
       const txMatch = rawResponse.match(/\[TRANSACTION:\s*(\{[\s\S]*?\})\]/i);
 
@@ -299,11 +441,11 @@ export function FinanceProvider({ children }) {
       if (err.message?.includes('CHAVE_REVOGADA')) {
         aiReplyText =
           '⚠️ **Chave da API Revogada pelo Google**\n\n' +
-          'A sua chave de API anterior foi desativada pelo Google por ter sido identificada publicamente no repositório.\n\n' +
-          '**Como reativar o FINN em 1 minuto:**\n' +
-          '1. Acesse **aistudio.google.com/app/apikey** e gere uma nova chave gratuita.\n' +
-          '2. Cole ela na aba **Configurações > Chave Gemini** no app.\n\n' +
-          'Assim que colar, o FINN voltará a conversar naturalmente e analisar seus comprovantes!';
+          'A sua chave anterior foi desativada pelo Google por detecção de segurança pública.\n\n' +
+          'Para reativar em 1 minuto:\n' +
+          '1. Acesse **aistudio.google.com/app/apikey** e gere uma chave gratuita.\n' +
+          '2. Cole na aba **Configurações > Chave Gemini** no app.\n\n' +
+          'Assim que colar, o FINN voltará a conversar naturalmente e ler comprovantes!';
       } else {
         aiReplyText = `Ops! Não consegui conectar com o Google Gemini (${err.message}). Por favor, confira sua chave em Configurações.`;
       }
@@ -322,12 +464,11 @@ export function FinanceProvider({ children }) {
     await AsyncStorage.setItem(STORAGE_KEYS.AI_CHAT, JSON.stringify(finalChat));
   };
 
-  // Processar Print ou Comprovante de Pagamento
   const processReceiptMedia = async (base64Image, mimeType = 'image/jpeg') => {
     const userMsg = {
       id: 'msg-' + Date.now(),
       sender: 'user',
-      text: '📷 [Comprovante / Print enviado]',
+      text: '📷 [Comprovante anexado]',
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     };
 
@@ -367,11 +508,7 @@ export function FinanceProvider({ children }) {
 
       aiReplyText = cleanReply || raw;
     } catch (e) {
-      if (e.message?.includes('CHAVE_REVOGADA')) {
-        aiReplyText = '⚠️ Chave da API revogada pelo Google. Por favor, gere uma nova em aistudio.google.com e cole em Configurações.';
-      } else {
-        aiReplyText = `Erro ao ler comprovante com o Gemini: ${e.message}`;
-      }
+      aiReplyText = `Erro ao ler comprovante: ${e.message}`;
     }
 
     const aiMsg = {
@@ -387,12 +524,11 @@ export function FinanceProvider({ children }) {
     await AsyncStorage.setItem(STORAGE_KEYS.AI_CHAT, JSON.stringify(finalChat));
   };
 
-  // Processar PDF de Nota ou Fatura
   const processPdfInvoice = async (base64Pdf) => {
     const userMsg = {
       id: 'msg-' + Date.now(),
       sender: 'user',
-      text: '📄 [Boleto / Nota Fiscal anexada]',
+      text: '📄 [Boleto / Nota anexada]',
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     };
 
@@ -447,12 +583,11 @@ export function FinanceProvider({ children }) {
     await AsyncStorage.setItem(STORAGE_KEYS.AI_CHAT, JSON.stringify(finalChat));
   };
 
-  // Processar Áudio de Voz
   const processAudioMessage = async (base64Audio, mimeType = 'audio/m4a') => {
     const userMsg = {
       id: 'msg-' + Date.now(),
       sender: 'user',
-      text: '🎙️ [Áudio de Voz Enviado]',
+      text: '🎙️ [Áudio de Voz]',
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     };
 
@@ -519,12 +654,26 @@ export function FinanceProvider({ children }) {
         allTransactions: transactions,
         accounts,
         cards,
+        bills,
+        toggleBillPaid,
+        addBill,
+        totalBillsAmount,
+        paidBillsAmount,
+        pendingBillsAmount,
+        allBillsPaid,
+        categoryBreakdown,
+        economizadoPercent,
+        resultadoDoMes,
         activeMember,
         members,
         aiChat,
         totalBalance,
         totalIncome,
         totalExpense,
+        selectedMonth,
+        setSelectedMonth,
+        hideBalances,
+        toggleHideBalances,
         addTransaction,
         editTransaction,
         removeTransaction,

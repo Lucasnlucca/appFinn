@@ -1,27 +1,49 @@
 export const COLORS = {
-  bg: '#0B0F19',
-  surface: '#121826',
-  surfaceLight: '#1B2438',
-  surfaceBorder: '#232E45',
+  // Paleta clara premium inspirada no design das imagens
+  bg: '#F5F7FB',
+  surface: '#FFFFFF',
+  surfaceLight: '#F8FAFC',
+  surfaceBorder: '#E8EDF5',
   
-  primary: '#10B981',       // Emerald Finn AI
-  primaryLight: 'rgba(16, 185, 129, 0.15)',
-  primaryGlow: '#059669',
+  // Azul Marinho Oficial do Card Hero e Botão Principal (+)
+  navy: '#0E2F5A',
+  navyGradientStart: '#0E2F5A',
+  navyGradientEnd: '#16427D',
+  navyLight: '#EBF2FC',
   
-  income: '#10B981',        // Verde receita
-  expense: '#F43F5E',       // Rosa/Vermelho despesa
-  warning: '#F59E0B',       // Amarelo atenção
-  info: '#3B82F6',          // Azul info
-  purple: '#8B5CF6',        // Roxo IA / Nubank
+  primary: '#0E2F5A',
+  primaryBlue: '#2563EB',
+  primaryGlow: '#1D4ED8',
   
-  text: '#F8FAFC',
-  textSecondary: '#94A3B8',
-  textMuted: '#64748B',
+  // Cores de Transação & Indicadores
+  income: '#10B981',         // Verde entradas
+  incomeLight: '#ECFDF5',
+  expense: '#EF4444',        // Vermelho saídas
+  expenseLight: '#FEF2F2',
+  
+  warning: '#F59E0B',
+  warningLight: '#FFFBEB',
+  info: '#3B82F6',
+  
+  // Categorias coloridas (Moradia, Alimentação, Educação, Transporte, Lazer)
+  catMoradia: '#3B82F6',
+  catAlimentacao: '#F97316',
+  catEducacao: '#EC4899',
+  catTransporte: '#8B5CF6',
+  catLazer: '#10B981',
+  catOutros: '#64748B',
+  
+  // Textos
+  text: '#1E293B',
+  textSecondary: '#64748B',
+  textMuted: '#94A3B8',
   
   white: '#FFFFFF',
   black: '#000000',
   
-  cardBg: '#131B2E',
-  cardBorder: '#1F2B47',
+  // Mascote & Cards
+  mascotBg: '#EEF4FF',
+  mascotBorder: '#D9E6FF',
+  cardBg: '#FFFFFF',
+  cardBorder: '#EEF2F6',
 };
-

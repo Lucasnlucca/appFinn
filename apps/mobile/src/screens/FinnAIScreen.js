@@ -259,8 +259,16 @@ export default function FinnAIScreen({ navigation }) {
       {/* HEADER DA IA */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
+          {navigation?.canGoBack() && (
+            <TouchableOpacity
+              style={styles.backBtn}
+              onPress={() => navigation.goBack()}
+            >
+              <Ionicons name="chevron-back" size={24} color={COLORS.navy} />
+            </TouchableOpacity>
+          )}
           <View style={styles.avatarWrap}>
-            <Ionicons name="sparkles" size={20} color={COLORS.primary} />
+            <Ionicons name="sparkles" size={20} color={COLORS.navy} />
           </View>
           <View>
             <View style={styles.titleRow}>
@@ -577,7 +585,7 @@ const styles = StyleSheet.create({
   },
   boldAiText: {
     fontWeight: '800',
-    color: COLORS.white,
+    color: COLORS.navy,
   },
   bulletText: {
     paddingLeft: 6,
