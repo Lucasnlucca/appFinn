@@ -10,8 +10,8 @@ export const DEFAULT_MODEL = 'gemini-3.5-flash-lite';
 export const FALLBACK_MODEL = 'gemini-3.5-flash';
 export const EMERGENCY_MODEL = 'gemini-3.8-flash';
 
-// Chave padrão injetada pelo ambiente
-const BUNDLED_DEFAULT_KEY = 'AIzaSyDOzZL7AxJJ-tL9LGo6nX5MhHJsQCcehbw';
+// Chave padrão (vazia para exigir chave válida do usuário)
+const BUNDLED_DEFAULT_KEY = '';
 
 /**
  * Recupera a chave do Gemini no dispositivo ou variáveis de ambiente
@@ -74,8 +74,10 @@ export async function callGeminiApi({
   retryCount = 0,
 }) {
   const currentKey = apiKey || (await getGeminiApiKey());
-  if (!currentKey) {
-    throw new Error('CHAVE_GEMINI_AUSENTE');
+  if (!currentKey || currentKey === 'AIzaSyDOzZL7AxJJ-tL9LGo6nX5MhHJsQCcehbw') {
+    throw new Error(
+      'CHAVE_REVOGADA: Chave não configurada ou revogada. Gere uma chave gratuita no Google AI Studio (aistudio.google.com/app/apikey) e cole em Configurações > Chave Gemini no app!'
+    );
   }
 
   let selectedModel = model || (await getGeminiModel());
