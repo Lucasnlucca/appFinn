@@ -91,7 +91,16 @@ export default function PlanningScreen({ navigation }) {
             Falta pagar em {selectedMonth.toLowerCase().split(' ')[0]}
           </Text>
 
-          {allBillsPaid ? (
+          {bills.length === 0 ? (
+            <View style={styles.tudoPagoRow}>
+              <View style={[styles.tudoPagoCheck, { backgroundColor: COLORS.navy }]}>
+                <Ionicons name="sparkles" size={14} color={COLORS.white} />
+              </View>
+              <Text style={[styles.tudoPagoTitle, { color: COLORS.navy }]}>
+                Tudo em dia
+              </Text>
+            </View>
+          ) : allBillsPaid ? (
             <View style={styles.tudoPagoRow}>
               <View style={styles.tudoPagoCheck}>
                 <Ionicons name="checkmark" size={16} color={COLORS.white} />
@@ -106,7 +115,9 @@ export default function PlanningScreen({ navigation }) {
 
           {/* TEXTO DE PROGRESSO E BARRA AZUL ESCURO */}
           <Text style={styles.progressSubtitle}>
-            {formatMoney(paidBillsAmount)} pago de {formatMoney(totalBillsAmount)} do mês
+            {bills.length === 0
+              ? 'Nenhuma fatura ou boleto pendente para este mês'
+              : `${formatMoney(paidBillsAmount)} pago de ${formatMoney(totalBillsAmount)} do mês`}
           </Text>
 
           <View style={styles.progressBarTrack}>
@@ -119,18 +130,29 @@ export default function PlanningScreen({ navigation }) {
           </View>
         </View>
 
-        {/* CARD: "SE TUDO ACONTECER, NO FIM DO MÊS SOBRA R$ 33.778,15" (IMAGEM 1) */}
+        {/* CARD: PROJEÇÃO REAL FIM DO MÊS */}
         <TouchableOpacity style={styles.projectionCard} activeOpacity={0.85}>
           <View style={{ flex: 1 }}>
             <Text style={styles.projectionLabel}>
               Se tudo acontecer, no fim do mês sobra
             </Text>
             <Text style={styles.projectionValue}>
-              {formatMoney(totalBalance)}
+              {formatMoney(totalBalance - pendingBillsAmount)}
             </Text>
           </View>
           <Ionicons name="chevron-forward" size={18} color={COLORS.textSecondary} />
         </TouchableOpacity>
+
+        {/* MENSAGEM SE NÃO HOUVER CONTAS */}
+        {bills.length === 0 && (
+          <View style={styles.emptyBillsCard}>
+            <Ionicons name="calendar-outline" size={32} color={COLORS.textMuted} />
+            <Text style={styles.emptyBillsTitle}>Nenhuma conta a pagar cadastrada</Text>
+            <Text style={styles.emptyBillsSub}>
+              Toque em "+ Conta a pagar" no rodapé para adicionar seus boletos ou faturas reais.
+            </Text>
+          </View>
+        )}
 
         {/* SEÇÃO: PENDENTES (SE HOUVER CONTAS EM ABERTO) */}
         {pendentesBills.length > 0 && (
@@ -635,6 +657,29 @@ const styles = StyleSheet.create({
     color: COLORS.white,
     fontSize: 13,
     fontWeight: '800',
+  },
+  emptyBillsCard: {
+    backgroundColor: COLORS.surface,
+    borderRadius: 20,
+    padding: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.surfaceBorder,
+    borderStyle: 'dashed',
+    gap: 8,
+  },
+  emptyBillsTitle: {
+    color: COLORS.text,
+    fontSize: 15,
+    fontWeight: '700',
+    marginTop: 6,
+  },
+  emptyBillsSub: {
+    color: COLORS.textSecondary,
+    fontSize: 12,
+    textAlign: 'center',
+    lineHeight: 18,
   },
 });
 

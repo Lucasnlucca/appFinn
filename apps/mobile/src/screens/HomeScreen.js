@@ -7,6 +7,9 @@ import {
   TouchableOpacity,
   StatusBar,
   Dimensions,
+  Modal,
+  TextInput,
+  Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -36,9 +39,17 @@ export default function HomeScreen({ navigation }) {
     setSelectedMonth,
     hideBalances,
     toggleHideBalances,
+    updateAccountBalance,
+    addAccount,
   } = useFinance();
 
   const [modalVisible, setModalVisible] = useState(false);
+  const [editingAcc, setEditingAcc] = useState(null);
+  const [accBalanceInput, setAccBalanceInput] = useState('');
+  const [modalNewAcc, setModalNewAcc] = useState(false);
+  const [newAccName, setNewAccName] = useState('');
+  const [newAccBank, setNewAccBank] = useState('');
+  const [newAccBalance, setNewAccBalance] = useState('');
 
   // Formatação em Real (com suporte a ocultar valores)
   const formatMoney = (val) => {
@@ -53,6 +64,41 @@ export default function HomeScreen({ navigation }) {
   };
 
   const currentUserName = members.user1 || 'Lucas';
+
+  // Cálculos dinâmicos reais de progresso do mês e orçamento
+  const now = new Date();
+  const currentDay = now.getDate();
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const monthProgress = Math.round((currentDay / daysInMonth) * 100);
+  const totalBudget = categoryBreakdown.reduce((s, c) => s + (c.budget || 0), 0) || 1;
+  const budgetProgress = totalExpense > 0 ? Math.round((totalExpense / totalBudget) * 100) : 0;
+
+  const handleSaveBalance = async () => {
+    if (!editingAcc) return;
+    const num = parseFloat(accBalanceInput.replace(',', '.'));
+    await updateAccountBalance(editingAcc.id, isNaN(num) ? 0 : num);
+    setEditingAcc(null);
+    setAccBalanceInput('');
+  };
+
+  const handleCreateAccount = async () => {
+    if (!newAccName.trim()) {
+      Alert.alert('Atenção', 'Informe o nome da conta.');
+      return;
+    }
+    const num = parseFloat(newAccBalance.replace(',', '.')) || 0;
+    await addAccount({
+      name: newAccName.trim(),
+      bank: newAccBank.trim() || newAccName.trim(),
+      balance: num,
+      color: COLORS.navy,
+      icon: 'business-outline',
+    });
+    setNewAccName('');
+    setNewAccBank('');
+    setNewAccBalance('');
+    setModalNewAcc(false);
+  };
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -133,8 +179,18 @@ export default function HomeScreen({ navigation }) {
             <View>
               <Text style={styles.heroValue}>{formatMoney(resultadoDoMes)}</Text>
               <View style={styles.trendingBadge}>
-                <Ionicons name="arrow-up" size={11} color={COLORS.income} />
-                <Text style={styles.trendingText}>40% vs. mês passado</Text>
+                <Ionicons
+                  name={resultadoDoMes >= 0 ? "arrow-up" : "arrow-down"}
+                  size={11}
+                  color={resultadoDoMes >= 0 ? COLORS.income : COLORS.expense}
+                />
+                <Text style={styles.trendingText}>
+                  {totalIncome === 0 && totalExpense === 0
+                    ? 'Aguardando lançamentos'
+                    : resultadoDoMes >= 0
+                    ? 'Saldo positivo'
+                    : 'Saldo negativo'}
+                </Text>
               </View>
             </View>
 
@@ -228,7 +284,9 @@ export default function HomeScreen({ navigation }) {
               Mandou bem este mês, {currentUserName}!
             </Text>
             <Text style={styles.mascotDesc}>
-              Você usou 78% do planejado com 84% do mês.
+              {totalExpense === 0 && totalIncome === 0
+                ? 'Tudo pronto para começar! Adicione seus saldos reais ou envie comprovantes para a IA FINN.'
+                : `Você usou ${budgetProgress}% do orçamento previsto com ${monthProgress}% do mês decorrido.`}
             </Text>
 
             <TouchableOpacity
@@ -245,82 +303,93 @@ export default function HomeScreen({ navigation }) {
           <Text style={styles.sectionHeaderTitle}>Maiores gastos</Text>
           <View style={styles.headerLinks}>
             <Text style={styles.activeFilterLink}>Com previstos</Text>
-            <TouchableOpacity onPress={() => navigation.navigate('Transações')}>
+            <TouchableOpacity onPress={() => navigation.navigate('Transactions')}>
               <Text style={styles.allLink}>Ver tudo</Text>
             </TouchableOpacity>
           </View>
         </View>
 
         <View style={styles.categoryCard}>
-          {categoryBreakdown.map((cat, idx) => (
-            <View
-              key={cat.id}
-              style={[
-                styles.categoryRow,
-                idx > 0 && styles.categoryRowBorder,
-              ]}
-            >
-              <View style={styles.categoryTopRow}>
-                <View
-                  style={[
-                    styles.catIconWrap,
-                    { backgroundColor: `${cat.color}15` },
-                  ]}
-                >
-                  <Ionicons name={cat.icon} size={16} color={cat.color} />
-                </View>
-
-                <View style={styles.catNameWrap}>
-                  <Text style={styles.catName}>{cat.label}</Text>
-                  <Text style={styles.catAmounts}>
-                    {formatMoney(cat.spent)} | {formatMoney(cat.budget)}
-                  </Text>
-                </View>
-
-                <Text style={styles.catPercentage}>{cat.percentOfTotal}%</Text>
-              </View>
-
-              {/* BARRA DE PROGRESSO COLORIDA */}
-              <View style={styles.progressBarTrack}>
-                <View
-                  style={[
-                    styles.progressBarFill,
-                    {
-                      width: `${cat.percentOfBudget}%`,
-                      backgroundColor: cat.color,
-                    },
-                  ]}
-                />
-              </View>
+          {categoryBreakdown.length === 0 ? (
+            <View style={styles.emptyCatWrap}>
+              <Ionicons name="pie-chart-outline" size={30} color={COLORS.textMuted} />
+              <Text style={styles.emptyCatTitle}>Nenhum gasto lançado em outubro</Text>
+              <Text style={styles.emptyCatSub}>
+                Toque no botão central (+) ou converse com a IA FINN para lançar suas despesas reais.
+              </Text>
             </View>
-          ))}
+          ) : (
+            categoryBreakdown.map((cat, idx) => (
+              <View
+                key={cat.id}
+                style={[
+                  styles.categoryRow,
+                  idx > 0 && styles.categoryRowBorder,
+                ]}
+              >
+                <View style={styles.categoryTopRow}>
+                  <View
+                    style={[
+                      styles.catIconWrap,
+                      { backgroundColor: `${cat.color}15` },
+                    ]}
+                  >
+                    <Ionicons name={cat.icon} size={16} color={cat.color} />
+                  </View>
 
-          <TouchableOpacity
-            style={styles.categoryFooter}
-            onPress={() => navigation.navigate('Transações')}
-          >
-            <Text style={styles.categoryFooterText}>
-              + outras 1 categorias • R$ 164,70
-            </Text>
-          </TouchableOpacity>
+                  <View style={styles.catNameWrap}>
+                    <Text style={styles.catName}>{cat.label}</Text>
+                    <Text style={styles.catAmounts}>
+                      {formatMoney(cat.spent)} | {formatMoney(cat.budget)}
+                    </Text>
+                  </View>
+
+                  <Text style={styles.catPercentage}>{cat.percentOfTotal}%</Text>
+                </View>
+
+                {/* BARRA DE PROGRESSO COLORIDA */}
+                <View style={styles.progressBarTrack}>
+                  <View
+                    style={[
+                      styles.progressBarFill,
+                      {
+                        width: `${cat.percentOfBudget}%`,
+                        backgroundColor: cat.color,
+                      },
+                    ]}
+                  />
+                </View>
+              </View>
+            ))
+          )}
         </View>
 
         {/* SEÇÃO "SUAS CONTAS" (IMAGEM 2) */}
         <View style={styles.sectionHeaderRow}>
           <Text style={styles.sectionHeaderTitle}>Suas contas</Text>
-          <TouchableOpacity onPress={() => navigation.navigate('Mais')}>
-            <Text style={styles.allLink}>Gerenciar</Text>
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            <TouchableOpacity onPress={() => setModalNewAcc(true)}>
+              <Text style={styles.allLink}>+ Nova Conta</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => navigation.navigate('Mais')}>
+              <Text style={styles.allLink}>Gerenciar</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         <View style={styles.accountsCard}>
           {accounts.map((acc, index) => (
-            <View
+            <TouchableOpacity
               key={acc.id}
               style={[
                 styles.accountRow,
                 index > 0 && styles.accountRowBorder,
               ]}
+              onPress={() => {
+                setEditingAcc(acc);
+                setAccBalanceInput(String(acc.balance || 0));
+              }}
+              activeOpacity={0.7}
             >
               <View style={styles.accountLeft}>
                 <View
@@ -337,14 +406,14 @@ export default function HomeScreen({ navigation }) {
                 </View>
                 <View>
                   <Text style={styles.accountName}>{acc.name}</Text>
-                  <Text style={styles.accountBank}>{acc.bank}</Text>
+                  <Text style={styles.accountBank}>{acc.bank} • Toque para ajustar</Text>
                 </View>
               </View>
 
               <Text style={styles.accountBalanceText}>
                 {formatMoney(acc.balance)}
               </Text>
-            </View>
+            </TouchableOpacity>
           ))}
         </View>
       </ScrollView>
@@ -360,6 +429,99 @@ export default function HomeScreen({ navigation }) {
 
       {/* MODAL PARA LANÇAR TRANSAÇÃO */}
       <AddTransactionModal
+        visible={modalVisible}
+        onClose={() => setModalVisible(false)}
+      />
+
+      {/* MODAL PARA AJUSTAR SALDO REAL DA CONTA */}
+      <Modal visible={!!editingAcc} transparent animationType="fade">
+        <View style={styles.modalOverlayCenter}>
+          <View style={styles.modalBalanceBox}>
+            <Text style={styles.modalBalanceTitle}>Ajustar Saldo Real</Text>
+            <Text style={styles.modalBalanceSub}>
+              {editingAcc?.name} ({editingAcc?.bank})
+            </Text>
+
+            <View style={styles.inputCurrencyRow}>
+              <Text style={styles.currencyPrefix}>R$</Text>
+              <TextInput
+                style={styles.balanceInput}
+                keyboardType="decimal-pad"
+                value={accBalanceInput}
+                onChangeText={setAccBalanceInput}
+                placeholder="0,00"
+                placeholderTextColor={COLORS.textMuted}
+                autoFocus
+              />
+            </View>
+
+            <View style={styles.modalActionsRow}>
+              <TouchableOpacity
+                style={styles.modalCancelBtn}
+                onPress={() => setEditingAcc(null)}
+              >
+                <Text style={styles.modalCancelText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.modalConfirmBtn}
+                onPress={handleSaveBalance}
+              >
+                <Text style={styles.modalConfirmText}>Salvar Saldo</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* MODAL PARA ADICIONAR NOVA CONTA */}
+      <Modal visible={modalNewAcc} transparent animationType="fade">
+        <View style={styles.modalOverlayCenter}>
+          <View style={styles.modalBalanceBox}>
+            <Text style={styles.modalBalanceTitle}>Nova Conta Bancária</Text>
+            <Text style={styles.modalBalanceSub}>Cadastre sua conta real para o casal</Text>
+
+            <TextInput
+              style={styles.formInput}
+              placeholder="Nome da Conta (ex: Conta Principal)"
+              placeholderTextColor={COLORS.textMuted}
+              value={newAccName}
+              onChangeText={setNewAccName}
+            />
+
+            <TextInput
+              style={styles.formInput}
+              placeholder="Instituição (ex: Nubank, Inter, Itaú)"
+              placeholderTextColor={COLORS.textMuted}
+              value={newAccBank}
+              onChangeText={setNewAccBank}
+            />
+
+            <TextInput
+              style={styles.formInput}
+              placeholder="Saldo Inicial (R$ 0,00)"
+              placeholderTextColor={COLORS.textMuted}
+              keyboardType="decimal-pad"
+              value={newAccBalance}
+              onChangeText={setNewAccBalance}
+            />
+
+            <View style={styles.modalActionsRow}>
+              <TouchableOpacity
+                style={styles.modalCancelBtn}
+                onPress={() => setModalNewAcc(false)}
+              >
+                <Text style={styles.modalCancelText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.modalConfirmBtn}
+                onPress={handleCreateAccount}
+              >
+                <Text style={styles.modalConfirmText}>Adicionar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
         visible={modalVisible}
         onClose={() => setModalVisible(false)}
       />
@@ -828,5 +990,120 @@ const styles = StyleSheet.create({
     elevation: 8,
     borderWidth: 1.5,
     borderColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  emptyCatWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 20,
+    gap: 6,
+  },
+  emptyCatTitle: {
+    color: COLORS.text,
+    fontSize: 14,
+    fontWeight: '700',
+    marginTop: 4,
+  },
+  emptyCatSub: {
+    color: COLORS.textSecondary,
+    fontSize: 12,
+    textAlign: 'center',
+    paddingHorizontal: 20,
+    lineHeight: 16,
+  },
+  modalOverlayCenter: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalBalanceBox: {
+    width: '100%',
+    backgroundColor: COLORS.white,
+    borderRadius: 24,
+    padding: 22,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  modalBalanceTitle: {
+    color: COLORS.text,
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  modalBalanceSub: {
+    color: COLORS.textSecondary,
+    fontSize: 12,
+    marginTop: 2,
+    marginBottom: 16,
+  },
+  inputCurrencyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.surfaceLight,
+    borderWidth: 1,
+    borderColor: COLORS.surfaceBorder,
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    height: 56,
+    marginBottom: 20,
+  },
+  currencyPrefix: {
+    color: COLORS.textSecondary,
+    fontSize: 20,
+    fontWeight: '700',
+    marginRight: 8,
+  },
+  balanceInput: {
+    flex: 1,
+    color: COLORS.text,
+    fontSize: 22,
+    fontWeight: '800',
+  },
+  formInput: {
+    backgroundColor: COLORS.surfaceLight,
+    borderWidth: 1,
+    borderColor: COLORS.surfaceBorder,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    height: 48,
+    color: COLORS.text,
+    fontSize: 14,
+    marginBottom: 12,
+  },
+  modalActionsRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 8,
+  },
+  modalCancelBtn: {
+    flex: 1,
+    height: 46,
+    borderRadius: 12,
+    backgroundColor: COLORS.surfaceLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.surfaceBorder,
+  },
+  modalCancelText: {
+    color: COLORS.textSecondary,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  modalConfirmBtn: {
+    flex: 1,
+    height: 46,
+    borderRadius: 12,
+    backgroundColor: COLORS.navy,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalConfirmText: {
+    color: COLORS.white,
+    fontSize: 13,
+    fontWeight: '800',
   },
 });

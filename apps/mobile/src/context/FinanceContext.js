@@ -16,102 +16,55 @@ import {
 const FinanceContext = createContext(null);
 
 const STORAGE_KEYS = {
-  TRANSACTIONS: '@finn_transactions_v3',
-  ACCOUNTS: '@finn_accounts_v3',
-  CARDS: '@finn_cards_v3',
-  BILLS: '@finn_bills_v3',
-  MEMBER: '@finn_active_member_v3',
-  AI_CHAT: '@finn_ai_chat_v3',
-  MEMBERS_NAMES: '@finn_members_names_v3',
-  HIDE_BALANCES: '@finn_hide_balances_v3',
+  TRANSACTIONS: '@finn_transactions_v4',
+  ACCOUNTS: '@finn_accounts_v4',
+  CARDS: '@finn_cards_v4',
+  BILLS: '@finn_bills_v4',
+  MEMBER: '@finn_active_member_v4',
+  AI_CHAT: '@finn_ai_chat_v4',
+  MEMBERS_NAMES: '@finn_members_names_v4',
+  HIDE_BALANCES: '@finn_hide_balances_v4',
+  IS_DEMO: '@finn_is_demo_mode_v4',
 };
 
-// Contas reais para o casal
+// Contas reais para o casal (Inicia com saldo R$ 0,00 para dados reais)
 const INITIAL_ACCOUNTS = [
-  { id: 'acc-1', name: 'Conta Principal', bank: 'Nubank', balance: 21530.00, owner: 'Casal', icon: 'wallet-outline', color: '#820AD1' },
-  { id: 'acc-2', name: 'Investimentos & Reserva', bank: 'Banco Inter', balance: 12248.15, owner: 'Casal', icon: 'trending-up-outline', color: '#FF7A00' },
+  { id: 'acc-1', name: 'Conta Corrente', bank: 'Nubank', balance: 0.00, owner: 'Casal', icon: 'wallet-outline', color: '#820AD1' },
 ];
 
-const INITIAL_CARDS = [
-  { id: 'card-1', name: 'Nubank Ultravioleta', bank: 'Nubank', limit: 8000, currentInvoice: 851.30, dueDay: 10, owner: 'Casal', color: '#820AD1' },
-  { id: 'card-2', name: 'C6 Carbon Black', bank: 'C6 Bank', limit: 12000, currentInvoice: 99.90, dueDay: 22, owner: 'Casal', color: '#242424' },
+const INITIAL_CARDS = [];
+const INITIAL_BILLS = [];
+const INITIAL_TRANSACTIONS = [];
+
+// Dados de demonstração (opcional para preview caso o usuário queira testar o visual)
+const DEMO_ACCOUNTS = [
+  { id: 'acc-demo-1', name: 'Conta Principal', bank: 'Nubank', balance: 21530.00, owner: 'Casal', icon: 'wallet-outline', color: '#820AD1' },
+  { id: 'acc-demo-2', name: 'Investimentos & Reserva', bank: 'Banco Inter', balance: 12248.15, owner: 'Casal', icon: 'trending-up-outline', color: '#FF7A00' },
 ];
 
-// Contas a Pagar / Planejamento Mensal (como na Imagem 1 enviada pelo usuário)
-const INITIAL_BILLS = [
-  {
-    id: 'bill-1',
-    title: 'C6 Bank',
-    category: 'cartao',
-    subtext: 'Fatura paga • venceu 22 out',
-    amount: 99.90,
-    paid: true,
-    dueDay: 22,
-    icon: 'card',
-    iconColor: '#242424',
-    isCard: true,
-  },
-  {
-    id: 'bill-2',
-    title: 'Seguro do carro',
-    category: 'transporte',
-    subtext: 'Paga • 12 out',
-    amount: 210.00,
-    paid: true,
-    dueDay: 12,
-    icon: 'car-outline',
-    iconColor: '#8B5CF6',
-    isRecurring: true,
-  },
-  {
-    id: 'bill-3',
-    title: 'Internet Fibra',
-    category: 'moradia',
-    subtext: 'Paga • 10 out',
-    amount: 120.00,
-    paid: true,
-    dueDay: 10,
-    icon: 'home-outline',
-    iconColor: '#3B82F6',
-    isRecurring: true,
-  },
-  {
-    id: 'bill-4',
-    title: 'Nubank',
-    category: 'cartao',
-    subtext: 'Fatura paga • venceu 10 out',
-    amount: 851.30,
-    paid: true,
-    dueDay: 10,
-    icon: 'card',
-    iconColor: '#820AD1',
-    isCard: true,
-  },
-  {
-    id: 'bill-5',
-    title: 'Aluguel',
-    category: 'moradia',
-    subtext: 'Paga • 5 out',
-    amount: 1450.00,
-    paid: true,
-    dueDay: 5,
-    icon: 'home-outline',
-    iconColor: '#3B82F6',
-    isRecurring: true,
-  },
+const DEMO_CARDS = [
+  { id: 'card-demo-1', name: 'Nubank Ultravioleta', bank: 'Nubank', limit: 8000, currentInvoice: 851.30, dueDay: 10, owner: 'Casal', color: '#820AD1' },
+  { id: 'card-demo-2', name: 'C6 Carbon Black', bank: 'C6 Bank', limit: 12000, currentInvoice: 99.90, dueDay: 22, owner: 'Casal', color: '#242424' },
 ];
 
-// Transações do mês (Imagem 2 e 3: Entradas R$ 5.850,00 | Saídas R$ 3.074,30)
-const INITIAL_TRANSACTIONS = [
-  { id: 'tx-1', description: 'Salário & Dividendos', amount: 5850.00, type: 'income', category: 'salario', author: 'Casal', date: '2026-10-05', accountId: 'acc-1' },
-  { id: 'tx-2', description: 'Aluguel do Apartamento', amount: 1450.00, type: 'expense', category: 'moradia', author: 'Lucas', date: '2026-10-05', accountId: 'acc-1' },
-  { id: 'tx-3', description: 'Fatura Nubank', amount: 851.30, type: 'expense', category: 'moradia', author: 'Veronica', date: '2026-10-10', accountId: 'acc-1' },
-  { id: 'tx-4', description: 'Supermercado Pão de Açúcar', amount: 560.40, type: 'expense', category: 'alimentacao', author: 'Lucas', date: '2026-10-14', accountId: 'acc-1' },
-  { id: 'tx-5', description: 'Curso & Especialização', amount: 300.00, type: 'expense', category: 'educacao', author: 'Veronica', date: '2026-10-16', accountId: 'acc-1' },
-  { id: 'tx-6', description: 'Combustível Posto Shell', amount: 281.40, type: 'expense', category: 'transporte', author: 'Lucas', date: '2026-10-18', accountId: 'acc-1' },
-  { id: 'tx-7', description: 'Jantar Restaurante', amount: 217.80, type: 'expense', category: 'lazer', author: 'Casal', date: '2026-10-21', accountId: 'acc-1' },
-  { id: 'tx-8', description: 'Internet Fibra', amount: 120.00, type: 'expense', category: 'moradia', author: 'Lucas', date: '2026-10-10', accountId: 'acc-1' },
-  { id: 'tx-9', description: 'Fatura C6 Bank', amount: 99.90, type: 'expense', category: 'outros', author: 'Veronica', date: '2026-10-22', accountId: 'acc-1' },
+const DEMO_BILLS = [
+  { id: 'bill-demo-1', title: 'C6 Bank', category: 'cartao', subtext: 'Fatura paga • venceu 22 out', amount: 99.90, paid: true, dueDay: 22, icon: 'card', iconColor: '#242424', isCard: true },
+  { id: 'bill-demo-2', title: 'Seguro do carro', category: 'transporte', subtext: 'Paga • 12 out', amount: 210.00, paid: true, dueDay: 12, icon: 'car-outline', iconColor: '#8B5CF6', isRecurring: true },
+  { id: 'bill-demo-3', title: 'Internet Fibra', category: 'moradia', subtext: 'Paga • 10 out', amount: 120.00, paid: true, dueDay: 10, icon: 'home-outline', iconColor: '#3B82F6', isRecurring: true },
+  { id: 'bill-demo-4', title: 'Nubank', category: 'cartao', subtext: 'Fatura paga • venceu 10 out', amount: 851.30, paid: true, dueDay: 10, icon: 'card', iconColor: '#820AD1', isCard: true },
+  { id: 'bill-demo-5', title: 'Aluguel', category: 'moradia', subtext: 'Paga • 5 out', amount: 1450.00, paid: true, dueDay: 5, icon: 'home-outline', iconColor: '#3B82F6', isRecurring: true },
+];
+
+const DEMO_TRANSACTIONS = [
+  { id: 'tx-demo-1', description: 'Salário & Dividendos', amount: 5850.00, type: 'income', category: 'salario', author: 'Casal', date: '2026-10-05', accountId: 'acc-demo-1' },
+  { id: 'tx-demo-2', description: 'Aluguel do Apartamento', amount: 1450.00, type: 'expense', category: 'moradia', author: 'Lucas', date: '2026-10-05', accountId: 'acc-demo-1' },
+  { id: 'tx-demo-3', description: 'Fatura Nubank', amount: 851.30, type: 'expense', category: 'moradia', author: 'Veronica', date: '2026-10-10', accountId: 'acc-demo-1' },
+  { id: 'tx-demo-4', description: 'Supermercado Pão de Açúcar', amount: 560.40, type: 'expense', category: 'alimentacao', author: 'Lucas', date: '2026-10-14', accountId: 'acc-demo-1' },
+  { id: 'tx-demo-5', description: 'Curso & Especialização', amount: 300.00, type: 'expense', category: 'educacao', author: 'Veronica', date: '2026-10-16', accountId: 'acc-demo-1' },
+  { id: 'tx-demo-6', description: 'Combustível Posto Shell', amount: 281.40, type: 'expense', category: 'transporte', author: 'Lucas', date: '2026-10-18', accountId: 'acc-demo-1' },
+  { id: 'tx-demo-7', description: 'Jantar Restaurante', amount: 217.80, type: 'expense', category: 'lazer', author: 'Casal', date: '2026-10-21', accountId: 'acc-demo-1' },
+  { id: 'tx-demo-8', description: 'Internet Fibra', amount: 120.00, type: 'expense', category: 'moradia', author: 'Lucas', date: '2026-10-10', accountId: 'acc-demo-1' },
+  { id: 'tx-demo-9', description: 'Fatura C6 Bank', amount: 99.90, type: 'expense', category: 'outros', author: 'Veronica', date: '2026-10-22', accountId: 'acc-demo-1' },
 ];
 
 export const CATEGORIES = [
@@ -305,20 +258,105 @@ export function FinanceProvider({ children }) {
     });
   };
 
+  // Gestão de Contas Reais
+  const addAccount = async (accountData) => {
+    const newAcc = {
+      id: 'acc-' + Date.now(),
+      name: accountData.name || 'Nova Conta',
+      bank: accountData.bank || accountData.name || 'Banco',
+      balance: parseFloat(accountData.balance) || 0,
+      owner: accountData.owner || 'Casal',
+      icon: accountData.icon || 'wallet-outline',
+      color: accountData.color || '#0E2F5A',
+    };
+    const nextAccs = [...accounts, newAcc];
+    setAccounts(nextAccs);
+    await AsyncStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(nextAccs));
+    return newAcc;
+  };
+
+  const updateAccount = async (accId, updatedData) => {
+    const nextAccs = accounts.map((acc) =>
+      acc.id === accId
+        ? {
+            ...acc,
+            ...updatedData,
+            balance:
+              updatedData.balance !== undefined
+                ? parseFloat(updatedData.balance) || 0
+                : acc.balance,
+          }
+        : acc
+    );
+    setAccounts(nextAccs);
+    await AsyncStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(nextAccs));
+  };
+
+  const removeAccount = async (accId) => {
+    const nextAccs = accounts.filter((acc) => acc.id !== accId);
+    setAccounts(nextAccs);
+    await AsyncStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(nextAccs));
+  };
+
+  const addCard = async (cardData) => {
+    const newCard = {
+      id: 'card-' + Date.now(),
+      name: cardData.name || 'Cartão de Crédito',
+      bank: cardData.bank || 'Banco',
+      limit: parseFloat(cardData.limit) || 0,
+      currentInvoice: parseFloat(cardData.currentInvoice) || 0,
+      dueDay: parseInt(cardData.dueDay, 10) || 10,
+      owner: cardData.owner || 'Casal',
+      color: cardData.color || '#0E2F5A',
+    };
+    const nextCards = [...cards, newCard];
+    setCards(nextCards);
+    await AsyncStorage.setItem(STORAGE_KEYS.CARDS, JSON.stringify(nextCards));
+    return newCard;
+  };
+
+  const removeCard = async (cardId) => {
+    const nextCards = cards.filter((c) => c.id !== cardId);
+    setCards(nextCards);
+    await AsyncStorage.setItem(STORAGE_KEYS.CARDS, JSON.stringify(nextCards));
+  };
+
+  // Limpar e zerar todos os dados para uso real
   const clearAllData = async () => {
     setTransactions([]);
-    setAccounts(INITIAL_ACCOUNTS);
-    setCards(INITIAL_CARDS);
+    setAccounts([
+      { id: 'acc-1', name: 'Conta Principal', bank: 'Nubank', balance: 0.0, owner: 'Casal', icon: 'wallet-outline', color: '#820AD1' },
+    ]);
+    setCards([]);
     setBills([]);
     setAiChat([
       {
         id: 'reset',
         sender: 'ai',
-        text: 'Histórico zerado! Agora você e seu cônjuge podem começar o planejamento limpo.',
+        text: `Olá! Sou o FINN AI do casal ${members.user1} & ${members.user2}. Todas as informações falsas de teste foram removidas. Agora você pode cadastrar seus saldos e movimentações reais!`,
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       },
     ]);
-    await AsyncStorage.clear();
+    await AsyncStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify([]));
+    await AsyncStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify([
+      { id: 'acc-1', name: 'Conta Principal', bank: 'Nubank', balance: 0.0, owner: 'Casal', icon: 'wallet-outline', color: '#820AD1' },
+    ]));
+    await AsyncStorage.setItem(STORAGE_KEYS.BILLS, JSON.stringify([]));
+    await AsyncStorage.setItem(STORAGE_KEYS.CARDS, JSON.stringify([]));
+    await AsyncStorage.setItem(STORAGE_KEYS.IS_DEMO, 'false');
+  };
+
+  // Carregar dados de demonstração (se o usuário quiser ver o exemplo)
+  const loadDemoData = async () => {
+    setTransactions(DEMO_TRANSACTIONS);
+    setAccounts(DEMO_ACCOUNTS);
+    setCards(DEMO_CARDS);
+    setBills(DEMO_BILLS);
+    await AsyncStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(DEMO_TRANSACTIONS));
+    await AsyncStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(DEMO_ACCOUNTS));
+    await AsyncStorage.setItem(STORAGE_KEYS.CARDS, JSON.stringify(DEMO_CARDS));
+    await AsyncStorage.setItem(STORAGE_KEYS.BILLS, JSON.stringify(DEMO_BILLS));
+    await AsyncStorage.setItem(STORAGE_KEYS.IS_DEMO, 'true');
   };
 
   const switchActiveMember = (member) => {
@@ -374,7 +412,7 @@ export function FinanceProvider({ children }) {
       percentOfTotal,
       percentOfBudget,
     };
-  }).filter((c) => c.spent > 0 || c.id === 'moradia' || c.id === 'alimentacao');
+  }).filter((c) => c.spent > 0);
 
   // Economizado % (ex: 47%)
   const economizadoPercent = totalIncome > 0 ? Math.round(((totalIncome - totalExpense) / totalIncome) * 100) : 0;
@@ -678,6 +716,12 @@ export function FinanceProvider({ children }) {
         editTransaction,
         removeTransaction,
         updateAccountBalance,
+        addAccount,
+        updateAccount,
+        removeAccount,
+        addCard,
+        removeCard,
+        loadDemoData,
         clearAllData,
         switchActiveMember,
         updateMembersNames,

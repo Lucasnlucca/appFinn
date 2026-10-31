@@ -32,6 +32,7 @@ export default function SettingsScreen() {
     members,
     updateMembersNames,
     clearAllData,
+    loadDemoData,
     allTransactions,
     loggedInUser,
     logout,
@@ -68,7 +69,7 @@ export default function SettingsScreen() {
   };
 
   const handleSaveNames = () => {
-    updateMembersNames({ user1: user1.trim() || 'Henrique', user2: user2.trim() || 'Esposa' });
+    updateMembersNames({ user1: user1.trim() || 'Lucas', user2: user2.trim() || 'Veronica' });
     setSavedNotice(true);
     setTimeout(() => setSavedNotice(false), 2500);
   };
@@ -95,16 +96,33 @@ export default function SettingsScreen() {
 
   const handleReset = () => {
     Alert.alert(
-      'Zerar Dados do Aplicativo',
-      'Tem certeza que deseja apagar todas as despesas e saldos para começar do zero?',
+      'Limpar Todas as Informações de Teste',
+      'Deseja apagar todas as despesas e saldos de exemplo para começar a usar seus dados 100% reais?',
       [
         { text: 'Cancelar', style: 'cancel' },
         {
-          text: 'Sim, Apagar Tudo',
+          text: 'Sim, Limpar Tudo',
           style: 'destructive',
           onPress: async () => {
             await clearAllData();
-            Alert.alert('Pronto', 'Todos os dados foram resetados com sucesso!');
+            Alert.alert('Pronto!', 'O app agora está limpo para você e Veronica cadastrarem suas informações reais.');
+          },
+        },
+      ]
+    );
+  };
+
+  const handleLoadDemo = () => {
+    Alert.alert(
+      'Carregar Dados de Exemplo',
+      'Deseja carregar dados fictícios para visualizar como o app se comporta preenchido?',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Carregar Exemplo',
+          onPress: async () => {
+            await loadDemoData();
+            Alert.alert('Exemplo Carregado', 'Os dados de teste foram carregados.');
           },
         },
       ]
@@ -300,7 +318,7 @@ export default function SettingsScreen() {
             style={styles.input}
             value={user2}
             onChangeText={setUser2}
-            placeholder="Nome (Ex: Esposa)"
+            placeholder="Nome (Ex: Veronica)"
             placeholderTextColor={COLORS.textMuted}
           />
 
@@ -311,26 +329,34 @@ export default function SettingsScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* 4. ZONA DE PERIGO / RESET TOTAL */}
+        {/* 4. DADOS & INICIALIZAÇÃO REAL */}
         <View style={[styles.card, { borderColor: 'rgba(244, 63, 94, 0.3)' }]}>
           <View style={styles.cardHeader}>
             <View style={[styles.iconCircle, { backgroundColor: 'rgba(244, 63, 94, 0.15)' }]}>
               <Ionicons name="trash-bin-outline" size={20} color={COLORS.expense} />
             </View>
             <View>
-              <Text style={[styles.cardTitle, { color: COLORS.expense }]}>Zerar Tudo e Começar Limpo</Text>
-              <Text style={styles.cardSubtitle}>Apaga todas as despesas e zera saldos</Text>
+              <Text style={[styles.cardTitle, { color: COLORS.expense }]}>Dados & Informações Reais</Text>
+              <Text style={styles.cardSubtitle}>Remova dados de teste ou recarregue exemplos</Text>
             </View>
           </View>
 
           <TouchableOpacity style={styles.dangerBtn} onPress={handleReset}>
             <Ionicons name="trash-outline" size={18} color={COLORS.expense} />
-            <Text style={styles.dangerBtnText}>Zerar Todos os Dados</Text>
+            <Text style={styles.dangerBtnText}>Limpar Tudo (Usar Dados Reais)</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.dangerBtn, { backgroundColor: COLORS.surfaceLight, borderColor: COLORS.surfaceBorder, marginTop: 10 }]}
+            onPress={handleLoadDemo}
+          >
+            <Ionicons name="flask-outline" size={18} color={COLORS.navy} />
+            <Text style={[styles.dangerBtnText, { color: COLORS.navy }]}>Carregar Dados de Exemplo (Preview)</Text>
           </TouchableOpacity>
         </View>
 
         <Text style={styles.versionText}>
-          FINN AI • Desenvolvido para Henrique & Esposa • Expo Go SDK 58
+          FINN AI • Desenvolvido para Lucas & Veronica • Expo Go SDK 58
         </Text>
       </ScrollView>
     </View>
