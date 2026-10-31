@@ -187,9 +187,9 @@ export default function FinnAIScreen({ navigation }) {
       if (recordTimerRef.current) clearInterval(recordTimerRef.current);
       if (liveTimerRef.current) clearInterval(liveTimerRef.current);
       Speech.stop();
-      try {
-        audioRecorder.stop();
-      } catch {}
+      if (audioRecorder && audioRecorder.isRecording) {
+        audioRecorder.stop().catch(() => {});
+      }
     };
   }, []);
 
@@ -410,7 +410,9 @@ export default function FinnAIScreen({ navigation }) {
       setAnalyzing(true);
       setAnalyzingStatus('FINN ouvindo seu áudio...');
 
-      await audioRecorder.stop();
+      if (audioRecorder && audioRecorder.isRecording) {
+        await audioRecorder.stop().catch(() => {});
+      }
       const uri = audioRecorder.uri;
 
       if (uri) {
@@ -434,7 +436,9 @@ export default function FinnAIScreen({ navigation }) {
     try {
       if (recordTimerRef.current) clearInterval(recordTimerRef.current);
       setIsRecording(false);
-      await audioRecorder.stop();
+      if (audioRecorder && audioRecorder.isRecording) {
+        await audioRecorder.stop().catch(() => {});
+      }
     } catch {}
     setRecordingSeconds(0);
   };
@@ -459,9 +463,9 @@ export default function FinnAIScreen({ navigation }) {
   const closeGeminiLive = () => {
     Speech.stop();
     if (liveTimerRef.current) clearInterval(liveTimerRef.current);
-    try {
-      audioRecorder.stop();
-    } catch {}
+    if (audioRecorder && audioRecorder.isRecording) {
+      audioRecorder.stop().catch(() => {});
+    }
     setLiveModalVisible(false);
     setLiveState('idle');
   };
@@ -477,7 +481,9 @@ export default function FinnAIScreen({ navigation }) {
       // Para de gravar e envia para a IA
       try {
         setLiveState('thinking');
-        await audioRecorder.stop();
+        if (audioRecorder && audioRecorder.isRecording) {
+          await audioRecorder.stop().catch(() => {});
+        }
         const uri = audioRecorder.uri;
 
         if (uri) {
