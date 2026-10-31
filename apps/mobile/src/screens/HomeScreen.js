@@ -43,6 +43,7 @@ export default function HomeScreen({ navigation }) {
     activeMember,
     switchActiveMember,
     members,
+    transactions,
     selectedMonth,
     setSelectedMonth,
     hideBalances,
@@ -513,6 +514,71 @@ export default function HomeScreen({ navigation }) {
             </TouchableOpacity>
           ))}
         </View>
+
+        {/* SEÇÃO ÚLTIMAS MOVIMENTAÇÕES COM DATA */}
+        {transactions && transactions.length > 0 && (
+          <>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={styles.sectionHeaderTitle}>Últimas movimentações</Text>
+              <TouchableOpacity onPress={() => navigation.navigate('Transactions')}>
+                <Text style={styles.allLink}>Ver extrato →</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.accountsCard}>
+              {transactions.slice(0, 4).map((tx, index) => {
+                const isExpense = tx.type === 'expense';
+                const formattedDate = tx.date
+                  ? (tx.date.includes('-') ? tx.date.split('-').reverse().join('/') : tx.date)
+                  : '';
+                return (
+                  <TouchableOpacity
+                    key={tx.id}
+                    style={[styles.accountRow, index > 0 && styles.accountRowBorder]}
+                    onPress={() => navigation.navigate('Transactions')}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.accountLeft}>
+                      <View
+                        style={[
+                          styles.bankIconCircle,
+                          {
+                            backgroundColor: isExpense
+                              ? 'rgba(239, 68, 68, 0.12)'
+                              : 'rgba(16, 185, 129, 0.12)',
+                          },
+                        ]}
+                      >
+                        <Ionicons
+                          name={isExpense ? 'arrow-down' : 'arrow-up'}
+                          size={16}
+                          color={isExpense ? COLORS.expense : COLORS.income}
+                        />
+                      </View>
+                      <View>
+                        <Text style={styles.accountName}>{tx.description}</Text>
+                        <Text style={styles.accountBank}>
+                          📅 {formattedDate || 'Hoje'} • {tx.author}
+                          {tx.incomeSource === 'freelance' ? ' • ⚡ Freela' : ''}
+                        </Text>
+                      </View>
+                    </View>
+
+                    <Text
+                      style={[
+                        styles.accountBalanceText,
+                        { color: isExpense ? COLORS.expense : COLORS.income },
+                      ]}
+                    >
+                      {isExpense ? '- ' : '+ '}
+                      {formatMoney(tx.amount)}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </>
+        )}
       </ScrollView>
 
       {/* BOTÃO FLUTUANTE DA IA COM SPARKLE NO CANTO INFERIOR DIREITO (IMAGEM 3) */}

@@ -247,6 +247,7 @@ export function FinanceProvider({ children }) {
       incomeSource: txData.incomeSource || (txData.type === 'income' ? 'salary' : undefined), // 'salary' | 'freelance' | 'extra' | 'investment' | 'other'
       author: txData.author || (loggedInUser?.name || activeMember === 'Casal' ? members.user1 : activeMember),
       date: txData.date || new Date().toISOString().split('T')[0],
+      createdAt: txData.createdAt || new Date().toISOString(),
       accountId: txData.accountId || accounts[0]?.id,
       notes: txData.notes || '',
     };

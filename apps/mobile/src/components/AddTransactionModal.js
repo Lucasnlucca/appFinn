@@ -29,6 +29,28 @@ export default function AddTransactionModal({ visible, onClose }) {
   const [accountId, setAccountId] = useState(accounts[0]?.id || '');
   const [notes, setNotes] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [dateDisplay, setDateDisplay] = useState(
+    new Date().toISOString().split('T')[0].split('-').reverse().join('/')
+  );
+
+  const handleDateChange = (text) => {
+    setDateDisplay(text);
+    if (text.includes('/')) {
+      const parts = text.split('/');
+      if (parts.length === 3 && parts[2].length === 4) {
+        setDate(`${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`);
+      }
+    } else if (text.includes('-') && text.length === 10) {
+      setDate(text);
+    }
+  };
+
+  const setQuickDate = (daysAgo = 0) => {
+    const d = new Date(Date.now() - daysAgo * 86400000);
+    const iso = d.toISOString().split('T')[0];
+    setDate(iso);
+    setDateDisplay(iso.split('-').reverse().join('/'));
+  };
 
   // Específico Gasto Fixo (Print 3)
   const [dueDay, setDueDay] = useState('5');
@@ -250,11 +272,29 @@ export default function AddTransactionModal({ visible, onClose }) {
                   </View>
                 </View>
               ) : (
-                <View style={[styles.valBox, { flex: 1 }]}>
-                  <Text style={styles.fieldLabel}>Data</Text>
+                <View style={[styles.valBox, { flex: 1.2 }]}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Text style={styles.fieldLabel}>Data</Text>
+                    <View style={{ flexDirection: 'row', gap: 4 }}>
+                      <TouchableOpacity onPress={() => setQuickDate(0)} style={styles.miniDateBtn}>
+                        <Text style={styles.miniDateBtnText}>Hoje</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity onPress={() => setQuickDate(1)} style={styles.miniDateBtn}>
+                        <Text style={styles.miniDateBtnText}>Ontem</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
                   <View style={styles.smallInputWrap}>
                     <Ionicons name="calendar-outline" size={16} color={COLORS.textSecondary} />
-                    <Text style={styles.dateText}>{date.split('-').reverse().join('/')}</Text>
+                    <TextInput
+                      style={styles.smallInput}
+                      value={dateDisplay}
+                      onChangeText={handleDateChange}
+                      placeholder="DD/MM/AAAA"
+                      placeholderTextColor={COLORS.textMuted}
+                      keyboardType="numeric"
+                      maxLength={10}
+                    />
                   </View>
                 </View>
               )}
@@ -619,6 +659,17 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderWidth: 1,
     borderColor: '#2A313C',
+  },
+  miniDateBtn: {
+    backgroundColor: '#2A313C',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  miniDateBtnText: {
+    color: '#94A3B8',
+    fontSize: 10,
+    fontWeight: '700',
   },
   smallInput: {
     flex: 1,

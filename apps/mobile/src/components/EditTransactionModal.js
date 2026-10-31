@@ -21,6 +21,7 @@ export default function EditTransactionModal({ visible, transaction, onClose, on
   const [type, setType] = useState('expense');
   const [category, setCategory] = useState('outros');
   const [author, setAuthor] = useState('Lucas');
+  const [date, setDate] = useState('');
 
   useEffect(() => {
     if (transaction) {
@@ -29,6 +30,12 @@ export default function EditTransactionModal({ visible, transaction, onClose, on
       setType(transaction.type || 'expense');
       setCategory(transaction.category || 'outros');
       setAuthor(transaction.author || members.user1);
+      const formattedDate = transaction.date
+        ? (transaction.date.includes('-')
+            ? transaction.date.split('-').reverse().join('/')
+            : transaction.date)
+        : new Date().toISOString().split('T')[0].split('-').reverse().join('/');
+      setDate(formattedDate);
     }
   }, [transaction, members]);
 
@@ -37,6 +44,21 @@ export default function EditTransactionModal({ visible, transaction, onClose, on
     const num = parseFloat(amount.replace(',', '.'));
     if (isNaN(num) || num <= 0) return;
 
+    let finalDate = transaction.date || new Date().toISOString().split('T')[0];
+    if (date.trim()) {
+      if (date.includes('/')) {
+        const parts = date.trim().split('/');
+        if (parts.length === 3) {
+          const [d, m, y] = parts;
+          if (d && m && y && y.length === 4) {
+            finalDate = `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+          }
+        }
+      } else if (date.includes('-')) {
+        finalDate = date.trim();
+      }
+    }
+
     onSave({
       ...transaction,
       description: description.trim(),
@@ -44,6 +66,7 @@ export default function EditTransactionModal({ visible, transaction, onClose, on
       type,
       category,
       author,
+      date: finalDate,
     });
     onClose();
   };
@@ -128,6 +151,41 @@ export default function EditTransactionModal({ visible, transaction, onClose, on
               value={description}
               onChangeText={setDescription}
             />
+
+            {/* Data do Lançamento */}
+            <Text style={styles.label}>DATA DO LANÇAMENTO</Text>
+            <View style={styles.dateInputWrap}>
+              <Ionicons name="calendar-outline" size={18} color={COLORS.textSecondary} style={{ marginRight: 8 }} />
+              <TextInput
+                style={styles.dateTextInput}
+                placeholder="DD/MM/AAAA"
+                placeholderTextColor={COLORS.textMuted}
+                value={date}
+                onChangeText={setDate}
+                keyboardType="numeric"
+                maxLength={10}
+              />
+              <View style={styles.quickDateRow}>
+                <TouchableOpacity
+                  style={styles.quickDateBtn}
+                  onPress={() => {
+                    const today = new Date().toISOString().split('T')[0].split('-').reverse().join('/');
+                    setDate(today);
+                  }}
+                >
+                  <Text style={styles.quickDateBtnText}>Hoje</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.quickDateBtn}
+                  onPress={() => {
+                    const yest = new Date(Date.now() - 86400000).toISOString().split('T')[0].split('-').reverse().join('/');
+                    setDate(yest);
+                  }}
+                >
+                  <Text style={styles.quickDateBtnText}>Ontem</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
 
             {/* Responsável (Lucas vs Veronica) */}
             <Text style={styles.label}>QUEM LANÇOU?</Text>
@@ -317,6 +375,37 @@ const styles = StyleSheet.create({
     height: 50,
     color: COLORS.text,
     fontSize: 15,
+  },
+  dateInputWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.surfaceLight,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: COLORS.surfaceBorder,
+    paddingHorizontal: 14,
+    height: 50,
+  },
+  dateTextInput: {
+    flex: 1,
+    color: COLORS.text,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  quickDateRow: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  quickDateBtn: {
+    backgroundColor: COLORS.surfaceBorder,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  quickDateBtnText: {
+    color: COLORS.text,
+    fontSize: 11,
+    fontWeight: '700',
   },
   authorRow: {
     flexDirection: 'row',
