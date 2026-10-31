@@ -16,15 +16,17 @@ import {
 const FinanceContext = createContext(null);
 
 const STORAGE_KEYS = {
-  TRANSACTIONS: '@finn_transactions_v4',
-  ACCOUNTS: '@finn_accounts_v4',
-  CARDS: '@finn_cards_v4',
-  BILLS: '@finn_bills_v4',
-  MEMBER: '@finn_active_member_v4',
-  AI_CHAT: '@finn_ai_chat_v4',
-  MEMBERS_NAMES: '@finn_members_names_v4',
-  HIDE_BALANCES: '@finn_hide_balances_v4',
-  IS_DEMO: '@finn_is_demo_mode_v4',
+  TRANSACTIONS: '@finn_transactions_v5',
+  ACCOUNTS: '@finn_accounts_v5',
+  CARDS: '@finn_cards_v5',
+  BILLS: '@finn_bills_v5',
+  COFRINHOS: '@finn_cofrinhos_v5',
+  MEMBER: '@finn_active_member_v5',
+  AI_CHAT: '@finn_ai_chat_v5',
+  MEMBERS_NAMES: '@finn_members_names_v5',
+  HIDE_BALANCES: '@finn_hide_balances_v5',
+  HERO_VIEW_MODE: '@finn_hero_view_mode_v5',
+  IS_DEMO: '@finn_is_demo_mode_v5',
 };
 
 // Contas reais para o casal (Inicia com saldo R$ 0,00 para dados reais)
@@ -36,45 +38,38 @@ const INITIAL_CARDS = [];
 const INITIAL_BILLS = [];
 const INITIAL_TRANSACTIONS = [];
 
-// Dados de demonstração (opcional para preview caso o usuário queira testar o visual)
-const DEMO_ACCOUNTS = [
-  { id: 'acc-demo-1', name: 'Conta Principal', bank: 'Nubank', balance: 21530.00, owner: 'Casal', icon: 'wallet-outline', color: '#820AD1' },
-  { id: 'acc-demo-2', name: 'Investimentos & Reserva', bank: 'Banco Inter', balance: 12248.15, owner: 'Casal', icon: 'trending-up-outline', color: '#FF7A00' },
+// Cofrinhos / Metas Financeiras (conforme Print 1 do usuário)
+const INITIAL_COFRINHOS = [
+  {
+    id: 'cof-1',
+    title: 'Carro',
+    targetAmount: 80000.00,
+    currentAmount: 41000.00,
+    deadline: 'Sem prazo',
+    icon: 'car-sport-outline',
+    emoji: '🚗',
+    color: '#06B6D4',
+    notes: 'Meta para compra / troca de carro do casal',
+  },
 ];
 
-const DEMO_CARDS = [
-  { id: 'card-demo-1', name: 'Nubank Ultravioleta', bank: 'Nubank', limit: 8000, currentInvoice: 851.30, dueDay: 10, owner: 'Casal', color: '#820AD1' },
-  { id: 'card-demo-2', name: 'C6 Carbon Black', bank: 'C6 Bank', limit: 12000, currentInvoice: 99.90, dueDay: 22, owner: 'Casal', color: '#242424' },
-];
-
-const DEMO_BILLS = [
-  { id: 'bill-demo-1', title: 'C6 Bank', category: 'cartao', subtext: 'Fatura paga • venceu 22 out', amount: 99.90, paid: true, dueDay: 22, icon: 'card', iconColor: '#242424', isCard: true },
-  { id: 'bill-demo-2', title: 'Seguro do carro', category: 'transporte', subtext: 'Paga • 12 out', amount: 210.00, paid: true, dueDay: 12, icon: 'car-outline', iconColor: '#8B5CF6', isRecurring: true },
-  { id: 'bill-demo-3', title: 'Internet Fibra', category: 'moradia', subtext: 'Paga • 10 out', amount: 120.00, paid: true, dueDay: 10, icon: 'home-outline', iconColor: '#3B82F6', isRecurring: true },
-  { id: 'bill-demo-4', title: 'Nubank', category: 'cartao', subtext: 'Fatura paga • venceu 10 out', amount: 851.30, paid: true, dueDay: 10, icon: 'card', iconColor: '#820AD1', isCard: true },
-  { id: 'bill-demo-5', title: 'Aluguel', category: 'moradia', subtext: 'Paga • 5 out', amount: 1450.00, paid: true, dueDay: 5, icon: 'home-outline', iconColor: '#3B82F6', isRecurring: true },
-];
-
-const DEMO_TRANSACTIONS = [
-  { id: 'tx-demo-1', description: 'Salário & Dividendos', amount: 5850.00, type: 'income', category: 'salario', author: 'Casal', date: '2026-10-05', accountId: 'acc-demo-1' },
-  { id: 'tx-demo-2', description: 'Aluguel do Apartamento', amount: 1450.00, type: 'expense', category: 'moradia', author: 'Lucas', date: '2026-10-05', accountId: 'acc-demo-1' },
-  { id: 'tx-demo-3', description: 'Fatura Nubank', amount: 851.30, type: 'expense', category: 'moradia', author: 'Veronica', date: '2026-10-10', accountId: 'acc-demo-1' },
-  { id: 'tx-demo-4', description: 'Supermercado Pão de Açúcar', amount: 560.40, type: 'expense', category: 'alimentacao', author: 'Lucas', date: '2026-10-14', accountId: 'acc-demo-1' },
-  { id: 'tx-demo-5', description: 'Curso & Especialização', amount: 300.00, type: 'expense', category: 'educacao', author: 'Veronica', date: '2026-10-16', accountId: 'acc-demo-1' },
-  { id: 'tx-demo-6', description: 'Combustível Posto Shell', amount: 281.40, type: 'expense', category: 'transporte', author: 'Lucas', date: '2026-10-18', accountId: 'acc-demo-1' },
-  { id: 'tx-demo-7', description: 'Jantar Restaurante', amount: 217.80, type: 'expense', category: 'lazer', author: 'Casal', date: '2026-10-21', accountId: 'acc-demo-1' },
-  { id: 'tx-demo-8', description: 'Internet Fibra', amount: 120.00, type: 'expense', category: 'moradia', author: 'Lucas', date: '2026-10-10', accountId: 'acc-demo-1' },
-  { id: 'tx-demo-9', description: 'Fatura C6 Bank', amount: 99.90, type: 'expense', category: 'outros', author: 'Veronica', date: '2026-10-22', accountId: 'acc-demo-1' },
-];
-
+// Categorias Oficiais idênticas ao Print 4 do usuário
 export const CATEGORIES = [
-  { id: 'moradia', label: 'Moradia', icon: 'home-outline', color: '#3B82F6', budget: 1700.00 },
-  { id: 'alimentacao', label: 'Alimentação', icon: 'restaurant-outline', color: '#F97316', budget: 608.00 },
-  { id: 'educacao', label: 'Educação', icon: 'school-outline', color: '#EC4899', budget: 320.00 },
-  { id: 'transporte', label: 'Transporte', icon: 'car-outline', color: '#8B5CF6', budget: 384.00 },
-  { id: 'lazer', label: 'Lazer', icon: 'game-controller-outline', color: '#10B981', budget: 288.00 },
-  { id: 'salario', label: 'Salário & Renda', icon: 'cash-outline', color: '#10B981', budget: 6000.00 },
-  { id: 'outros', label: 'Outros', icon: 'ellipsis-horizontal-outline', color: '#64748B', budget: 200.00 },
+  { id: 'sem_categoria', label: 'Sem categoria', icon: 'help-circle-outline', emoji: '✓', color: '#94A3B8', budget: 300.00 },
+  { id: 'alimentacao', label: 'Alimentação', icon: 'restaurant-outline', emoji: '🍔', color: '#F97316', budget: 1200.00 },
+  { id: 'assinaturas', label: 'Assinaturas', icon: 'film-outline', emoji: '🎬', color: '#8B5CF6', budget: 250.00 },
+  { id: 'educacao', label: 'Educação', icon: 'school-outline', emoji: '📚', color: '#EC4899', budget: 500.00 },
+  { id: 'financiamento', label: 'Financiamento', icon: 'pricetag-outline', emoji: '🏷️', color: '#EAB308', budget: 1500.00 },
+  { id: 'lazer', label: 'Lazer', icon: 'game-controller-outline', emoji: '🎮', color: '#10B981', budget: 400.00 },
+  { id: 'moradia', label: 'Moradia', icon: 'home-outline', emoji: '🏠', color: '#3B82F6', budget: 2200.00 },
+  { id: 'outros', label: 'Outros', icon: 'cube-outline', emoji: '📦', color: '#64748B', budget: 300.00 },
+  { id: 'pets', label: 'Pets', icon: 'paw-outline', emoji: '🐾', color: '#F59E0B', budget: 350.00 },
+  { id: 'presentes', label: 'Presentes', icon: 'gift-outline', emoji: '🎁', color: '#F43F5E', budget: 200.00 },
+  { id: 'receita', label: 'Receita', icon: 'cash-outline', emoji: '💰', color: '#10B981', budget: 0 },
+  { id: 'saude', label: 'Saúde', icon: 'medkit-outline', emoji: '💊', color: '#EF4444', budget: 400.00 },
+  { id: 'transporte', label: 'Transporte', icon: 'car-outline', emoji: '🚕', color: '#06B6D4', budget: 600.00 },
+  { id: 'vestuario', label: 'Vestuário', icon: 'shirt-outline', emoji: '👕', color: '#6366F1', budget: 350.00 },
+  { id: 'viagem', label: 'Viagem', icon: 'airplane-outline', emoji: '✈️', color: '#14B8A6', budget: 800.00 },
 ];
 
 export function FinanceProvider({ children }) {
@@ -82,6 +77,8 @@ export function FinanceProvider({ children }) {
   const [accounts, setAccounts] = useState(INITIAL_ACCOUNTS);
   const [cards, setCards] = useState(INITIAL_CARDS);
   const [bills, setBills] = useState(INITIAL_BILLS);
+  const [cofrinhos, setCofrinhos] = useState(INITIAL_COFRINHOS);
+  const [heroCardMode, setHeroCardMode] = useState('balance'); // 'balance' (Saldo em Contas) | 'monthResult' (Resultado do Mês)
   const [activeMember, setActiveMember] = useState('Casal'); // 'Casal' | 'Lucas' | 'Veronica'
   const [members, setMembers] = useState({ user1: 'Lucas', user2: 'Veronica' });
   const [selectedMonth, setSelectedMonth] = useState('Out 2026');
@@ -102,15 +99,29 @@ export function FinanceProvider({ children }) {
   useEffect(() => {
     async function loadStored() {
       try {
-        const [savedTrans, savedAccs, savedCards, savedBills, savedMember, savedChat, savedNames, savedHide, savedSession] = await Promise.all([
+        const [
+          savedTrans,
+          savedAccs,
+          savedCards,
+          savedBills,
+          savedCofs,
+          savedMember,
+          savedChat,
+          savedNames,
+          savedHide,
+          savedHeroMode,
+          savedSession,
+        ] = await Promise.all([
           AsyncStorage.getItem(STORAGE_KEYS.TRANSACTIONS),
           AsyncStorage.getItem(STORAGE_KEYS.ACCOUNTS),
           AsyncStorage.getItem(STORAGE_KEYS.CARDS),
           AsyncStorage.getItem(STORAGE_KEYS.BILLS),
+          AsyncStorage.getItem(STORAGE_KEYS.COFRINHOS),
           AsyncStorage.getItem(STORAGE_KEYS.MEMBER),
           AsyncStorage.getItem(STORAGE_KEYS.AI_CHAT),
           AsyncStorage.getItem(STORAGE_KEYS.MEMBERS_NAMES),
           AsyncStorage.getItem(STORAGE_KEYS.HIDE_BALANCES),
+          AsyncStorage.getItem(STORAGE_KEYS.HERO_VIEW_MODE),
           getStoredSession(),
         ]);
 
@@ -118,10 +129,12 @@ export function FinanceProvider({ children }) {
         if (savedAccs) setAccounts(JSON.parse(savedAccs));
         if (savedCards) setCards(JSON.parse(savedCards));
         if (savedBills) setBills(JSON.parse(savedBills));
+        if (savedCofs) setCofrinhos(JSON.parse(savedCofs));
         if (savedMember) setActiveMember(savedMember);
         if (savedChat) setAiChat(JSON.parse(savedChat));
         if (savedNames) setMembers(JSON.parse(savedNames));
         if (savedHide) setHideBalances(JSON.parse(savedHide));
+        if (savedHeroMode) setHeroCardMode(JSON.parse(savedHeroMode));
         if (savedSession) setLoggedInUser(savedSession);
       } catch (e) {
         console.warn('Erro ao carregar dados locais:', e);
@@ -138,6 +151,12 @@ export function FinanceProvider({ children }) {
     await AsyncStorage.setItem(STORAGE_KEYS.HIDE_BALANCES, JSON.stringify(nextVal));
   };
 
+  const toggleHeroCardMode = async () => {
+    const nextMode = heroCardMode === 'balance' ? 'monthResult' : 'balance';
+    setHeroCardMode(nextMode);
+    await AsyncStorage.setItem(STORAGE_KEYS.HERO_VIEW_MODE, JSON.stringify(nextMode));
+  };
+
   // Alternar status de conta paga (Paga vs Pendente)
   const toggleBillPaid = async (billId) => {
     const nextBills = bills.map((b) => (b.id === billId ? { ...b, paid: !b.paid } : b));
@@ -145,19 +164,21 @@ export function FinanceProvider({ children }) {
     await AsyncStorage.setItem(STORAGE_KEYS.BILLS, JSON.stringify(nextBills));
   };
 
-  // Adicionar nova conta a pagar
+  // Adicionar nova conta a pagar (Gasto Fixo - Print 3)
   const addBill = async (billData) => {
     const newBill = {
       id: 'bill-' + Date.now(),
       title: billData.title,
       category: billData.category || 'moradia',
-      subtext: `Vence ${billData.dueDay || '10'} out`,
+      subtext: `Vence dia ${billData.dueDay || '10'}`,
       amount: parseFloat(billData.amount) || 0,
-      paid: false,
-      dueDay: billData.dueDay || 10,
+      paid: !!billData.paid,
+      dueDay: parseInt(billData.dueDay, 10) || 10,
       icon: billData.icon || 'receipt-outline',
       iconColor: billData.iconColor || '#3B82F6',
-      isRecurring: billData.isRecurring || false,
+      isRecurring: billData.isRecurring !== undefined ? billData.isRecurring : true,
+      notes: billData.notes || '',
+      accountId: billData.accountId || accounts[0]?.id,
     };
     const nextBills = [newBill, ...bills];
     setBills(nextBills);
@@ -165,24 +186,76 @@ export function FinanceProvider({ children }) {
     return newBill;
   };
 
-  // Adicionar transação
+  // Cofrinhos / Metas (Print 1)
+  const addCofrinho = async (cofData) => {
+    const target = parseFloat(cofData.targetAmount) || 0;
+    const current = parseFloat(cofData.currentAmount) || 0;
+    const newCof = {
+      id: 'cof-' + Date.now(),
+      title: cofData.title || 'Nova Meta',
+      targetAmount: target,
+      currentAmount: current,
+      deadline: cofData.deadline || 'Sem prazo',
+      icon: cofData.icon || 'car-sport-outline',
+      emoji: cofData.emoji || '🚗',
+      color: cofData.color || '#06B6D4',
+      notes: cofData.notes || '',
+    };
+    const nextList = [newCof, ...cofrinhos];
+    setCofrinhos(nextList);
+    await AsyncStorage.setItem(STORAGE_KEYS.COFRINHOS, JSON.stringify(nextList));
+    return newCof;
+  };
+
+  const depositCofrinho = async (cofrinhoId, amount, fromAccountId) => {
+    const num = parseFloat(amount) || 0;
+    if (num <= 0) return;
+
+    const nextCofs = cofrinhos.map((c) => {
+      if (c.id === cofrinhoId) {
+        return { ...c, currentAmount: (c.currentAmount || 0) + num };
+      }
+      return c;
+    });
+    setCofrinhos(nextCofs);
+    await AsyncStorage.setItem(STORAGE_KEYS.COFRINHOS, JSON.stringify(nextCofs));
+
+    if (fromAccountId) {
+      setAccounts((prev) => {
+        const updated = prev.map((a) => (a.id === fromAccountId ? { ...a, balance: (a.balance || 0) - num } : a));
+        AsyncStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(updated));
+        return updated;
+      });
+    }
+  };
+
+  const removeCofrinho = async (id) => {
+    const nextList = cofrinhos.filter((c) => c.id !== id);
+    setCofrinhos(nextList);
+    await AsyncStorage.setItem(STORAGE_KEYS.COFRINHOS, JSON.stringify(nextList));
+  };
+
+  // Adicionar transação (com suporte a fixed/variable e freelance/salary)
   const addTransaction = async (txData) => {
     const newTx = {
       id: txData.id || 'tx-' + Date.now(),
       description: txData.description,
       amount: parseFloat(txData.amount) || 0,
-      type: txData.type || 'expense',
+      type: txData.type || 'expense', // 'expense' | 'income'
       category: txData.category || 'outros',
+      expenseType: txData.expenseType || (txData.type === 'expense' ? 'variable' : undefined), // 'fixed' | 'variable'
+      incomeSource: txData.incomeSource || (txData.type === 'income' ? 'salary' : undefined), // 'salary' | 'freelance' | 'extra' | 'investment' | 'other'
       author: txData.author || (loggedInUser?.name || activeMember === 'Casal' ? members.user1 : activeMember),
       date: txData.date || new Date().toISOString().split('T')[0],
       accountId: txData.accountId || accounts[0]?.id,
+      notes: txData.notes || '',
     };
 
     const nextList = [newTx, ...transactions];
     setTransactions(nextList);
     await AsyncStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(nextList));
 
-    // Atualiza saldo da conta
+    // Atualiza saldo da conta bancária
     setAccounts((prev) => {
       const updated = prev.map((acc) => {
         if (acc.id === newTx.accountId) {
@@ -391,6 +464,23 @@ export function FinanceProvider({ children }) {
   const resultadoDoMes = totalIncome - totalExpense; // R$ 2.775,70
   const totalBalance = accounts.reduce((sum, a) => sum + (a.balance || 0), 0); // R$ 33.778,15
 
+  // Cálculos de gastos fixos vs variáveis
+  const fixedExpensesList = filteredTransactions.filter((t) => t.type === 'expense' && t.expenseType === 'fixed');
+  const variableExpensesList = filteredTransactions.filter((t) => t.type === 'expense' && t.expenseType !== 'fixed');
+
+  const totalFixedExpenses = fixedExpensesList.reduce((sum, t) => sum + t.amount, 0) + bills.reduce((sum, b) => sum + b.amount, 0);
+  const totalVariableExpenses = variableExpensesList.reduce((sum, t) => sum + t.amount, 0);
+
+  // Cálculos de receitas (Salário vs Freelance)
+  const salaryIncomesList = filteredTransactions.filter((t) => t.type === 'income' && (t.incomeSource === 'salary' || !t.incomeSource));
+  const freelanceIncomesList = filteredTransactions.filter((t) => t.type === 'income' && (t.incomeSource === 'freelance' || t.incomeSource === 'extra'));
+  
+  const totalSalaryIncome = salaryIncomesList.reduce((sum, t) => sum + t.amount, 0);
+  const totalFreelanceIncome = freelanceIncomesList.reduce((sum, t) => sum + t.amount, 0);
+  const totalOtherIncome = filteredTransactions
+    .filter((t) => t.type === 'income' && t.incomeSource !== 'salary' && t.incomeSource !== 'freelance' && t.incomeSource !== 'extra')
+    .reduce((sum, t) => sum + t.amount, 0);
+
   // Cálculos de contas a pagar (Imagem 1)
   const totalBillsAmount = bills.reduce((sum, b) => sum + b.amount, 0);
   const paidBillsAmount = bills.filter((b) => b.paid).reduce((sum, b) => sum + b.amount, 0);
@@ -398,7 +488,7 @@ export function FinanceProvider({ children }) {
   const allBillsPaid = pendingBillsAmount === 0 && bills.length > 0;
 
   // Cálculo de gastos por categoria com barra de progresso (Imagem 2)
-  const categoryBreakdown = CATEGORIES.filter((c) => c.id !== 'salario').map((cat) => {
+  const categoryBreakdown = CATEGORIES.filter((c) => c.id !== 'receita').map((cat) => {
     const spent = filteredTransactions
       .filter((t) => t.type === 'expense' && t.category === cat.id)
       .reduce((sum, t) => sum + t.amount, 0);
@@ -416,6 +506,38 @@ export function FinanceProvider({ children }) {
 
   // Economizado % (ex: 47%)
   const economizadoPercent = totalIncome > 0 ? Math.round(((totalIncome - totalExpense) / totalIncome) * 100) : 0;
+
+  // IA: Consultoria de onde economizar para atingir a meta do Cofrinho
+  const askAiAboutCofrinho = async (cofrinhoId) => {
+    const cof = cofrinhos.find((c) => c.id === cofrinhoId);
+    if (!cof) return 'Cofrinho não encontrado.';
+    const remaining = Math.max(cof.targetAmount - cof.currentAmount, 0);
+
+    const prompt = `Você é o FINN AI, consultor financeiro do casal ${members.user1} e ${members.user2}.
+Eles têm o objetivo/cofrinho: "${cof.title}"
+- Valor total da meta: R$ ${cof.targetAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+- Já guardaram: R$ ${cof.currentAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+- Falta atingir: R$ ${remaining.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+- Prazo estimado: ${cof.deadline || 'Sem prazo'}
+
+Contexto financeiro atual do casal:
+- Saldo total que o casal tem em contas: R$ ${totalBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+- Gastos Fixos do mês (Aluguel, contas essenciais): R$ ${totalFixedExpenses.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+- Gastos Variáveis do mês (Mercado, Lazer, etc): R$ ${totalVariableExpenses.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+- Receitas extras de Freelance / fora do serviço: R$ ${totalFreelanceIncome.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+
+Analise com muito carinho e precisão:
+1. Em quais categorias variáveis eles podem enxugar gastos este mês para acelerar essa meta?
+2. Como a renda de freelance ou bicos extras pode ser aproveitada para este cofrinho?
+3. Projeção realista: em quantos meses eles conseguem comprar/adquirir isso mantendo o padrão saudável de vida?
+Responda de forma clara, motivadora e estruturada em tópicos!`;
+
+    return await sendTextMessageToGemini({
+      userMessage: prompt,
+      financialContext: { totalBalance, totalIncome, totalExpense, activeMember },
+      members,
+    });
+  };
 
   // ==========================================
   // IA MULTIMODAL GEMINI
@@ -693,6 +815,20 @@ export function FinanceProvider({ children }) {
         accounts,
         cards,
         bills,
+        cofrinhos,
+        addCofrinho,
+        depositCofrinho,
+        removeCofrinho,
+        askAiAboutCofrinho,
+        heroCardMode,
+        toggleHeroCardMode,
+        totalFixedExpenses,
+        totalVariableExpenses,
+        fixedExpensesList,
+        variableExpensesList,
+        totalSalaryIncome,
+        totalFreelanceIncome,
+        totalOtherIncome,
         toggleBillPaid,
         addBill,
         totalBillsAmount,

@@ -163,6 +163,7 @@ function MainAppContent() {
     <NavigationContainer>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         <Stack.Screen name="MainTabs" component={MainTabs} />
+        <Stack.Screen name="Mais" component={SettingsScreen} />
         <Stack.Screen name="Settings" component={SettingsScreen} />
         <Stack.Screen name="CardsAccounts" component={CardsAccountsScreen} />
         <Stack.Screen

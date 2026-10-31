@@ -17,6 +17,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { COLORS } from '../theme/colors';
 import { useFinance } from '../context/FinanceContext';
 import AddTransactionModal from '../components/AddTransactionModal';
+import CofrinhosModal from '../components/CofrinhosModal';
 
 const { width } = Dimensions.get('window');
 
@@ -26,7 +27,14 @@ export default function HomeScreen({ navigation }) {
     totalBalance,
     totalIncome,
     totalExpense,
+    totalSalaryIncome,
+    totalFreelanceIncome,
+    totalFixedExpenses,
+    totalVariableExpenses,
     resultadoDoMes,
+    cofrinhos,
+    heroCardMode,
+    toggleHeroCardMode,
     accounts,
     allBillsPaid,
     pendingBillsAmount,
@@ -44,6 +52,7 @@ export default function HomeScreen({ navigation }) {
   } = useFinance();
 
   const [modalVisible, setModalVisible] = useState(false);
+  const [modalCofrinhos, setModalCofrinhos] = useState(false);
   const [editingAcc, setEditingAcc] = useState(null);
   const [accBalanceInput, setAccBalanceInput] = useState('');
   const [modalNewAcc, setModalNewAcc] = useState(false);
@@ -145,25 +154,30 @@ export default function HomeScreen({ navigation }) {
           { paddingBottom: insets.bottom + 90 },
         ]}
       >
-        {/* CARD HERO AZUL ESCURO: "RESULTADO DO MÊS" (IDÊNTICO À IMAGEM 3) */}
+        {/* CARD HERO AZUL ESCURO: SALDO TOTAL VINCULADO & RESULTADO DO MÊS */}
         <LinearGradient
           colors={[COLORS.navyGradientStart, COLORS.navyGradientEnd]}
           style={styles.heroCard}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
         >
-          {/* TOPO DO CARD */}
+          {/* TOPO DO CARD: ALTERNADOR ENTRE SALDO TOTAL EM CONTAS E RESULTADO DO MÊS */}
           <View style={styles.heroTop}>
-            <View style={styles.heroTitleRow}>
-              <Text style={styles.heroTitle}>RESULTADO DO MÊS</Text>
-              <TouchableOpacity>
-                <Ionicons
-                  name="information-circle-outline"
-                  size={15}
-                  color="rgba(255,255,255,0.7)"
-                />
-              </TouchableOpacity>
-            </View>
+            <TouchableOpacity
+              style={styles.heroModePill}
+              onPress={toggleHeroCardMode}
+              activeOpacity={0.8}
+            >
+              <Ionicons
+                name={heroCardMode === 'balance' ? 'wallet' : 'trending-up'}
+                size={13}
+                color={COLORS.white}
+              />
+              <Text style={styles.heroTitle}>
+                {heroCardMode === 'balance' ? 'SALDO TOTAL EM CONTAS' : 'RESULTADO DO MÊS'}
+              </Text>
+              <Ionicons name="swap-horizontal" size={13} color="rgba(255,255,255,0.7)" />
+            </TouchableOpacity>
 
             <TouchableOpacity onPress={toggleHideBalances} style={styles.eyeBtn}>
               <Ionicons
@@ -174,22 +188,30 @@ export default function HomeScreen({ navigation }) {
             </TouchableOpacity>
           </View>
 
-          {/* VALOR PRINCIPAL E GRÁFICO SPARKLINE */}
+          {/* VALOR PRINCIPAL VINCULADO E GRÁFICO */}
           <View style={styles.heroValueRow}>
             <View>
-              <Text style={styles.heroValue}>{formatMoney(resultadoDoMes)}</Text>
+              <Text style={styles.heroValue}>
+                {formatMoney(heroCardMode === 'balance' ? totalBalance : resultadoDoMes)}
+              </Text>
               <View style={styles.trendingBadge}>
                 <Ionicons
-                  name={resultadoDoMes >= 0 ? "arrow-up" : "arrow-down"}
+                  name={resultadoDoMes >= 0 ? 'arrow-up' : 'arrow-down'}
                   size={11}
                   color={resultadoDoMes >= 0 ? COLORS.income : COLORS.expense}
                 />
                 <Text style={styles.trendingText}>
-                  {totalIncome === 0 && totalExpense === 0
-                    ? 'Aguardando lançamentos'
-                    : resultadoDoMes >= 0
-                    ? 'Saldo positivo'
-                    : 'Saldo negativo'}
+                  {heroCardMode === 'balance'
+                    ? (resultadoDoMes === 0
+                        ? 'Patrimônio em contas'
+                        : resultadoDoMes >= 0
+                        ? `+ ${formatMoney(resultadoDoMes)} no mês`
+                        : `${formatMoney(resultadoDoMes)} no mês`)
+                    : (totalIncome === 0 && totalExpense === 0
+                        ? `Nas contas: ${formatMoney(totalBalance)}`
+                        : resultadoDoMes >= 0
+                        ? 'Superávit no mês'
+                        : 'Déficit no mês')}
                 </Text>
               </View>
             </View>
@@ -204,17 +226,22 @@ export default function HomeScreen({ navigation }) {
             </View>
           </View>
 
-          {/* SUB-CARDS INFERIORES: ENTRADAS E SAÍDAS */}
+          {/* SUB-CARDS INFERIORES: ENTRADAS (COM FREELANCE) E SAÍDAS (COM FIXAS/VARIÁVEIS) */}
           <View style={styles.heroMetricsGrid}>
             <View style={styles.heroMetricPill}>
               <View style={styles.incomeArrowCircle}>
                 <Ionicons name="arrow-down" size={14} color={COLORS.income} />
               </View>
-              <View>
+              <View style={{ flex: 1 }}>
                 <Text style={styles.metricPillLabel}>Entradas</Text>
                 <Text style={styles.metricPillValue}>
                   {formatMoney(totalIncome)}
                 </Text>
+                {totalFreelanceIncome > 0 && (
+                  <Text style={styles.metricSubBadge}>
+                    ⚡ {formatMoney(totalFreelanceIncome)} freela
+                  </Text>
+                )}
               </View>
             </View>
 
@@ -222,11 +249,16 @@ export default function HomeScreen({ navigation }) {
               <View style={styles.expenseArrowCircle}>
                 <Ionicons name="arrow-up" size={14} color={COLORS.expense} />
               </View>
-              <View>
+              <View style={{ flex: 1 }}>
                 <Text style={styles.metricPillLabel}>Saídas</Text>
                 <Text style={styles.metricPillValue}>
                   {formatMoney(totalExpense)}
                 </Text>
+                {totalFixedExpenses > 0 && (
+                  <Text style={styles.metricSubBadge}>
+                    Fixos: {formatMoney(totalFixedExpenses)}
+                  </Text>
+                )}
               </View>
             </View>
           </View>
@@ -296,6 +328,71 @@ export default function HomeScreen({ navigation }) {
               <Text style={styles.mascotBtnText}>Ver planejamento →</Text>
             </TouchableOpacity>
           </View>
+        </View>
+
+        {/* SEÇÃO COFRINHOS & METAS (PRINT 1 DO USUÁRIO) */}
+        <View style={styles.cofrinhosHomeCard}>
+          <View style={styles.cofrinhosHomeTop}>
+            <View style={styles.cofrinhosTitleRow}>
+              <View style={styles.piggyCircle}>
+                <Ionicons name="sparkles" size={16} color="#06B6D4" />
+              </View>
+              <View>
+                <Text style={styles.cofrinhosHomeTitle}>Cofrinhos & Metas</Text>
+                <Text style={styles.cofrinhosHomeSub}>
+                  {cofrinhos.length} {cofrinhos.length === 1 ? 'meta ativa' : 'metas ativas'} com apoio da IA
+                </Text>
+              </View>
+            </View>
+
+            <TouchableOpacity
+              style={styles.openCofsBtn}
+              onPress={() => setModalCofrinhos(true)}
+            >
+              <Text style={styles.openCofsBtnText}>Abrir cofrinhos →</Text>
+            </TouchableOpacity>
+          </View>
+
+          {cofrinhos.length > 0 && (
+            <TouchableOpacity
+              style={styles.firstCofPreview}
+              onPress={() => setModalCofrinhos(true)}
+              activeOpacity={0.8}
+            >
+              <View style={styles.firstCofHeader}>
+                <Text style={styles.firstCofEmoji}>{cofrinhos[0].emoji || '🚗'}</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.firstCofTitle}>{cofrinhos[0].title}</Text>
+                  <Text style={styles.firstCofSub}>{cofrinhos[0].deadline || 'Sem prazo'}</Text>
+                </View>
+                <Text style={styles.firstCofPercent}>
+                  {Math.min(
+                    Math.round(((cofrinhos[0].currentAmount || 0) / (cofrinhos[0].targetAmount || 1)) * 100),
+                    100
+                  )}% atingido
+                </Text>
+              </View>
+
+              <View style={styles.previewProgressTrack}>
+                <View
+                  style={[
+                    styles.previewProgressFill,
+                    {
+                      width: `${Math.min(
+                        Math.round(((cofrinhos[0].currentAmount || 0) / (cofrinhos[0].targetAmount || 1)) * 100),
+                        100
+                      )}%`,
+                    },
+                  ]}
+                />
+              </View>
+
+              <View style={styles.firstCofValuesRow}>
+                <Text style={styles.firstCofCurrent}>{formatMoney(cofrinhos[0].currentAmount)}</Text>
+                <Text style={styles.firstCofTarget}>de {formatMoney(cofrinhos[0].targetAmount)}</Text>
+              </View>
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* SEÇÃO "MAIORES GASTOS" COM BARRAS DE PROGRESSO (IMAGEM 2) */}
@@ -431,6 +528,12 @@ export default function HomeScreen({ navigation }) {
       <AddTransactionModal
         visible={modalVisible}
         onClose={() => setModalVisible(false)}
+      />
+
+      {/* MODAL DE COFRINHOS & METAS COM IA */}
+      <CofrinhosModal
+        visible={modalCofrinhos}
+        onClose={() => setModalCofrinhos(false)}
       />
 
       {/* MODAL PARA AJUSTAR SALDO REAL DA CONTA */}
@@ -633,16 +736,27 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: 6,
   },
+  heroModePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+  },
   heroTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
   },
   heroTitle: {
-    color: 'rgba(255, 255, 255, 0.75)',
+    color: COLORS.white,
     fontSize: 11,
     fontWeight: '800',
-    letterSpacing: 0.8,
+    letterSpacing: 0.5,
   },
   eyeBtn: {
     padding: 4,
@@ -757,6 +871,118 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '800',
     marginTop: 2,
+  },
+  metricSubBadge: {
+    color: '#93C5FD',
+    fontSize: 9,
+    fontWeight: '700',
+    marginTop: 2,
+  },
+  cofrinhosHomeCard: {
+    backgroundColor: COLORS.surface,
+    borderRadius: 20,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: COLORS.surfaceBorder,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  cofrinhosHomeTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  cofrinhosTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  piggyCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: 'rgba(6, 182, 212, 0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cofrinhosHomeTitle: {
+    color: COLORS.text,
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  cofrinhosHomeSub: {
+    color: COLORS.textSecondary,
+    fontSize: 11,
+    marginTop: 1,
+  },
+  openCofsBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  openCofsBtnText: {
+    color: '#0284C7',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  firstCofPreview: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  firstCofHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 8,
+  },
+  firstCofEmoji: {
+    fontSize: 20,
+  },
+  firstCofTitle: {
+    color: COLORS.text,
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  firstCofSub: {
+    color: COLORS.textSecondary,
+    fontSize: 11,
+  },
+  firstCofPercent: {
+    color: '#0891B2',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  previewProgressTrack: {
+    height: 6,
+    backgroundColor: '#E2E8F0',
+    borderRadius: 3,
+    overflow: 'hidden',
+    marginBottom: 6,
+  },
+  previewProgressFill: {
+    height: '100%',
+    backgroundColor: '#06B6D4',
+    borderRadius: 3,
+  },
+  firstCofValuesRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 6,
+  },
+  firstCofCurrent: {
+    color: COLORS.text,
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  firstCofTarget: {
+    color: COLORS.textSecondary,
+    fontSize: 11,
   },
   sectionHeaderTitle: {
     color: COLORS.text,

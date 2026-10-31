@@ -9,35 +9,113 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../theme/colors';
 import { useFinance, CATEGORIES } from '../context/FinanceContext';
 
 export default function AddTransactionModal({ visible, onClose }) {
-  const { addTransaction, accounts, members, activeMember } = useFinance();
-  const [type, setType] = useState('expense'); // 'expense' | 'income'
+  const { addTransaction, addBill, accounts, members, activeMember } = useFinance();
+
+  // Modo: 'variable' (Gasto Variável) | 'fixed' (Gasto Fixo - Print 3) | 'income' (Novo Recebimento - Print 2)
+  const [mode, setMode] = useState('variable');
+
+  // Campos compartilhados
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
   const [category, setCategory] = useState('alimentacao');
   const [author, setAuthor] = useState(activeMember === 'Casal' ? members.user1 : activeMember);
   const [accountId, setAccountId] = useState(accounts[0]?.id || '');
+  const [notes, setNotes] = useState('');
+  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+
+  // Específico Gasto Fixo (Print 3)
+  const [dueDay, setDueDay] = useState('5');
+  const [billStatus, setBillStatus] = useState('pending'); // 'pending' | 'paid'
+  const [isRecurring, setIsRecurring] = useState(true);
+
+  // Específico Recebimento (Print 2)
+  const [incomeSource, setIncomeSource] = useState('salary'); // 'salary' | 'freelance' | 'extra'
+
+  // Modal de seleção de categoria (Print 4)
+  const [catPickerVisible, setCatPickerVisible] = useState(false);
+
+  const selectedCategoryObj = CATEGORIES.find((c) => c.id === category) || CATEGORIES[0];
 
   const handleSave = async () => {
-    if (!description.trim() || !amount.trim()) return;
+    if (!description.trim() || !amount.trim()) {
+      Alert.alert('Campos obrigatórios', 'Preencha a descrição e o valor.');
+      return;
+    }
+    const num = parseFloat(amount.replace(',', '.'));
+    if (isNaN(num) || num <= 0) {
+      Alert.alert('Valor inválido', 'Digite um valor numérico válido.');
+      return;
+    }
 
-    await addTransaction({
-      description: description.trim(),
-      amount: parseFloat(amount.replace(',', '.')),
-      type,
-      category,
-      author,
-      accountId,
-    });
+    try {
+      if (mode === 'fixed') {
+        // Gasto fixo (Salva nas contas a pagar e gera lançamento se pago)
+        await addBill({
+          title: description.trim(),
+          amount: num,
+          dueDay: parseInt(dueDay, 10) || 5,
+          category,
+          paid: billStatus === 'paid',
+          isRecurring,
+          notes: notes.trim(),
+          accountId,
+        });
 
-    setDescription('');
-    setAmount('');
-    onClose();
+        if (billStatus === 'paid') {
+          await addTransaction({
+            description: description.trim(),
+            amount: num,
+            type: 'expense',
+            expenseType: 'fixed',
+            category,
+            author,
+            accountId,
+            notes: notes.trim(),
+          });
+        }
+      } else if (mode === 'income') {
+        // Novo Recebimento (Salário ou Freelance / Renda Extra)
+        await addTransaction({
+          description: description.trim(),
+          amount: num,
+          type: 'income',
+          incomeSource,
+          category: category === 'alimentacao' ? 'receita' : category,
+          author,
+          accountId,
+          date,
+          notes: notes.trim(),
+        });
+      } else {
+        // Gasto Variável do dia a dia
+        await addTransaction({
+          description: description.trim(),
+          amount: num,
+          type: 'expense',
+          expenseType: 'variable',
+          category,
+          author,
+          accountId,
+          date,
+          notes: notes.trim(),
+        });
+      }
+
+      // Reset
+      setDescription('');
+      setAmount('');
+      setNotes('');
+      onClose();
+    } catch (e) {
+      Alert.alert('Erro ao salvar', e.message);
+    }
   };
 
   return (
@@ -49,69 +127,284 @@ export default function AddTransactionModal({ visible, onClose }) {
         <View style={styles.sheetContainer}>
           {/* Header */}
           <View style={styles.header}>
-            <Text style={styles.headerTitle}>Novo Lançamento</Text>
+            <Text style={styles.headerTitle}>
+              {mode === 'fixed'
+                ? 'Novo Gasto Fixo'
+                : mode === 'income'
+                ? 'Novo Recebimento'
+                : 'Novo Gasto Variável'}
+            </Text>
             <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
               <Ionicons name="close" size={24} color={COLORS.textSecondary} />
             </TouchableOpacity>
           </View>
 
-          <ScrollView showsVerticalScrollIndicator={false}>
-            {/* Toggle Tipo: Despesa / Receita */}
-            <View style={styles.typeSelector}>
-              <TouchableOpacity
-                style={[styles.typeBtn, type === 'expense' && styles.typeBtnExpenseActive]}
-                onPress={() => setType('expense')}
-              >
-                <Ionicons
-                  name="arrow-down-circle"
-                  size={18}
-                  color={type === 'expense' ? COLORS.white : COLORS.expense}
-                />
-                <Text style={[styles.typeBtnText, type === 'expense' && styles.typeBtnTextActive]}>
-                  Despesa
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.typeBtn, type === 'income' && styles.typeBtnIncomeActive]}
-                onPress={() => setType('income')}
-              >
-                <Ionicons
-                  name="arrow-up-circle"
-                  size={18}
-                  color={type === 'income' ? COLORS.white : COLORS.income}
-                />
-                <Text style={[styles.typeBtnText, type === 'income' && styles.typeBtnTextActive]}>
-                  Receita
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Input Valor */}
-            <View style={styles.amountWrap}>
-              <Text style={styles.currencySymbol}>R$</Text>
-              <TextInput
-                style={styles.amountInput}
-                placeholder="0,00"
-                placeholderTextColor={COLORS.textMuted}
-                keyboardType="decimal-pad"
-                value={amount}
-                onChangeText={setAmount}
+          {/* Abas Superiores (Variável, Fixo, Recebimento) */}
+          <View style={styles.modeTabsRow}>
+            <TouchableOpacity
+              style={[styles.modeTab, mode === 'variable' && styles.modeTabActive]}
+              onPress={() => {
+                setMode('variable');
+                if (category === 'receita') setCategory('alimentacao');
+              }}
+            >
+              <Ionicons
+                name="cart-outline"
+                size={15}
+                color={mode === 'variable' ? COLORS.white : COLORS.textSecondary}
               />
-            </View>
+              <Text style={[styles.modeTabText, mode === 'variable' && styles.modeTabTextActive]}>
+                Variável
+              </Text>
+            </TouchableOpacity>
 
+            <TouchableOpacity
+              style={[styles.modeTab, mode === 'fixed' && styles.modeTabFixedActive]}
+              onPress={() => {
+                setMode('fixed');
+                if (category === 'receita') setCategory('moradia');
+              }}
+            >
+              <Ionicons
+                name="calendar-outline"
+                size={15}
+                color={mode === 'fixed' ? COLORS.white : COLORS.textSecondary}
+              />
+              <Text style={[styles.modeTabText, mode === 'fixed' && styles.modeTabTextActive]}>
+                Gasto Fixo
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.modeTab, mode === 'income' && styles.modeTabIncomeActive]}
+              onPress={() => {
+                setMode('income');
+                setCategory('receita');
+              }}
+            >
+              <Ionicons
+                name="arrow-up-circle-outline"
+                size={15}
+                color={mode === 'income' ? COLORS.white : COLORS.textSecondary}
+              />
+              <Text style={[styles.modeTabText, mode === 'income' && styles.modeTabTextActive]}>
+                Recebimento
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView showsVerticalScrollIndicator={false}>
             {/* Input Descrição */}
-            <Text style={styles.label}>Descrição</Text>
+            <Text style={styles.fieldLabel}>
+              {mode === 'income'
+                ? 'Descrição (ex.: Salário, Freela)'
+                : mode === 'fixed'
+                ? 'Descrição do gasto fixo (ex.: Aluguel)'
+                : 'Descrição (ex.: Supermercado, Almoço)'}
+            </Text>
             <TextInput
-              style={styles.input}
-              placeholder="Ex: Supermercado, Farmácia, Salário"
+              style={styles.textInput}
+              placeholder={
+                mode === 'income'
+                  ? 'Salário, Freela de Programação...'
+                  : mode === 'fixed'
+                  ? 'Aluguel, Internet, Condomínio...'
+                  : 'Mercado, Uber, Farmácia...'
+              }
               placeholderTextColor={COLORS.textMuted}
               value={description}
               onChangeText={setDescription}
             />
 
-            {/* Responsável (Casal: Henrique ou Esposa) */}
-            <Text style={styles.label}>Quem realizou?</Text>
+            {/* Linha de Valor e Dia/Data */}
+            <View style={styles.valRow}>
+              <View style={[styles.valBox, { flex: 1.3 }]}>
+                <Text style={styles.fieldLabel}>Valor</Text>
+                <View style={styles.amountInputWrap}>
+                  <Text style={styles.currencyPrefix}>R$</Text>
+                  <TextInput
+                    style={styles.amountInput}
+                    placeholder="0,00"
+                    placeholderTextColor={COLORS.textMuted}
+                    keyboardType="decimal-pad"
+                    value={amount}
+                    onChangeText={setAmount}
+                  />
+                </View>
+              </View>
+
+              {mode === 'fixed' ? (
+                <View style={[styles.valBox, { flex: 0.9 }]}>
+                  <Text style={styles.fieldLabel}>Dia Vencimento</Text>
+                  <View style={styles.smallInputWrap}>
+                    <Ionicons name="calendar-outline" size={16} color={COLORS.textSecondary} />
+                    <TextInput
+                      style={styles.smallInput}
+                      placeholder="5"
+                      placeholderTextColor={COLORS.textMuted}
+                      keyboardType="number-pad"
+                      maxLength={2}
+                      value={dueDay}
+                      onChangeText={setDueDay}
+                    />
+                  </View>
+                </View>
+              ) : (
+                <View style={[styles.valBox, { flex: 1 }]}>
+                  <Text style={styles.fieldLabel}>Data</Text>
+                  <View style={styles.smallInputWrap}>
+                    <Ionicons name="calendar-outline" size={16} color={COLORS.textSecondary} />
+                    <Text style={styles.dateText}>{date.split('-').reverse().join('/')}</Text>
+                  </View>
+                </View>
+              )}
+            </View>
+
+            {/* SELETOR DE ORIGEM PARA RECEBIMENTO: SALÁRIO VS FREELANCE */}
+            {mode === 'income' && (
+              <View style={styles.incomeSourceBox}>
+                <Text style={styles.fieldLabel}>Origem da Renda:</Text>
+                <View style={styles.sourcePillsRow}>
+                  <TouchableOpacity
+                    style={[
+                      styles.sourcePill,
+                      incomeSource === 'salary' && styles.sourcePillSalaryActive,
+                    ]}
+                    onPress={() => setIncomeSource('salary')}
+                  >
+                    <Ionicons
+                      name="briefcase-outline"
+                      size={15}
+                      color={incomeSource === 'salary' ? COLORS.white : COLORS.textSecondary}
+                    />
+                    <Text
+                      style={[
+                        styles.sourcePillText,
+                        incomeSource === 'salary' && styles.sourcePillTextActive,
+                      ]}
+                    >
+                      Salário Fixo
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.sourcePill,
+                      incomeSource === 'freelance' && styles.sourcePillFreelaActive,
+                    ]}
+                    onPress={() => setIncomeSource('freelance')}
+                  >
+                    <Ionicons
+                      name="flash"
+                      size={15}
+                      color={incomeSource === 'freelance' ? COLORS.white : '#EA580C'}
+                    />
+                    <Text
+                      style={[
+                        styles.sourcePillText,
+                        incomeSource === 'freelance' && styles.sourcePillTextActive,
+                      ]}
+                    >
+                      ⚡ Freelance / Extra
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+
+            {/* OPÇÕES ESPECÍFICAS DE GASTO FIXO: STATUS E ATIVO (PRINT 3) */}
+            {mode === 'fixed' && (
+              <View style={styles.fixedOptionsRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.fieldLabel}>Status</Text>
+                  <View style={styles.statusToggleRow}>
+                    <TouchableOpacity
+                      style={[
+                        styles.statusToggleBtn,
+                        billStatus === 'pending' && styles.statusTogglePending,
+                      ]}
+                      onPress={() => setBillStatus('pending')}
+                    >
+                      <Text
+                        style={[
+                          styles.statusToggleText,
+                          billStatus === 'pending' && styles.statusToggleTextActive,
+                        ]}
+                      >
+                        Pendente
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[
+                        styles.statusToggleBtn,
+                        billStatus === 'paid' && styles.statusTogglePaid,
+                      ]}
+                      onPress={() => setBillStatus('paid')}
+                    >
+                      <Text
+                        style={[
+                          styles.statusToggleText,
+                          billStatus === 'paid' && styles.statusToggleTextActive,
+                        ]}
+                      >
+                        Pago
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                <TouchableOpacity
+                  style={styles.activeCheckRow}
+                  onPress={() => setIsRecurring(!isRecurring)}
+                >
+                  <Ionicons
+                    name={isRecurring ? 'checkbox' : 'square-outline'}
+                    size={22}
+                    color={isRecurring ? '#F97316' : COLORS.textMuted}
+                  />
+                  <Text style={styles.activeCheckText}>Ativo</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* BOTÃO SELETOR DE CATEGORIA (EXATAMENTE COMO NO PRINT 4) */}
+            <Text style={styles.fieldLabel}>Categoria</Text>
+            <TouchableOpacity
+              style={styles.categoryDropdownBtn}
+              onPress={() => setCatPickerVisible(true)}
+            >
+              <View style={styles.catSelectedLeft}>
+                <Text style={styles.catEmoji}>{selectedCategoryObj.emoji}</Text>
+                <Text style={styles.catSelectedText}>{selectedCategoryObj.label}</Text>
+              </View>
+              <Ionicons name="chevron-down" size={18} color={COLORS.textSecondary} />
+            </TouchableOpacity>
+
+            {/* BANCO (OPCIONAL) */}
+            <Text style={styles.fieldLabel}>Banco vinculado (opcional)</Text>
+            <View style={styles.accountsRow}>
+              {accounts.map((acc) => (
+                <TouchableOpacity
+                  key={acc.id}
+                  style={[styles.accChip, accountId === acc.id && styles.accChipActive]}
+                  onPress={() => setAccountId(acc.id)}
+                >
+                  <Ionicons
+                    name="business-outline"
+                    size={13}
+                    color={accountId === acc.id ? COLORS.white : COLORS.textSecondary}
+                  />
+                  <Text
+                    style={[styles.accChipText, accountId === acc.id && styles.accChipTextActive]}
+                  >
+                    {acc.name} ({acc.bank})
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* RESPONSÁVEL (LUCAS OU VERÔNICA) */}
+            <Text style={styles.fieldLabel}>Quem realizou?</Text>
             <View style={styles.authorRow}>
               {[members.user1, members.user2].map((name) => (
                 <TouchableOpacity
@@ -120,49 +413,88 @@ export default function AddTransactionModal({ visible, onClose }) {
                   onPress={() => setAuthor(name)}
                 >
                   <Ionicons
-                    name="person"
+                    name="person-outline"
                     size={14}
                     color={author === name ? COLORS.white : COLORS.textSecondary}
                   />
-                  <Text style={[styles.authorText, author === name && styles.authorTextActive]}>
+                  <Text
+                    style={[styles.authorText, author === name && styles.authorTextActive]}
+                  >
                     {name}
                   </Text>
                 </TouchableOpacity>
               ))}
             </View>
 
-            {/* Categoria */}
-            <Text style={styles.label}>Categoria</Text>
-            <View style={styles.categoriesGrid}>
+            {/* OBSERVAÇÃO (OPCIONAL) */}
+            <Text style={styles.fieldLabel}>Observação (opcional)</Text>
+            <TextInput
+              style={styles.notesInput}
+              placeholder="Detalhes adicionais..."
+              placeholderTextColor={COLORS.textMuted}
+              value={notes}
+              onChangeText={setNotes}
+              multiline
+            />
+
+            {/* BOTÃO PRINCIPAL DE ENVIO (LARANJA COMO NOS PRINTS 2 E 3) */}
+            <TouchableOpacity style={styles.submitBtnOrange} onPress={handleSave}>
+              <Text style={styles.submitBtnOrangeText}>
+                {mode === 'fixed'
+                  ? 'Salvar gasto fixo'
+                  : mode === 'income'
+                  ? 'Registrar recebimento'
+                  : 'Registrar gasto variável'}
+              </Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </View>
+      </KeyboardAvoidingView>
+
+      {/* MODAL DE SELEÇÃO DE CATEGORIAS (PRINT 4) */}
+      <Modal visible={catPickerVisible} transparent animationType="fade">
+        <View style={styles.pickerOverlay}>
+          <View style={styles.pickerBox}>
+            <View style={styles.pickerHeader}>
+              <Text style={styles.pickerTitle}>Selecione a Categoria</Text>
+              <TouchableOpacity onPress={() => setCatPickerVisible(false)}>
+                <Ionicons name="close" size={22} color={COLORS.text} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={{ maxHeight: 380 }}>
               {CATEGORIES.map((cat) => {
                 const isSelected = category === cat.id;
                 return (
                   <TouchableOpacity
                     key={cat.id}
-                    style={[
-                      styles.categoryCard,
-                      isSelected && { borderColor: cat.color, backgroundColor: 'rgba(255,255,255,0.08)' },
-                    ]}
-                    onPress={() => setCategory(cat.id)}
+                    style={[styles.catOptionItem, isSelected && styles.catOptionItemSelected]}
+                    onPress={() => {
+                      setCategory(cat.id);
+                      setCatPickerVisible(false);
+                    }}
                   >
-                    <Ionicons name={cat.icon} size={20} color={cat.color} />
-                    <Text
-                      style={[styles.categoryLabel, isSelected && { color: COLORS.text, fontWeight: '700' }]}
-                    >
-                      {cat.label}
-                    </Text>
+                    <View style={styles.catOptionLeft}>
+                      <Text style={styles.catOptionEmoji}>{cat.emoji}</Text>
+                      <Text
+                        style={[
+                          styles.catOptionLabel,
+                          isSelected && styles.catOptionLabelSelected,
+                        ]}
+                      >
+                        {cat.label}
+                      </Text>
+                    </View>
+                    {isSelected && (
+                      <Ionicons name="checkmark-circle" size={18} color="#2563EB" />
+                    )}
                   </TouchableOpacity>
                 );
               })}
-            </View>
-
-            {/* Botão Confirmar */}
-            <TouchableOpacity style={styles.submitBtn} onPress={handleSave}>
-              <Text style={styles.submitBtnText}>Salvar Movimentação</Text>
-            </TouchableOpacity>
-          </ScrollView>
+            </ScrollView>
+          </View>
         </View>
-      </KeyboardAvoidingView>
+      </Modal>
     </Modal>
   );
 }
@@ -170,176 +502,384 @@ export default function AddTransactionModal({ visible, onClose }) {
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.7)',
+    backgroundColor: 'rgba(0,0,0,0.65)',
     justifyContent: 'flex-end',
   },
   sheetContainer: {
-    backgroundColor: COLORS.surface,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
+    backgroundColor: '#1E232A',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
     paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 40,
-    maxHeight: '90%',
+    paddingTop: 18,
+    paddingBottom: 36,
+    maxHeight: '92%',
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 20,
+    marginBottom: 14,
   },
   headerTitle: {
-    color: COLORS.text,
-    fontSize: 20,
-    fontWeight: '700',
+    color: COLORS.white,
+    fontSize: 19,
+    fontWeight: '800',
   },
   closeBtn: {
     padding: 6,
   },
-  typeSelector: {
+  modeTabsRow: {
     flexDirection: 'row',
-    gap: 12,
-    marginBottom: 20,
+    gap: 8,
+    backgroundColor: '#13171D',
+    padding: 4,
+    borderRadius: 14,
+    marginBottom: 16,
   },
-  typeBtn: {
+  modeTab: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 12,
-    borderRadius: 14,
-    backgroundColor: COLORS.surfaceLight,
-    borderWidth: 1,
-    borderColor: COLORS.surfaceBorder,
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 10,
   },
-  typeBtnExpenseActive: {
-    backgroundColor: COLORS.expense,
-    borderColor: COLORS.expense,
+  modeTabActive: {
+    backgroundColor: '#0E2F5A',
   },
-  typeBtnIncomeActive: {
-    backgroundColor: COLORS.income,
-    borderColor: COLORS.income,
+  modeTabFixedActive: {
+    backgroundColor: '#F97316',
   },
-  typeBtnText: {
-    color: COLORS.textSecondary,
-    fontSize: 15,
+  modeTabIncomeActive: {
+    backgroundColor: '#10B981',
+  },
+  modeTabText: {
+    color: '#94A3B8',
+    fontSize: 13,
     fontWeight: '600',
   },
-  typeBtnTextActive: {
+  modeTabTextActive: {
     color: COLORS.white,
     fontWeight: '700',
   },
-  amountWrap: {
+  fieldLabel: {
+    color: '#94A3B8',
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 10,
+    marginBottom: 6,
+  },
+  textInput: {
+    backgroundColor: '#13171D',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    color: COLORS.white,
+    fontSize: 15,
+    borderWidth: 1,
+    borderColor: '#2A313C',
+  },
+  valRow: {
+    flexDirection: 'row',
+    gap: 10,
+    alignItems: 'flex-end',
+  },
+  valBox: {},
+  amountInputWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#13171D',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: '#2A313C',
+  },
+  currencyPrefix: {
+    color: '#94A3B8',
+    fontSize: 16,
+    fontWeight: '700',
+    marginRight: 6,
+  },
+  amountInput: {
+    flex: 1,
+    color: COLORS.white,
+    fontSize: 18,
+    fontWeight: '800',
+    padding: 0,
+  },
+  smallInputWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#13171D',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: '#2A313C',
+  },
+  smallInput: {
+    flex: 1,
+    color: COLORS.white,
+    fontSize: 15,
+    fontWeight: '700',
+    padding: 0,
+  },
+  dateText: {
+    color: COLORS.white,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  incomeSourceBox: {
+    backgroundColor: '#13171D',
+    padding: 10,
+    borderRadius: 12,
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: '#2A313C',
+  },
+  sourcePillsRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  sourcePill: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: COLORS.surfaceLight,
-    borderRadius: 18,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    marginBottom: 20,
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: '#1E232A',
     borderWidth: 1,
-    borderColor: COLORS.surfaceBorder,
+    borderColor: '#2A313C',
   },
-  currencySymbol: {
-    color: COLORS.textSecondary,
-    fontSize: 24,
-    fontWeight: '700',
-    marginRight: 8,
+  sourcePillSalaryActive: {
+    backgroundColor: '#0E2F5A',
+    borderColor: '#2563EB',
   },
-  amountInput: {
-    color: COLORS.text,
-    fontSize: 32,
-    fontWeight: '800',
-    minWidth: 120,
+  sourcePillFreelaActive: {
+    backgroundColor: '#EA580C',
+    borderColor: '#F97316',
   },
-  label: {
-    color: COLORS.textSecondary,
-    fontSize: 13,
+  sourcePillText: {
+    color: '#94A3B8',
+    fontSize: 12,
     fontWeight: '600',
-    marginBottom: 8,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
   },
-  input: {
-    backgroundColor: COLORS.surfaceLight,
+  sourcePillTextActive: {
+    color: COLORS.white,
+    fontWeight: '700',
+  },
+  fixedOptionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginTop: 6,
+  },
+  statusToggleRow: {
+    flexDirection: 'row',
+    backgroundColor: '#13171D',
+    borderRadius: 10,
+    padding: 3,
     borderWidth: 1,
-    borderColor: COLORS.surfaceBorder,
-    borderRadius: 14,
-    paddingHorizontal: 16,
-    paddingVertical: 13,
-    color: COLORS.text,
+    borderColor: '#2A313C',
+  },
+  statusToggleBtn: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  statusTogglePending: {
+    backgroundColor: '#374151',
+  },
+  statusTogglePaid: {
+    backgroundColor: '#10B981',
+  },
+  statusToggleText: {
+    color: '#94A3B8',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  statusToggleTextActive: {
+    color: COLORS.white,
+    fontWeight: '700',
+  },
+  activeCheckRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingTop: 18,
+  },
+  activeCheckText: {
+    color: COLORS.white,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  categoryDropdownBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#13171D',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: '#2A313C',
+  },
+  catSelectedLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  catEmoji: {
+    fontSize: 18,
+  },
+  catSelectedText: {
+    color: COLORS.white,
     fontSize: 15,
-    marginBottom: 16,
+    fontWeight: '600',
+  },
+  accountsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  accChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    backgroundColor: '#13171D',
+    borderWidth: 1,
+    borderColor: '#2A313C',
+  },
+  accChipActive: {
+    backgroundColor: '#0E2F5A',
+    borderColor: '#3B82F6',
+  },
+  accChipText: {
+    color: '#94A3B8',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  accChipTextActive: {
+    color: COLORS.white,
   },
   authorRow: {
     flexDirection: 'row',
     gap: 10,
-    marginBottom: 20,
   },
   authorChip: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 6,
-    paddingHorizontal: 16,
     paddingVertical: 10,
-    borderRadius: 12,
-    backgroundColor: COLORS.surfaceLight,
+    borderRadius: 10,
+    backgroundColor: '#13171D',
     borderWidth: 1,
-    borderColor: COLORS.surfaceBorder,
+    borderColor: '#2A313C',
   },
   authorChipActive: {
-    backgroundColor: COLORS.primary,
-    borderColor: COLORS.primary,
+    backgroundColor: '#0E2F5A',
+    borderColor: '#3B82F6',
   },
   authorText: {
-    color: COLORS.textSecondary,
-    fontSize: 14,
+    color: '#94A3B8',
+    fontSize: 13,
     fontWeight: '600',
   },
   authorTextActive: {
     color: COLORS.white,
     fontWeight: '700',
   },
-  categoriesGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 24,
-  },
-  categoryCard: {
-    width: '48%',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    padding: 12,
-    backgroundColor: COLORS.surfaceLight,
+  notesInput: {
+    backgroundColor: '#13171D',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    color: COLORS.white,
+    fontSize: 14,
     borderWidth: 1,
-    borderColor: COLORS.surfaceBorder,
+    borderColor: '#2A313C',
+    minHeight: 50,
+  },
+  submitBtnOrange: {
+    backgroundColor: '#F97316',
     borderRadius: 14,
-  },
-  categoryLabel: {
-    color: COLORS.textSecondary,
-    fontSize: 12,
-    flexShrink: 1,
-  },
-  submitBtn: {
-    backgroundColor: COLORS.primary,
-    paddingVertical: 16,
-    borderRadius: 16,
+    paddingVertical: 15,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
+    marginTop: 20,
+    marginBottom: 10,
   },
-  submitBtnText: {
+  submitBtnOrangeText: {
+    color: COLORS.white,
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  pickerOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  pickerBox: {
+    width: '100%',
+    backgroundColor: '#1E232A',
+    borderRadius: 20,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: '#2A313C',
+  },
+  pickerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#2A313C',
+    marginBottom: 8,
+  },
+  pickerTitle: {
     color: COLORS.white,
     fontSize: 16,
     fontWeight: '700',
   },
+  catOptionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+  },
+  catOptionItemSelected: {
+    backgroundColor: 'rgba(37, 99, 235, 0.2)',
+  },
+  catOptionLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  catOptionEmoji: {
+    fontSize: 20,
+  },
+  catOptionLabel: {
+    color: '#E2E8F0',
+    fontSize: 15,
+    fontWeight: '500',
+  },
+  catOptionLabelSelected: {
+    color: COLORS.white,
+    fontWeight: '700',
+  },
 });
-

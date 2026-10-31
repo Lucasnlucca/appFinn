@@ -22,7 +22,7 @@ export default function TransactionsScreen() {
   const [modalVisible, setModalVisible] = useState(false);
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [selectedTx, setSelectedTx] = useState(null);
-  const [filterType, setFilterType] = useState('all'); // 'all' | 'expense' | 'income'
+  const [filterType, setFilterType] = useState('all'); // 'all' | 'expense' | 'fixed' | 'variable' | 'income' | 'freelance'
   const [search, setSearch] = useState('');
 
   const formatCurrency = (val) => {
@@ -30,7 +30,11 @@ export default function TransactionsScreen() {
   };
 
   const filtered = transactions.filter((t) => {
-    if (filterType !== 'all' && t.type !== filterType) return false;
+    if (filterType === 'expense' && t.type !== 'expense') return false;
+    if (filterType === 'fixed' && (t.type !== 'expense' || t.expenseType !== 'fixed')) return false;
+    if (filterType === 'variable' && (t.type !== 'expense' || t.expenseType === 'fixed')) return false;
+    if (filterType === 'income' && t.type !== 'income') return false;
+    if (filterType === 'freelance' && (t.type !== 'income' || (t.incomeSource !== 'freelance' && t.incomeSource !== 'extra'))) return false;
     if (search.trim() && !t.description.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
   });
@@ -81,21 +85,26 @@ export default function TransactionsScreen() {
 
       {/* FILTRO TIPO */}
       <View style={styles.filterRow}>
-        {[
-          { id: 'all', label: 'Todos' },
-          { id: 'expense', label: 'Despesas' },
-          { id: 'income', label: 'Receitas' },
-        ].map((f) => (
-          <TouchableOpacity
-            key={f.id}
-            style={[styles.filterChip, filterType === f.id && styles.filterChipActive]}
-            onPress={() => setFilterType(f.id)}
-          >
-            <Text style={[styles.filterChipText, filterType === f.id && styles.filterChipTextActive]}>
-              {f.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+          {[
+            { id: 'all', label: 'Todos' },
+            { id: 'expense', label: 'Despesas' },
+            { id: 'fixed', label: '📌 Fixos' },
+            { id: 'variable', label: '🛒 Variáveis' },
+            { id: 'income', label: 'Receitas' },
+            { id: 'freelance', label: '⚡ Freelance' },
+          ].map((f) => (
+            <TouchableOpacity
+              key={f.id}
+              style={[styles.filterChip, filterType === f.id && styles.filterChipActive]}
+              onPress={() => setFilterType(f.id)}
+            >
+              <Text style={[styles.filterChipText, filterType === f.id && styles.filterChipTextActive]}>
+                {f.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
       </View>
 
       {/* LISTA DE MOVIMENTAÇÕES */}
@@ -113,7 +122,7 @@ export default function TransactionsScreen() {
           </View>
         ) : (
           filtered.map((item) => {
-            const cat = CATEGORIES.find((c) => c.id === item.category) || CATEGORIES[6];
+            const cat = CATEGORIES.find((c) => c.id === item.category) || CATEGORIES[0];
             const isExpense = item.type === 'expense';
             return (
               <TouchableOpacity
@@ -122,8 +131,8 @@ export default function TransactionsScreen() {
                 activeOpacity={0.7}
                 onPress={() => handleEdit(item)}
               >
-                <View style={[styles.iconWrap, { backgroundColor: `${cat.color}20` }]}>
-                  <Ionicons name={cat.icon} size={20} color={cat.color} />
+                <View style={[styles.iconWrap, { backgroundColor: `${cat.color || COLORS.primary}20` }]}>
+                  <Text style={{ fontSize: 18 }}>{cat.emoji || '📦'}</Text>
                 </View>
 
                 <View style={styles.infoCol}>
@@ -132,6 +141,16 @@ export default function TransactionsScreen() {
                     <Text style={styles.catText}>{cat.label}</Text>
                     <Text style={styles.metaDot}>•</Text>
                     <Text style={styles.authorBadge}>{item.author}</Text>
+                    {item.incomeSource === 'freelance' && (
+                      <View style={styles.freelaBadge}>
+                        <Text style={styles.freelaBadgeText}>⚡ Freela</Text>
+                      </View>
+                    )}
+                    {item.expenseType === 'fixed' && (
+                      <View style={styles.fixedBadge}>
+                        <Text style={styles.fixedBadgeText}>📌 Fixo</Text>
+                      </View>
+                    )}
                   </View>
                 </View>
 
@@ -328,6 +347,28 @@ const styles = StyleSheet.create({
     color: COLORS.primary,
     fontSize: 11,
     fontWeight: '700',
+  },
+  freelaBadge: {
+    backgroundColor: 'rgba(234, 88, 12, 0.15)',
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 6,
+  },
+  freelaBadgeText: {
+    color: '#EA580C',
+    fontSize: 9,
+    fontWeight: '800',
+  },
+  fixedBadge: {
+    backgroundColor: 'rgba(59, 130, 246, 0.15)',
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 6,
+  },
+  fixedBadgeText: {
+    color: '#2563EB',
+    fontSize: 9,
+    fontWeight: '800',
   },
   amountCol: {
     alignItems: 'flex-end',

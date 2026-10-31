@@ -12,14 +12,15 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../theme/colors';
-import { CATEGORIES } from '../context/FinanceContext';
+import { useFinance, CATEGORIES } from '../context/FinanceContext';
 
 export default function EditTransactionModal({ visible, transaction, onClose, onSave, onDelete }) {
+  const { members } = useFinance();
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
   const [type, setType] = useState('expense');
   const [category, setCategory] = useState('outros');
-  const [author, setAuthor] = useState('Henrique');
+  const [author, setAuthor] = useState('Lucas');
 
   useEffect(() => {
     if (transaction) {
@@ -27,9 +28,9 @@ export default function EditTransactionModal({ visible, transaction, onClose, on
       setAmount(transaction.amount ? String(transaction.amount) : '');
       setType(transaction.type || 'expense');
       setCategory(transaction.category || 'outros');
-      setAuthor(transaction.author || 'Henrique');
+      setAuthor(transaction.author || members.user1);
     }
-  }, [transaction]);
+  }, [transaction, members]);
 
   const handleSave = () => {
     if (!description.trim() || !amount) return;
@@ -128,10 +129,10 @@ export default function EditTransactionModal({ visible, transaction, onClose, on
               onChangeText={setDescription}
             />
 
-            {/* Responsável (Henrique vs Esposa) */}
+            {/* Responsável (Lucas vs Veronica) */}
             <Text style={styles.label}>QUEM LANÇOU?</Text>
             <View style={styles.authorRow}>
-              {['Henrique', 'Esposa', 'Casal'].map((m) => (
+              {[members.user1, members.user2, 'Casal'].map((m) => (
                 <TouchableOpacity
                   key={m}
                   style={[styles.authorBtn, author === m && styles.authorBtnActive]}
@@ -158,11 +159,7 @@ export default function EditTransactionModal({ visible, transaction, onClose, on
                     ]}
                     onPress={() => setCategory(cat.id)}
                   >
-                    <Ionicons
-                      name={cat.icon}
-                      size={18}
-                      color={isSelected ? cat.color : COLORS.textSecondary}
-                    />
+                    <Text style={{ fontSize: 18 }}>{cat.emoji || '📦'}</Text>
                     <Text
                       numberOfLines={1}
                       style={[
