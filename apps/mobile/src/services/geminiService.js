@@ -5,18 +5,28 @@ const STORAGE_KEYS = {
   GEMINI_MODEL: '@finn_gemini_model',
 };
 
-export const DEFAULT_MODEL = 'gemini-2.5-flash';
-export const FALLBACK_MODEL = 'gemini-1.5-flash';
+// Modelos ativos na API do Google AI Studio
+export const DEFAULT_MODEL = 'gemini-3.5-flash';
+export const FALLBACK_MODEL = 'gemini-3.5-flash-lite';
+export const EMERGENCY_MODEL = 'gemini-3.8-flash';
+
+// Chave padrão pré-configurada
+const BUNDLED_DEFAULT_KEY = 'AIzaSyDOzZL7AxJJ-tL9LGo6nX5MhHJsQCcehbw';
 
 /**
- * Recupera ou salva a chave do Gemini no dispositivo
+ * Recupera a chave do Gemini no dispositivo ou variáveis de ambiente
  */
 export async function getGeminiApiKey() {
   try {
-    return await AsyncStorage.getItem(STORAGE_KEYS.GEMINI_KEY);
-  } catch (e) {
-    return null;
+    const stored = await AsyncStorage.getItem(STORAGE_KEYS.GEMINI_KEY);
+    if (stored && stored.trim()) return stored.trim();
+  } catch (e) {}
+
+  if (process.env.EXPO_PUBLIC_GEMINI_API_KEY) {
+    return process.env.EXPO_PUBLIC_GEMINI_API_KEY.trim();
   }
+
+  return BUNDLED_DEFAULT_KEY;
 }
 
 export async function setGeminiApiKey(key) {
@@ -35,10 +45,13 @@ export async function setGeminiApiKey(key) {
 export async function getGeminiModel() {
   try {
     const saved = await AsyncStorage.getItem(STORAGE_KEYS.GEMINI_MODEL);
-    return saved || DEFAULT_MODEL;
-  } catch (e) {
-    return DEFAULT_MODEL;
-  }
+    // Migra modelos legados (2.5 ou 1.5) para 3.5 caso estejam no cache
+    if (saved && !saved.includes('2.5') && !saved.includes('1.5')) {
+      return saved;
+    }
+  } catch (e) {}
+
+  return process.env.EXPO_PUBLIC_GEMINI_MODEL || DEFAULT_MODEL;
 }
 
 export async function setGeminiModel(model) {
@@ -53,13 +66,18 @@ export async function setGeminiModel(model) {
 /**
  * Chamada principal para a API do Google Gemini
  */
-async function callGeminiApi({ apiKey, model, parts, systemInstruction }) {
+async function callGeminiApi({ apiKey, model, parts, systemInstruction, retryCount = 0 }) {
   const currentKey = apiKey || (await getGeminiApiKey());
   if (!currentKey) {
     throw new Error('CHAVE_GEMINI_AUSENTE');
   }
 
-  const selectedModel = model || (await getGeminiModel());
+  let selectedModel = model || (await getGeminiModel());
+  // Se for modelo descontinuado, substitui por 3.5
+  if (selectedModel.includes('2.5') || selectedModel.includes('1.5')) {
+    selectedModel = DEFAULT_MODEL;
+  }
+
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${selectedModel}:generateContent?key=${currentKey}`;
 
   const body = {
@@ -95,10 +113,26 @@ Quando o usuário relatar um gasto, enviar comprovante, foto de nota fiscal, PDF
 
   if (!response.ok) {
     const errText = await response.text();
-    // Tenta fallback para gemini-1.5-flash caso o modelo 2.5 não esteja liberado na chave
-    if (selectedModel !== FALLBACK_MODEL && (response.status === 404 || response.status === 400)) {
-      return callGeminiApi({ apiKey, model: FALLBACK_MODEL, parts, systemInstruction });
+
+    // Fallback para modelos alternativos em caso de 404
+    if (retryCount === 0) {
+      return callGeminiApi({
+        apiKey: currentKey,
+        model: FALLBACK_MODEL,
+        parts,
+        systemInstruction,
+        retryCount: 1,
+      });
+    } else if (retryCount === 1) {
+      return callGeminiApi({
+        apiKey: currentKey,
+        model: EMERGENCY_MODEL,
+        parts,
+        systemInstruction,
+        retryCount: 2,
+      });
     }
+
     throw new Error(`Erro na Gemini API (${response.status}): ${errText}`);
   }
 

@@ -48,7 +48,7 @@ export default function SettingsScreen() {
 
   // Google Gemini
   const [geminiKey, setGeminiKeyState] = useState('');
-  const [geminiModel, setGeminiModelState] = useState('gemini-2.5-flash');
+  const [geminiModel, setGeminiModelState] = useState('gemini-3.5-flash');
   const [geminiSavedNotice, setGeminiSavedNotice] = useState(false);
   const [showGeminiKey, setShowGeminiKey] = useState(false);
 
@@ -190,14 +190,14 @@ export default function SettingsScreen() {
 
           <Text style={styles.label}>MODELO DO GEMINI</Text>
           <View style={styles.modelRow}>
-            {['gemini-2.5-flash', 'gemini-1.5-flash'].map((m) => (
+            {['gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-3.8-flash'].map((m) => (
               <TouchableOpacity
                 key={m}
                 style={[styles.modelBtn, geminiModel === m && styles.modelBtnActive]}
                 onPress={() => setGeminiModelState(m)}
               >
                 <Text style={[styles.modelBtnText, geminiModel === m && styles.modelBtnTextActive]}>
-                  {m}
+                  {m.replace('gemini-', '')}
                 </Text>
               </TouchableOpacity>
             ))}

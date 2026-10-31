@@ -234,3 +234,4 @@ export async function syncTransactionToAppwrite(tx) {
     return { synced: false, reason: e.message };
   }
 }
+

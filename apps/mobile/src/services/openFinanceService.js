@@ -158,3 +158,4 @@ export async function syncOpenFinanceTransactions(bankId) {
   await AsyncStorage.setItem(STORAGE_KEYS.OPEN_FINANCE_SYNC, new Date().toISOString());
   return mockSyncTransactions;
 }
+
