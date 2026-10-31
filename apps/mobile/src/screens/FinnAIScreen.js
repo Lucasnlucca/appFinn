@@ -17,7 +17,16 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
-import { Audio } from 'expo-av';
+
+// Carregador seguro para evitar crash do 'ExponentAV' no Expo Go
+function getAudioModule() {
+  try {
+    const av = require('expo-av');
+    return av?.Audio || null;
+  } catch (e) {
+    return null;
+  }
+}
 
 import { COLORS } from '../theme/colors';
 import { useFinance } from '../context/FinanceContext';
@@ -181,22 +190,62 @@ export default function FinnAIScreen({ navigation }) {
     }
   };
 
-  // 3. GRAVAÇÃO DE ÁUDIO DE VOZ
-  const startRecording = async () => {
+  // 3. ANEXAR ARQUIVO DE ÁUDIO (MENSAGEM DE VOZ / WHATSAPP)
+  const handlePickAudio = async () => {
     try {
-      const permission = await Audio.requestPermissionsAsync();
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['audio/*', 'audio/m4a', 'audio/mp3', 'audio/ogg', 'audio/wav', 'audio/aac'],
+        copyToCacheDirectory: true,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const asset = result.assets[0];
+        setAnalyzing(true);
+        setAnalyzingStatus('Ouvindo áudio com o Google Gemini...');
+
+        const base64Audio = await FileSystem.readAsStringAsync(asset.uri, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+
+        const mime = asset.mimeType || 'audio/m4a';
+        await processAudioMessage(base64Audio, mime);
+      }
+    } catch (e) {
+      Alert.alert('Erro ao carregar áudio', e.message);
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
+  // 4. GRAVAÇÃO DE ÁUDIO DE VOZ NATIVO
+  const startRecording = async () => {
+    const AudioModule = getAudioModule();
+    if (!AudioModule) {
+      Alert.alert(
+        'Mensagem de Voz',
+        'Deseja selecionar um arquivo de áudio gravado (ex: WhatsApp ou Gravador de Voz) para a IA FINN escutar?',
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          { text: 'Escolher Áudio', onPress: handlePickAudio },
+        ]
+      );
+      return;
+    }
+
+    try {
+      const permission = await AudioModule.requestPermissionsAsync();
       if (!permission.granted) {
         Alert.alert('Microfone', 'Permissão de microfone necessária para mensagens de voz.');
         return;
       }
 
-      await Audio.setAudioModeAsync({
+      await AudioModule.setAudioModeAsync({
         allowsRecordingIOS: true,
         playsInSilentModeIOS: true,
       });
 
-      const { recording: newRecording } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY
+      const { recording: newRecording } = await AudioModule.Recording.createAsync(
+        AudioModule.RecordingOptionsPresets.HIGH_QUALITY
       );
 
       setRecording(newRecording);
@@ -206,7 +255,14 @@ export default function FinnAIScreen({ navigation }) {
         setRecordingDuration((prev) => prev + 1);
       }, 1000);
     } catch (err) {
-      Alert.alert('Erro ao gravar', err.message);
+      Alert.alert(
+        'Gravação Indisponível',
+        'Deseja selecionar um áudio gravado para a IA analisar?',
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          { text: 'Selecionar Áudio', onPress: handlePickAudio },
+        ]
+      );
     }
   };
 
