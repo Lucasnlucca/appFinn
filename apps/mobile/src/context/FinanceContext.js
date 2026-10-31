@@ -235,32 +235,42 @@ export function FinanceProvider({ children }) {
     await AsyncStorage.setItem(STORAGE_KEYS.COFRINHOS, JSON.stringify(nextList));
   };
 
-  // Adicionar transação (com suporte a fixed/variable e freelance/salary)
-  const addTransaction = async (txData) => {
-    const newTx = {
-      id: txData.id || 'tx-' + Date.now(),
+  // Adicionar lote de transações de forma atômica (previne perda em chamadas simultâneas)
+  const addTransactionsBatch = async (txDataArray) => {
+    if (!txDataArray || txDataArray.length === 0) return [];
+
+    const newTxs = txDataArray.map((txData, idx) => ({
+      id: txData.id || `tx-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 7)}`,
       description: txData.description,
       amount: parseFloat(txData.amount) || 0,
       type: txData.type || 'expense', // 'expense' | 'income'
       category: txData.category || 'outros',
       expenseType: txData.expenseType || (txData.type === 'expense' ? 'variable' : undefined), // 'fixed' | 'variable'
       incomeSource: txData.incomeSource || (txData.type === 'income' ? 'salary' : undefined), // 'salary' | 'freelance' | 'extra' | 'investment' | 'other'
-      author: txData.author || (loggedInUser?.name || activeMember === 'Casal' ? members.user1 : activeMember),
+      author: txData.author || (loggedInUser?.name || (activeMember === 'Casal' ? members.user1 : activeMember)),
       date: txData.date || new Date().toISOString().split('T')[0],
       createdAt: txData.createdAt || new Date().toISOString(),
       accountId: txData.accountId || accounts[0]?.id,
       notes: txData.notes || '',
-    };
+    }));
 
-    const nextList = [newTx, ...transactions];
-    setTransactions(nextList);
-    await AsyncStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(nextList));
+    // Atualiza estado de transações e AsyncStorage usando functional update
+    setTransactions((prev) => {
+      const nextList = [...newTxs, ...prev];
+      AsyncStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(nextList));
+      return nextList;
+    });
 
-    // Atualiza saldo da conta bancária
+    // Atualiza saldo da conta bancária para cada movimentação
     setAccounts((prev) => {
       const updated = prev.map((acc) => {
-        if (acc.id === newTx.accountId) {
-          const delta = newTx.type === 'income' ? newTx.amount : -newTx.amount;
+        let delta = 0;
+        for (const tx of newTxs) {
+          if (tx.accountId === acc.id) {
+            delta += tx.type === 'income' ? tx.amount : -tx.amount;
+          }
+        }
+        if (delta !== 0) {
           return { ...acc, balance: (acc.balance || 0) + delta };
         }
         return acc;
@@ -269,8 +279,17 @@ export function FinanceProvider({ children }) {
       return updated;
     });
 
-    syncTransactionToAppwrite(newTx).catch(() => {});
-    return newTx;
+    for (const tx of newTxs) {
+      syncTransactionToAppwrite(tx).catch(() => {});
+    }
+
+    return newTxs;
+  };
+
+  // Adicionar transação individual
+  const addTransaction = async (txData) => {
+    const [created] = await addTransactionsBatch([txData]);
+    return created;
   };
 
   // Editar transação
@@ -548,26 +567,29 @@ Responda de forma clara, motivadora e estruturada em tópicos!`;
 
     const regex = /\[TRANSACTION:\s*(\{[\s\S]*?\})\]/gi;
     const matches = [...rawText.matchAll(regex)];
-    const createdList = [];
+    const txDataToCreate = [];
 
     for (const match of matches) {
       try {
         const jsonStr = match[1].replace(/\r?\n/g, ' ').trim();
         const parsed = JSON.parse(jsonStr);
         if (parsed && parsed.amount) {
-          const tx = await addTransaction({
+          txDataToCreate.push({
             description: parsed.description || 'Movimentação via IA',
             amount: parseFloat(parsed.amount) || 0,
             type: parsed.type === 'income' ? 'income' : 'expense',
             category: parsed.category || 'outros',
             author: parsed.author || defaultAuthor,
           });
-          if (tx) createdList.push(tx);
         }
       } catch (err) {
         console.warn('Erro ao processar tag TRANSACTION:', err);
       }
     }
+
+    const createdList = txDataToCreate.length > 0
+      ? await addTransactionsBatch(txDataToCreate)
+      : [];
 
     const cleanText =
       rawText.replace(/\[TRANSACTION:\s*\{[\s\S]*?\}\]/gi, '').trim() ||
@@ -835,6 +857,7 @@ Responda de forma clara, motivadora e estruturada em tópicos!`;
         hideBalances,
         toggleHideBalances,
         addTransaction,
+        addTransactionsBatch,
         editTransaction,
         removeTransaction,
         updateAccountBalance,

@@ -549,14 +549,6 @@ export default function TransactionsScreen() {
         )}
       </ScrollView>
 
-      {/* FLOATING ACTION BUTTON */}
-      <TouchableOpacity
-        style={[styles.fab, { bottom: insets.bottom + 25 }]}
-        onPress={() => setModalVisible(true)}
-      >
-        <Ionicons name="add" size={28} color={COLORS.white} />
-      </TouchableOpacity>
-
       {/* MODAL DE FILTROS AVANÇADOS */}
       <Modal visible={filterModalVisible} transparent animationType="slide">
         <View style={styles.modalOverlay}>
@@ -1113,21 +1105,6 @@ const styles = StyleSheet.create({
     color: COLORS.white,
     fontSize: 13,
     fontWeight: '700',
-  },
-  fab: {
-    position: 'absolute',
-    right: 20,
-    width: 54,
-    height: 54,
-    borderRadius: 27,
-    backgroundColor: COLORS.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.35,
-    shadowRadius: 10,
-    elevation: 8,
   },
   modalOverlay: {
     flex: 1,
