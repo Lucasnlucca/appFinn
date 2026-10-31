@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -10,8 +10,6 @@ import {
   Modal,
   TextInput,
   Alert,
-  PanResponder,
-  Animated,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -21,82 +19,10 @@ import { useFinance } from '../context/FinanceContext';
 import AddTransactionModal from '../components/AddTransactionModal';
 import CofrinhosModal from '../components/CofrinhosModal';
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const { width } = Dimensions.get('window');
 
 export default function HomeScreen({ navigation }) {
   const insets = useSafeAreaInsets();
-
-  // Botão flutuante interativo da IA FINN (arrastável livremente na tela)
-  const pan = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
-  const currentPos = useRef({ x: 0, y: 0 });
-  const isDragging = useRef(false);
-
-  useEffect(() => {
-    const listenerId = pan.addListener((value) => {
-      currentPos.current = value;
-    });
-    return () => {
-      pan.removeListener(listenerId);
-    };
-  }, [pan]);
-
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: (_, gestureState) => {
-        return Math.abs(gestureState.dx) > 4 || Math.abs(gestureState.dy) > 4;
-      },
-      onPanResponderGrant: () => {
-        isDragging.current = false;
-        pan.setOffset({
-          x: currentPos.current.x,
-          y: currentPos.current.y,
-        });
-        pan.setValue({ x: 0, y: 0 });
-      },
-      onPanResponderMove: (evt, gestureState) => {
-        if (Math.abs(gestureState.dx) > 4 || Math.abs(gestureState.dy) > 4) {
-          isDragging.current = true;
-        }
-        Animated.event([null, { dx: pan.x, dy: pan.y }], {
-          useNativeDriver: false,
-        })(evt, gestureState);
-      },
-      onPanResponderRelease: () => {
-        pan.flattenOffset();
-        if (!isDragging.current) {
-          navigation.navigate('FinnAI');
-          return;
-        }
-
-        // Limites de segurança na tela para o botão não sumir
-        const minX = -(SCREEN_WIDTH - 54 - 32);
-        const maxX = 10;
-        const minY = -(SCREEN_HEIGHT - (insets.top + insets.bottom + 180));
-        const maxY = insets.bottom + 10;
-
-        let targetX = currentPos.current.x;
-        let targetY = currentPos.current.y;
-
-        if (targetX < minX) targetX = minX;
-        if (targetX > maxX) targetX = maxX;
-        if (targetY < minY) targetY = minY;
-        if (targetY > maxY) targetY = maxY;
-
-        if (targetX !== currentPos.current.x || targetY !== currentPos.current.y) {
-          Animated.spring(pan, {
-            toValue: { x: targetX, y: targetY },
-            friction: 6,
-            tension: 40,
-            useNativeDriver: false,
-          }).start();
-        }
-      },
-      onPanResponderTerminate: () => {
-        pan.flattenOffset();
-      },
-    })
-  ).current;
   const {
     totalBalance,
     totalIncome,
@@ -654,30 +580,6 @@ export default function HomeScreen({ navigation }) {
           </>
         )}
       </ScrollView>
-
-      {/* BOTÃO FLUTUANTE ARRASTÁVEL DA IA COM SPARKLE (PODE SER MOVIDO LIVREMENTE) */}
-      <Animated.View
-        style={[
-          styles.floatingAiBtn,
-          {
-            bottom: insets.bottom + 80,
-            transform: [{ translateX: pan.x }, { translateY: pan.y }],
-          },
-        ]}
-        {...panResponder.panHandlers}
-      >
-        <TouchableOpacity
-          style={styles.floatingAiBtnInner}
-          activeOpacity={0.85}
-          onPress={() => {
-            if (!isDragging.current) {
-              navigation.navigate('FinnAI');
-            }
-          }}
-        >
-          <Ionicons name="sparkles" size={22} color={COLORS.white} />
-        </TouchableOpacity>
-      </Animated.View>
 
       {/* MODAL PARA LANÇAR TRANSAÇÃO */}
       <AddTransactionModal
@@ -1351,28 +1253,6 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     fontSize: 14,
     fontWeight: '800',
-  },
-  floatingAiBtn: {
-    position: 'absolute',
-    right: 20,
-    width: 54,
-    height: 54,
-    borderRadius: 27,
-    backgroundColor: COLORS.navy,
-    shadowColor: COLORS.navy,
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.4,
-    shadowRadius: 10,
-    elevation: 10,
-    borderWidth: 2,
-    borderColor: 'rgba(255, 255, 255, 0.3)',
-    zIndex: 999,
-  },
-  floatingAiBtnInner: {
-    width: '100%',
-    height: '100%',
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   emptyCatWrap: {
     alignItems: 'center',

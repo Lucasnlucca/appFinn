@@ -18,6 +18,7 @@ import SettingsScreen from './src/screens/SettingsScreen';
 import CardsAccountsScreen from './src/screens/CardsAccountsScreen';
 import LoginScreen from './src/screens/LoginScreen';
 import AddTransactionModal from './src/components/AddTransactionModal';
+import FloatingAiButton from './src/components/FloatingAiButton';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -130,6 +131,9 @@ function MainTabs({ navigation }) {
           options={{ tabBarLabel: 'Mais' }}
         />
       </Tab.Navigator>
+
+      {/* Botão flutuante global da IA (arrastável livremente sobre todas as abas) */}
+      <FloatingAiButton onPress={() => navigation.navigate('FinnAI')} />
 
       {/* Modal acionado pelo botão central (+) */}
       <AddTransactionModal
