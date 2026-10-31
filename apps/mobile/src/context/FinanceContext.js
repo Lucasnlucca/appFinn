@@ -27,6 +27,7 @@ const STORAGE_KEYS = {
   HIDE_BALANCES: '@finn_hide_balances_v5',
   HERO_VIEW_MODE: '@finn_hero_view_mode_v5',
   IS_DEMO: '@finn_is_demo_mode_v5',
+  AI_SKIN: '@finn_ai_skin_v1',
 };
 
 // Contas reais para o casal (Inicia com saldo R$ 0,00 para dados reais)
@@ -83,6 +84,7 @@ export function FinanceProvider({ children }) {
   const [members, setMembers] = useState({ user1: 'Lucas', user2: 'Veronica' });
   const [selectedMonth, setSelectedMonth] = useState('Out 2026');
   const [hideBalances, setHideBalances] = useState(false);
+  const [aiSkin, setAiSkin] = useState('estrategista'); // 'estrategista' | 'direto' | 'poupador' | 'investidor' | 'casal'
   const [loggedInUser, setLoggedInUser] = useState({ id: 'user-lucas', name: 'Lucas', email: 'lucas@finn.local' });
   
   const [aiChat, setAiChat] = useState([
@@ -111,6 +113,7 @@ export function FinanceProvider({ children }) {
           savedHide,
           savedHeroMode,
           savedSession,
+          savedSkin,
         ] = await Promise.all([
           AsyncStorage.getItem(STORAGE_KEYS.TRANSACTIONS),
           AsyncStorage.getItem(STORAGE_KEYS.ACCOUNTS),
@@ -123,6 +126,7 @@ export function FinanceProvider({ children }) {
           AsyncStorage.getItem(STORAGE_KEYS.HIDE_BALANCES),
           AsyncStorage.getItem(STORAGE_KEYS.HERO_VIEW_MODE),
           getStoredSession(),
+          AsyncStorage.getItem(STORAGE_KEYS.AI_SKIN),
         ]);
 
         if (savedTrans) setTransactions(JSON.parse(savedTrans));
@@ -136,6 +140,7 @@ export function FinanceProvider({ children }) {
         if (savedHide) setHideBalances(JSON.parse(savedHide));
         if (savedHeroMode) setHeroCardMode(JSON.parse(savedHeroMode));
         if (savedSession) setLoggedInUser(savedSession);
+        if (savedSkin) setAiSkin(savedSkin);
       } catch (e) {
         console.warn('Erro ao carregar dados locais:', e);
       } finally {
@@ -634,6 +639,7 @@ Responda de forma clara, motivadora e estruturada em tópicos!`;
         chatHistory: aiChat,
         financialContext: finContext,
         members,
+        aiSkinId: aiSkin,
       });
 
       const parsedResult = await parseAndRegisterAiTransactions(
@@ -784,6 +790,7 @@ Responda de forma clara, motivadora e estruturada em tópicos!`;
         mimeType,
         financialContext: { totalBalance, totalIncome, totalExpense, activeMember },
         members,
+        aiSkinId: aiSkin,
       });
 
       const parsedResult = await parseAndRegisterAiTransactions(
@@ -811,6 +818,11 @@ Responda de forma clara, motivadora e estruturada em tópicos!`;
     return { text: aiReplyText, transaction: createdTxs[0] || null, transactions: createdTxs };
   };
 
+  const updateAiSkin = async (skinId) => {
+    setAiSkin(skinId);
+    await AsyncStorage.setItem(STORAGE_KEYS.AI_SKIN, skinId);
+  };
+
   return (
     <FinanceContext.Provider
       value={{
@@ -818,6 +830,8 @@ Responda de forma clara, motivadora e estruturada em tópicos!`;
         loggedInUser,
         setLoggedInUser,
         logout,
+        aiSkin,
+        setAiSkin: updateAiSkin,
         transactions: filteredTransactions,
         allTransactions: transactions,
         accounts,

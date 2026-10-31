@@ -52,6 +52,7 @@ async function readFileAsBase64(uri) {
 
 import { COLORS } from '../theme/colors';
 import { useFinance } from '../context/FinanceContext';
+import { AI_SKINS } from '../theme/aiSkins';
 
 // Limpa texto para fala natural no sintetizador de voz (sem markdown e sem emojis)
 function cleanTextForSpeech(text) {
@@ -147,7 +148,11 @@ export default function FinnAIScreen({ navigation }) {
     processPdfInvoice,
     processAudioMessage,
     members,
+    aiSkin,
+    setAiSkin,
   } = useFinance();
+
+  const currentSkin = AI_SKINS.find((s) => s.id === aiSkin) || AI_SKINS[0];
 
   const [inputText, setInputText] = useState('');
   const [analyzing, setAnalyzing] = useState(false);
@@ -561,19 +566,25 @@ export default function FinnAIScreen({ navigation }) {
               <Ionicons name="chevron-back" size={24} color={COLORS.navy} />
             </TouchableOpacity>
           )}
-          <View style={styles.avatarWrap}>
-            <Ionicons name="sparkles" size={20} color={COLORS.navy} />
-          </View>
+          <LinearGradient
+            colors={currentSkin.gradient}
+            style={styles.avatarWrap}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+          >
+            <Text style={{ fontSize: 18 }}>{currentSkin.emoji}</Text>
+          </LinearGradient>
           <View>
             <View style={styles.titleRow}>
               <Text style={styles.headerTitle}>FINN AI</Text>
-              <View style={styles.onlineBadge}>
-                <View style={styles.onlineDot} />
-                <Text style={styles.onlineText}>Gemini 2.5</Text>
+              <View style={[styles.skinHeaderBadge, { backgroundColor: currentSkin.badgeBg }]}>
+                <Text style={[styles.skinHeaderBadgeText, { color: currentSkin.color }]}>
+                  {currentSkin.name}
+                </Text>
               </View>
             </View>
             <Text style={styles.headerSubtitle}>
-              Assistente do Casal ({members.user1} & {members.user2})
+              {currentSkin.title} • {members.user1} & {members.user2}
             </Text>
           </View>
         </View>
@@ -603,6 +614,43 @@ export default function FinnAIScreen({ navigation }) {
             <Ionicons name="settings-outline" size={18} color={COLORS.textSecondary} />
           </TouchableOpacity>
         </View>
+      </View>
+
+      {/* SELETOR DE SKINS FINANCEIRAS E DE INTELIGÊNCIA */}
+      <View style={styles.skinsBar}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.skinsScrollContent}
+        >
+          {AI_SKINS.map((skin) => {
+            const isSelected = skin.id === currentSkin.id;
+            return (
+              <TouchableOpacity
+                key={skin.id}
+                style={[
+                  styles.skinChip,
+                  isSelected && {
+                    backgroundColor: skin.color,
+                    borderColor: skin.color,
+                  },
+                ]}
+                onPress={() => setAiSkin(skin.id)}
+                activeOpacity={0.75}
+              >
+                <Text style={styles.skinChipEmoji}>{skin.emoji}</Text>
+                <Text
+                  style={[
+                    styles.skinChipText,
+                    isSelected && styles.skinChipTextActive,
+                  ]}
+                >
+                  {skin.name}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
       </View>
 
       {/* CHAT MESSAGES SCROLL */}
@@ -994,6 +1042,49 @@ const styles = StyleSheet.create({
   headerTitle: {
     color: COLORS.text,
     fontSize: 16,
+    fontWeight: '800',
+  },
+  skinHeaderBadge: {
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  skinHeaderBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  skinsBar: {
+    backgroundColor: COLORS.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.surfaceBorder,
+    paddingVertical: 7,
+  },
+  skinsScrollContent: {
+    paddingHorizontal: 14,
+    gap: 8,
+    alignItems: 'center',
+  },
+  skinChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 20,
+    backgroundColor: COLORS.bg,
+    borderWidth: 1,
+    borderColor: COLORS.surfaceBorder,
+  },
+  skinChipEmoji: {
+    fontSize: 13,
+  },
+  skinChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: COLORS.textSecondary,
+  },
+  skinChipTextActive: {
+    color: COLORS.white,
     fontWeight: '800',
   },
   onlineBadge: {

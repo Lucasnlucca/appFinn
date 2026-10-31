@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { AI_SKINS } from '../theme/aiSkins';
 
 const STORAGE_KEYS = {
   GEMINI_KEY: '@finn_gemini_api_key',
@@ -171,9 +172,10 @@ export async function sendTextMessageToGemini({
   chatHistory = [],
   financialContext,
   members = { user1: 'Lucas', user2: 'Veronica' },
+  aiSkinId = 'estrategista',
 }) {
   const activeUser = financialContext?.activeMember || members.user1;
-  const partnerUser = activeUser === members.user1 ? members.user2 : members.user1;
+  const currentSkin = AI_SKINS.find((s) => s.id === aiSkinId) || AI_SKINS[0];
 
   // Monta resumo das contas e das últimas movimentações
   const accountsText = (financialContext?.accounts || [])
@@ -185,9 +187,10 @@ export async function sendTextMessageToGemini({
     .map((t) => `• ${t.date || 'Hoje'}: R$ ${t.amount?.toFixed(2).replace('.', ',')} em ${t.description} (${t.category}, por ${t.author})`)
     .join('\n');
 
-  const systemInstruction = `Você é o FINN AI, um consultor financeiro pessoal inteligente, empático e bem-humorado dedicado ao casal ${members.user1} e ${members.user2}.
-Você conversa como um especialista financeiro de verdade, amigo da família, com linguagem natural, calorosa e fluida em português brasileiro.
+  const systemInstruction = `Você é o FINN AI, o consultor financeiro pessoal inteligente e dedicado ao casal ${members.user1} e ${members.user2}.
 Quem está falando com você agora é o(a) ${activeUser}.
+
+${currentSkin.systemTone}
 
 DADOS FINANCEIROS EM TEMPO REAL DO CASAL:
 • Membros: ${members.user1} e ${members.user2}
@@ -202,16 +205,16 @@ ${accountsText || '• Nenhuma conta bancária sincronizada'}
 ${recentTxText || '• Nenhum lançamento recente'}
 
 REGRAS DE CONVERSAÇÃO COM IA:
-1. NUNCA responda como um robô que apenas cita comandos. Converse naturalmente sobre qualquer assunto: dúvidas do casal, planejamento de viagens, compras, conselhos de economia, dúvidas sobre parcelamentos, ou simplesmente troque uma ideia leve e construtiva sobre finanças.
+1. SEJA OBJETIVO: Seja prático, direto e assertivo. Responda em no máximo 1 a 3 frases. Não repita a pergunta nem o áudio do usuário.
 2. Quando perguntarem sobre o saldo, despesas ou quanto sobrou, use os dados reais acima com precisão e dê um conselho construtivo.
 3. REGISTRO DE DESPESA OU RECEITA (INCLUINDO MÚLTIPLOS ITENS):
-Quando o usuário disser que gastou ou recebeu dinheiro (ex: "gastei 45 no mercado", "comprei bolo de 45 e show de 150", "recebi 300 de freela"), você DEVE:
-   a) Responder primeiro com uma frase humana, simpática e amigável confirmando o que entendeu.
+Quando o usuário disser que gastou ou recebeu dinheiro (ex: "gastei 45 no mercado", "comprei bolo de 45 e show de 150", "recebi 300 de freela"):
+   a) Confirme brevemente o registro de forma direta e amigável (1 ou 2 frases).
    b) No FINAL ABSOLUTO da sua mensagem, inclua a tag oculta estruturada (uma tag separada para cada gasto/receita, sem quebras de linha dentro do JSON):
    [TRANSACTION: {"description": "Nome da despesa/receita", "amount": 45.00, "type": "expense", "category": "alimentacao", "author": "${activeUser}"}]
    Se houver mais de um gasto relatado, adicione uma linha de tag [TRANSACTION: ...] para cada um!
    (Categorias válidas: alimentacao, assinaturas, educacao, financiamento, lazer, moradia, outros, pets, presentes, receita, saude, transporte, vestuario, viagem).
-4. O aplicativo irá ler a tag [TRANSACTION: ...] automaticamente para atualizar o extrato bancário do casal e ocultar a tag do chat para o usuário ver apenas a sua conversa amigável.`;
+4. O aplicativo lerá a tag [TRANSACTION: ...] automaticamente para atualizar o extrato bancário do casal e ocultar a tag do chat.`;
 
   // Constrói o histórico multi-turn das últimas 8 mensagens para manter o contexto da conversa
   const contents = [];
@@ -307,15 +310,21 @@ export async function analyzeVoiceAudio({
   mimeType = 'audio/m4a',
   financialContext,
   members = { user1: 'Lucas', user2: 'Veronica' },
+  aiSkinId = 'estrategista',
 }) {
   const activeUser = financialContext?.activeMember || members.user1;
+  const currentSkin = AI_SKINS.find((s) => s.id === aiSkinId) || AI_SKINS[0];
+
   const prompt = `Você é o FINN, o assistente financeiro pessoal e inteligente do casal ${members.user1} e ${members.user2}.
-Ouça com total atenção este áudio gravado por um dos membros (${activeUser}):
-1. No início da sua resposta, transcreva o que você ouviu com clareza para que a pessoa confirme que você entendeu (ex: 🎙️ *Você disse: "..."*).
-2. Responda com simpatia e naturalidade ao que a pessoa falou.
-3. ATENÇÃO A GASTOS E RECEITAS (INCLUINDO MÚLTIPLOS GASTOS):
-Se a pessoa relatou um ou mais gastos/receitas no áudio (por exemplo: comprou um bolo de R$ 45 e um ingresso de show de R$ 150):
-- Confirme amigavelmente cada gasto no texto.
+Quem enviou este áudio foi o(a) ${activeUser}.
+
+${currentSkin.systemTone}
+
+REGRAS DE RESPOSTA AO ÁUDIO:
+1. OBJETIVIDADE TOTAL: NÃO transcreva e NÃO repita o que a pessoa disse no áudio (NUNCA coloque "Você disse:" nem repita as palavras do usuário). Responda diretamente ao que importa em no máximo 1 ou 2 frases curtas e práticas.
+2. REGISTRO DE GASTOS OU RECEITAS (INCLUINDO MÚLTIPLOS ITENS):
+Se a pessoa relatou um ou mais gastos ou receitas no áudio:
+- Confirme o lançamento de forma ultra direta e rápida (ex: "Anotado! Registrei o refrigerante de R$ 10 e o salgado de R$ 5 para vocês.").
 - No FINAL ABSOLUTO da mensagem, adicione OBRIGATORIAMENTE UMA LINHA DE TAG [TRANSACTION: ...] PARA CADA GASTO OU RECEITA, sem quebras de linha dentro do JSON.
 Exemplo:
 [TRANSACTION: {"description": "Bolo", "amount": 45.00, "type": "expense", "category": "alimentacao", "author": "${activeUser}"}]
@@ -323,7 +332,7 @@ Exemplo:
 
 Categorias válidas: alimentacao, assinaturas, educacao, financiamento, lazer, moradia, outros, pets, presentes, receita, saude, transporte, vestuario, viagem.
 (Altere "type" para "income" se for entrada de dinheiro ou freelance).
-4. Se a pessoa apenas fez uma pergunta por voz (ex: "quanto sobrou?", "posso gastar hoje?"), responda à dúvida financeira dela naturalmente e com clareza sem nenhuma tag de transação.`;
+3. Se a pessoa apenas fez uma pergunta ou consulta financeira por voz, responda à dúvida dela com clareza, concisão e foco nos números do casal, sem nenhuma tag de transação.`;
 
   return await callGeminiApi({
     parts: [
