@@ -152,7 +152,7 @@ export default function HomeScreen({ navigation }) {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[
           styles.scrollContent,
-          { paddingBottom: insets.bottom + 90 },
+          { paddingBottom: insets.bottom + 105 },
         ]}
       >
         {/* CARD HERO AZUL ESCURO: SALDO TOTAL VINCULADO & RESULTADO DO MÊS */}

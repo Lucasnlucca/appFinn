@@ -155,7 +155,7 @@ export default function SettingsScreen() {
 
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 90 }]}
+        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 105 }]}
       >
         {/* CARD USUÁRIO LOGADO */}
         {loggedInUser && (

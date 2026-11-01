@@ -75,3 +75,4 @@ export const AI_SKINS = [
 - NUNCA transcreva nem repita o que o usuário disse no áudio.`,
   },
 ];
+

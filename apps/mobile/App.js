@@ -19,26 +19,12 @@ import CardsAccountsScreen from './src/screens/CardsAccountsScreen';
 import LoginScreen from './src/screens/LoginScreen';
 import AddTransactionModal from './src/components/AddTransactionModal';
 import FloatingAiButton from './src/components/FloatingAiButton';
+import LiquidTabBar from './src/components/LiquidTabBar';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
 
-// Botão central elevado azul marinho com '+'
-function CustomAddTabButton({ onPress }) {
-  return (
-    <View style={styles.addTabBtnContainer} pointerEvents="box-none">
-      <TouchableOpacity
-        style={styles.addTabBtn}
-        onPress={onPress}
-        activeOpacity={0.85}
-      >
-        <Ionicons name="add" size={28} color={COLORS.white} />
-      </TouchableOpacity>
-    </View>
-  );
-}
-
-// Dummy screen para a tab central
+// Dummy screen para a tab central (+) tratada pelo LiquidTabBar
 function EmptyAddScreen() {
   return null;
 }
@@ -49,47 +35,12 @@ function MainTabs({ navigation }) {
   return (
     <View style={{ flex: 1 }}>
       <Tab.Navigator
-        screenOptions={({ route }) => ({
+        tabBar={(props) => (
+          <LiquidTabBar {...props} onAddPress={() => setModalVisible(true)} />
+        )}
+        screenOptions={{
           headerShown: false,
-          tabBarShowLabel: true,
-          tabBarActiveTintColor: COLORS.navy,
-          tabBarInactiveTintColor: COLORS.textMuted,
-          tabBarStyle: {
-            backgroundColor: COLORS.white,
-            borderTopColor: COLORS.surfaceBorder,
-            borderTopWidth: 1,
-            height: Platform.OS === 'ios' ? 86 : 66,
-            paddingBottom: Platform.OS === 'ios' ? 26 : 10,
-            paddingTop: 8,
-            elevation: 8,
-            shadowColor: '#000',
-            shadowOffset: { width: 0, height: -2 },
-            shadowOpacity: 0.05,
-            shadowRadius: 6,
-          },
-          tabBarLabelStyle: {
-            fontSize: 11,
-            fontWeight: '600',
-          },
-          tabBarIcon: ({ focused, color, size }) => {
-            if (route.name === 'AddAction') {
-              return null;
-            }
-
-            let iconName = 'ellipse-outline';
-            if (route.name === 'Home') {
-              iconName = focused ? 'home' : 'home-outline';
-            } else if (route.name === 'Transactions') {
-              iconName = focused ? 'receipt' : 'receipt-outline';
-            } else if (route.name === 'Planning') {
-              iconName = focused ? 'grid' : 'grid-outline';
-            } else if (route.name === 'Mais' || route.name === 'Settings') {
-              iconName = focused ? 'menu' : 'menu-outline';
-            }
-
-            return <Ionicons name={iconName} size={22} color={color} />;
-          },
-        })}
+        }}
       >
         {/* 1. Início */}
         <Tab.Screen
@@ -98,30 +49,25 @@ function MainTabs({ navigation }) {
           options={{ tabBarLabel: 'Início' }}
         />
 
-        {/* 2. Transações */}
+        {/* 2. Extrato & Transações */}
         <Tab.Screen
           name="Transactions"
           component={TransactionsScreen}
-          options={{ tabBarLabel: 'Transações' }}
+          options={{ tabBarLabel: 'Extrato' }}
         />
 
         {/* 3. Botão Central (+) */}
         <Tab.Screen
           name="AddAction"
           component={EmptyAddScreen}
-          options={{
-            tabBarLabel: '',
-            tabBarButton: () => (
-              <CustomAddTabButton onPress={() => setModalVisible(true)} />
-            ),
-          }}
+          options={{ tabBarLabel: '' }}
         />
 
-        {/* 4. Planejamento */}
+        {/* 4. Planejamento / Metas */}
         <Tab.Screen
           name="Planning"
           component={PlanningScreen}
-          options={{ tabBarLabel: 'Planejamento' }}
+          options={{ tabBarLabel: 'Metas' }}
         />
 
         {/* 5. Mais */}
@@ -217,25 +163,5 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     marginTop: 14,
     letterSpacing: 1,
-  },
-  addTabBtnContainer: {
-    top: -16,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  addTabBtn: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: COLORS.navy,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: COLORS.navy,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 8,
-    elevation: 8,
-    borderWidth: 3,
-    borderColor: COLORS.white,
   },
 });
