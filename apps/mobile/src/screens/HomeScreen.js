@@ -195,8 +195,8 @@ export default function HomeScreen({ navigation }) {
           <Image
             key={heroAnimKey}
             source={isHeroAnimating ? heroWebpSource : heroBgSource}
-            style={StyleSheet.absoluteFillObject}
-            resizeMode="cover"
+            style={styles.heroMedia}
+            resizeMode="contain"
           />
 
           {/* Overlay clicável (tocar no card repete a animação suave do mascote) */}
@@ -868,6 +868,8 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   heroCardContainer: {
+    position: 'relative',
+    width: '100%',
     borderRadius: 24,
     overflow: 'hidden',
     aspectRatio: 16 / 9,
@@ -881,6 +883,13 @@ const styles = StyleSheet.create({
     elevation: 8,
     marginTop: 4,
     marginBottom: 4,
+  },
+  heroMedia: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: '100%',
+    height: '100%',
   },
   heroOverlayTouch: {
     ...StyleSheet.absoluteFillObject,
