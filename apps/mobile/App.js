@@ -6,6 +6,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
+import { useFonts } from 'expo-font';
 
 import { COLORS } from './src/theme/colors';
 import { FinanceProvider, useFinance } from './src/context/FinanceContext';
@@ -130,6 +131,10 @@ function MainAppContent() {
 }
 
 export default function App() {
+  const [fontsLoaded] = useFonts({
+    Audiowide: require('./assets/fonts/Audiowide-Regular.ttf'),
+  });
+
   return (
     <SafeAreaProvider>
       <FinanceProvider>
@@ -158,10 +163,10 @@ const styles = StyleSheet.create({
     borderColor: COLORS.surfaceBorder,
   },
   splashTitle: {
+    fontFamily: 'Audiowide',
     color: COLORS.navy,
     fontSize: 24,
-    fontWeight: '900',
     marginTop: 14,
-    letterSpacing: 1,
+    letterSpacing: 1.5,
   },
 });

@@ -16,7 +16,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import Svg, { Rect, Defs as SvgDefs, LinearGradient as SvgLinearGradient, Stop as SvgStop } from 'react-native-svg';
+import { useFonts } from 'expo-font';
 import { COLORS } from '../theme/colors';
 import { useFinance } from '../context/FinanceContext';
 import AddTransactionModal from '../components/AddTransactionModal';
@@ -26,11 +26,15 @@ import { useVideoPlayer, VideoView } from 'expo-video';
 
 const heroVideoSource = require('../../assets/hero-robot.mp4');
 const heroBgSource = require('../../assets/hero-robot-bg.jpg');
+const finnLogoSource = require('../../assets/finn-logo.png');
 
 const { width } = Dimensions.get('window');
 
 export default function HomeScreen({ navigation }) {
   const insets = useSafeAreaInsets();
+  const [fontsLoaded] = useFonts({
+    Audiowide: require('../../assets/fonts/Audiowide-Regular.ttf'),
+  });
   const {
     totalBalance,
     totalIncome,
@@ -185,22 +189,15 @@ export default function HomeScreen({ navigation }) {
       {/* HEADER SUPERIOR: LOGO FINN COM GRADIENTE, SUBTÍTULO E AÇÕES */}
       <View style={styles.topBar}>
         <View style={styles.brandGroup}>
-          <View style={styles.brandIconContainer}>
-            <Svg width={30} height={30} viewBox="0 0 28 28">
-              <SvgDefs>
-                <SvgLinearGradient id="logoGrad" x1="0" y1="0" x2="1" y2="1">
-                  <SvgStop offset="0%" stopColor="#7C3AED" />
-                  <SvgStop offset="45%" stopColor="#D946EF" />
-                  <SvgStop offset="100%" stopColor="#06B6D4" />
-                </SvgLinearGradient>
-              </SvgDefs>
-              <Rect x="2" y="3" width="24" height="5.5" rx="2.75" fill="url(#logoGrad)" />
-              <Rect x="5" y="11" width="21" height="5.5" rx="2.75" fill="url(#logoGrad)" />
-              <Rect x="8" y="19" width="18" height="5.5" rx="2.75" fill="url(#logoGrad)" />
-            </Svg>
-          </View>
-          <View style={{ marginLeft: 8 }}>
-            <Text style={styles.brandTitle}>FINN</Text>
+          <Image
+            source={finnLogoSource}
+            style={styles.brandLogo}
+            resizeMode="contain"
+          />
+          <View style={{ marginLeft: 9 }}>
+            <Text style={[styles.brandTitle, fontsLoaded && { fontFamily: 'Audiowide' }]}>
+              FINN
+            </Text>
             <Text style={styles.brandSubtitle}>Gestor Financeiro Inteligente</Text>
           </View>
         </View>
@@ -843,24 +840,23 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
-  brandIconContainer: {
-    width: 32,
-    height: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
+  brandLogo: {
+    width: 36,
+    height: 23,
   },
   brandTitle: {
+    fontFamily: 'Audiowide',
     color: '#18181B',
-    fontSize: 18,
-    fontWeight: '900',
-    letterSpacing: 0.5,
-    lineHeight: 20,
+    fontSize: 20,
+    letterSpacing: 1.5,
+    lineHeight: 22,
   },
   brandSubtitle: {
     color: '#71717A',
     fontSize: 10.5,
     fontWeight: '600',
     letterSpacing: -0.2,
+    marginTop: 1,
   },
   rightIcons: {
     flexDirection: 'row',
