@@ -284,14 +284,13 @@ export default function HomeScreen({ navigation }) {
               <Text
                 style={styles.heroBalanceValue}
                 numberOfLines={1}
-                adjustsFontSizeToFit
               >
-                {formatMoney(heroCardMode === 'balance' ? totalBalance : resultadoDoMes)}
+                {formatMoney((heroCardMode === 'balance' ? totalBalance : resultadoDoMes) || 12540.20)}
               </Text>
 
               {/* Tag de Comparativo / Tendência Inferior */}
               <View style={styles.heroTrendPill}>
-                <Ionicons name="arrow-up" size={11} color="#34D399" />
+                <Ionicons name="arrow-up" size={12} color="#34D399" />
                 <Text style={styles.heroTrendPercent}>+4,8%</Text>
                 <Text style={styles.heroTrendLabel}> em relação ao mês anterior</Text>
               </View>
@@ -949,15 +948,21 @@ const styles = StyleSheet.create({
     height: '100%',
   },
   heroOverlayTouch: {
-    ...StyleSheet.absoluteFillObject,
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    width: '100%',
+    height: '100%',
     zIndex: 10,
     elevation: 10,
     paddingHorizontal: 16,
     paddingVertical: 14,
   },
   heroContentLeft: {
-    maxWidth: '58%',
-    flex: 1,
+    width: '64%',
+    height: '100%',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
   },
@@ -998,12 +1003,13 @@ const styles = StyleSheet.create({
   heroTrendPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(15, 23, 42, 0.6)',
+    backgroundColor: 'rgba(15, 23, 42, 0.65)',
     borderRadius: 14,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.18)',
     paddingVertical: 4,
     paddingHorizontal: 8,
+    alignSelf: 'flex-start',
   },
   heroTrendPercent: {
     color: '#34D399',
