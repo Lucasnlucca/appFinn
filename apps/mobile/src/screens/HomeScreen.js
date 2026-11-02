@@ -888,11 +888,10 @@ const styles = StyleSheet.create({
     elevation: 10,
     paddingHorizontal: 16,
     paddingVertical: 14,
-    justifyContent: 'center',
   },
   heroContentLeft: {
     maxWidth: '58%',
-    height: '100%',
+    flex: 1,
     justifyContent: 'space-between',
     alignItems: 'flex-start',
   },
