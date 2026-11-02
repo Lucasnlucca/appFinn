@@ -11,6 +11,7 @@ import {
   TextInput,
   Alert,
   Image,
+  AppState,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -21,8 +22,9 @@ import { useFinance } from '../context/FinanceContext';
 import AddTransactionModal from '../components/AddTransactionModal';
 import CofrinhosModal from '../components/CofrinhosModal';
 import { BudgetDonut } from '../components/DonutChart';
+import { useVideoPlayer, VideoView } from 'expo-video';
 
-const heroWebpSource = require('../../assets/hero-robot.webp');
+const heroVideoSource = require('../../assets/hero-robot.mp4');
 const heroBgSource = require('../../assets/hero-robot-bg.jpg');
 
 const { width } = Dimensions.get('window');
@@ -67,21 +69,64 @@ export default function HomeScreen({ navigation }) {
   const [newAccBank, setNewAccBank] = useState('');
   const [newAccBalance, setNewAccBalance] = useState('');
 
-  // Animação de alta fidelidade do robô FINN (executa 3s ao abrir o app e congela no estado final)
-  const [isHeroAnimating, setIsHeroAnimating] = useState(true);
-  const [heroAnimKey, setHeroAnimKey] = useState(0);
+  // Vídeo nativo do robô FINN com expo-video (executa 1x ao entrar, sem som, sem controles)
+  const [showStaticOverlay, setShowStaticOverlay] = useState(false);
 
+  const player = useVideoPlayer(heroVideoSource, (p) => {
+    p.loop = false;
+    p.muted = true;
+    p.play();
+  });
+
+  // Ao finalizar o vídeo, ativa o quadro estático perfeitamente alinhado
   useEffect(() => {
-    setIsHeroAnimating(true);
-    const timer = setTimeout(() => {
-      setIsHeroAnimating(false);
-    }, 3000);
-    return () => clearTimeout(timer);
-  }, [heroAnimKey]);
+    if (!player) return;
+    const sub = player.addListener('playToEnd', () => {
+      setShowStaticOverlay(true);
+    });
+    return () => {
+      sub?.remove();
+    };
+  }, [player]);
 
+  // Pausa a reprodução quando a tela perde o foco ou o app vai para segundo plano
+  useEffect(() => {
+    if (!player) return;
+
+    const unsubscribeBlur = navigation?.addListener?.('blur', () => {
+      try {
+        player.pause();
+      } catch (e) {}
+    });
+
+    const appStateSub = AppState.addEventListener('change', (nextAppState) => {
+      if (nextAppState.match(/inactive|background/)) {
+        try {
+          player.pause();
+        } catch (e) {}
+      }
+    });
+
+    return () => {
+      unsubscribeBlur?.();
+      appStateSub?.remove();
+    };
+  }, [player, navigation]);
+
+  // Tocar no card reinicia a reprodução do vídeo a partir do início
   const handleReplayHeroAnimation = () => {
-    setIsHeroAnimating(true);
-    setHeroAnimKey((k) => k + 1);
+    setShowStaticOverlay(false);
+    if (!player) return;
+    try {
+      player.replay();
+    } catch {
+      try {
+        player.currentTime = 0;
+        player.play();
+      } catch (err) {
+        console.warn('Erro ao reiniciar vídeo do mascote:', err);
+      }
+    }
   };
 
   // Formatação em Real (com suporte a ocultar valores)
@@ -189,15 +234,27 @@ export default function HomeScreen({ navigation }) {
           <Text style={styles.greetingSub}>Aqui está o resumo das suas finanças.</Text>
         </View>
 
-        {/* CARD HERO ROBÔ COM ANIMAÇÃO NATIVA DE ALTA RESOLUÇÃO E SALDO */}
+        {/* CARD HERO ROBÔ COM VÍDEO NATIVO E SALDO */}
         <View style={styles.heroCardContainer}>
-          {/* Animação WebP de 3s (pisca os olhos e brilha) ou pose estática final */}
-          <Image
-            key={heroAnimKey}
-            source={isHeroAnimating ? heroWebpSource : heroBgSource}
+          {/* Vídeo nativo expo-video (sem som, sem controles, não intercepta toques) */}
+          <VideoView
             style={styles.heroMedia}
-            resizeMode="contain"
+            player={player}
+            contentFit="contain"
+            nativeControls={false}
+            surfaceType="textureView"
+            pointerEvents="none"
           />
+
+          {/* Quadro final estático perfeitamente alinhado (evita qualquer piscar ao terminar) */}
+          {showStaticOverlay && (
+            <Image
+              source={heroBgSource}
+              style={styles.heroMedia}
+              resizeMode="contain"
+              pointerEvents="none"
+            />
+          )}
 
           {/* Overlay clicável (tocar no card repete a animação suave do mascote) */}
           <TouchableOpacity
