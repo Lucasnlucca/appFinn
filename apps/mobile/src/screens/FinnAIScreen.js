@@ -666,9 +666,7 @@ export default function FinnAIScreen({ navigation }) {
             </TouchableOpacity>
           </View>
         </View>
-        contentContainerStyle={styles.chatContent}
-        keyboardShouldPersistTaps="handled"
-      >
+
         {aiChat.map((msg) => {
           const isUser = msg.sender === 'user';
           return (
