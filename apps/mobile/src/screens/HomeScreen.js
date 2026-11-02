@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -15,7 +15,6 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useVideoPlayer, VideoView } from 'expo-video';
 import Svg, { Rect, Defs as SvgDefs, LinearGradient as SvgLinearGradient, Stop as SvgStop } from 'react-native-svg';
 import { COLORS } from '../theme/colors';
 import { useFinance } from '../context/FinanceContext';
@@ -23,7 +22,7 @@ import AddTransactionModal from '../components/AddTransactionModal';
 import CofrinhosModal from '../components/CofrinhosModal';
 import { BudgetDonut } from '../components/DonutChart';
 
-const heroVideoSource = require('../../assets/hero-robot.mp4');
+const heroWebpSource = require('../../assets/hero-robot.webp');
 const heroBgSource = require('../../assets/hero-robot-bg.jpg');
 
 const { width } = Dimensions.get('window');
@@ -68,23 +67,21 @@ export default function HomeScreen({ navigation }) {
   const [newAccBank, setNewAccBank] = useState('');
   const [newAccBalance, setNewAccBalance] = useState('');
 
-  // Player de vídeo animado do robô FINN no card de saldo
-  const player = useVideoPlayer(heroVideoSource, (p) => {
-    p.loop = false;
-    p.muted = true;
-    p.play();
-  });
+  // Animação de alta fidelidade do robô FINN (executa 3s ao abrir o app e congela no estado final)
+  const [isHeroAnimating, setIsHeroAnimating] = useState(true);
+  const [heroAnimKey, setHeroAnimKey] = useState(0);
+
+  useEffect(() => {
+    setIsHeroAnimating(true);
+    const timer = setTimeout(() => {
+      setIsHeroAnimating(false);
+    }, 3000);
+    return () => clearTimeout(timer);
+  }, [heroAnimKey]);
 
   const handleReplayHeroAnimation = () => {
-    if (!player) return;
-    try {
-      player.replay();
-    } catch (e) {
-      try {
-        player.currentTime = 0;
-        player.play();
-      } catch (err) {}
-    }
+    setIsHeroAnimating(true);
+    setHeroAnimKey((k) => k + 1);
   };
 
   // Formatação em Real (com suporte a ocultar valores)
@@ -192,28 +189,15 @@ export default function HomeScreen({ navigation }) {
           <Text style={styles.greetingSub}>Aqui está o resumo das suas finanças.</Text>
         </View>
 
-        {/* CARD HERO ROBÔ COM VÍDEO ANIMADO E SALDO DINÂMICO */}
+        {/* CARD HERO ROBÔ COM ANIMAÇÃO NATIVA DE ALTA RESOLUÇÃO E SALDO */}
         <View style={styles.heroCardContainer}>
-          {/* Fundo de fallback estático imediato (evita qualquer piscar antes do vídeo inicializar) */}
+          {/* Animação WebP de 3s (pisca os olhos e brilha) ou pose estática final */}
           <Image
-            source={heroBgSource}
+            key={heroAnimKey}
+            source={isHeroAnimating ? heroWebpSource : heroBgSource}
             style={StyleSheet.absoluteFillObject}
             resizeMode="cover"
           />
-
-          {/* Vídeo Animado do Robô FINN (pisca os olhos luminosos e finaliza na pose estática) */}
-          {player && (
-            <VideoView
-              player={player}
-              style={StyleSheet.absoluteFillObject}
-              contentFit="cover"
-              nativeControls={false}
-              allowsFullscreen={false}
-              allowsPictureInPicture={false}
-              surfaceType="textureView"
-              pointerEvents="none"
-            />
-          )}
 
           {/* Overlay clicável (tocar no card repete a animação suave do mascote) */}
           <TouchableOpacity
@@ -229,12 +213,12 @@ export default function HomeScreen({ navigation }) {
                 activeOpacity={0.75}
               >
                 <View style={styles.walletIconBox}>
-                  <Ionicons name="wallet-outline" size={14} color="#FFFFFF" />
+                  <Ionicons name="wallet-outline" size={13} color="#FFFFFF" />
                 </View>
                 <Text style={styles.heroWalletText}>Saldo atual (contas)</Text>
                 <Ionicons
                   name={hideBalances ? 'eye-off-outline' : 'eye-outline'}
-                  size={15}
+                  size={14}
                   color="#FFFFFF"
                 />
               </TouchableOpacity>
@@ -250,7 +234,7 @@ export default function HomeScreen({ navigation }) {
 
               {/* Tag de Comparativo / Tendência Inferior */}
               <View style={styles.heroTrendPill}>
-                <Ionicons name="arrow-up" size={12} color="#34D399" />
+                <Ionicons name="arrow-up" size={11} color="#34D399" />
                 <Text style={styles.heroTrendPercent}>+4,8%</Text>
                 <Text style={styles.heroTrendLabel}> em relação ao mês anterior</Text>
               </View>
@@ -886,10 +870,10 @@ const styles = StyleSheet.create({
   heroCardContainer: {
     borderRadius: 24,
     overflow: 'hidden',
-    aspectRatio: 16 / 9,
+    aspectRatio: 2.19,
     backgroundColor: '#0F0826',
     borderWidth: 1.5,
-    borderColor: 'rgba(168, 85, 247, 0.45)',
+    borderColor: 'rgba(168, 85, 247, 0.5)',
     shadowColor: '#7C3AED',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.3,
@@ -900,12 +884,14 @@ const styles = StyleSheet.create({
   },
   heroOverlayTouch: {
     ...StyleSheet.absoluteFillObject,
+    zIndex: 10,
+    elevation: 10,
     paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingVertical: 12,
     justifyContent: 'center',
   },
   heroContentLeft: {
-    maxWidth: '63%',
+    maxWidth: '58%',
     height: '100%',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
@@ -913,56 +899,56 @@ const styles = StyleSheet.create({
   heroWalletPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 7,
-    backgroundColor: 'rgba(255, 255, 255, 0.14)',
+    gap: 6,
+    backgroundColor: 'rgba(255, 255, 255, 0.16)',
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.25)',
-    paddingVertical: 4,
+    borderColor: 'rgba(255, 255, 255, 0.28)',
+    paddingVertical: 3.5,
     paddingHorizontal: 8,
   },
   walletIconBox: {
-    width: 24,
-    height: 24,
-    borderRadius: 7,
-    backgroundColor: 'rgba(255, 255, 255, 0.18)',
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   heroWalletText: {
     color: '#FFFFFF',
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: '700',
   },
   heroBalanceValue: {
     color: '#FFFFFF',
-    fontSize: 28,
+    fontSize: 26,
     fontWeight: '900',
-    letterSpacing: -0.6,
-    textShadowColor: 'rgba(0, 0, 0, 0.45)',
+    letterSpacing: -0.5,
+    textShadowColor: 'rgba(0, 0, 0, 0.5)',
     textShadowOffset: { width: 0, height: 2 },
     textShadowRadius: 6,
-    marginVertical: 4,
+    marginVertical: 2,
   },
   heroTrendPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(15, 23, 42, 0.55)',
-    borderRadius: 16,
+    backgroundColor: 'rgba(15, 23, 42, 0.6)',
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.18)',
-    paddingVertical: 4,
-    paddingHorizontal: 8,
+    paddingVertical: 3,
+    paddingHorizontal: 7,
   },
   heroTrendPercent: {
     color: '#34D399',
-    fontSize: 11,
+    fontSize: 10.5,
     fontWeight: '800',
     marginLeft: 3,
   },
   heroTrendLabel: {
     color: 'rgba(255, 255, 255, 0.9)',
-    fontSize: 10,
+    fontSize: 9.5,
     fontWeight: '500',
   },
   metricCardsRow: {
