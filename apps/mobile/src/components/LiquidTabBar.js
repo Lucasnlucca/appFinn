@@ -14,7 +14,7 @@ import { COLORS } from '../theme/colors';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-// Configuração dos 5 slots do menu inferior
+// Configuração dos 5 slots do menu inferior (com ícones fiéis ao print)
 const TAB_CONFIG = {
   Home: {
     label: 'Início',
@@ -23,9 +23,9 @@ const TAB_CONFIG = {
     slotIndex: 0,
   },
   Transactions: {
-    label: 'Extrato',
-    activeIcon: 'receipt',
-    inactiveIcon: 'receipt-outline',
+    label: 'Transações',
+    activeIcon: 'swap-horizontal',
+    inactiveIcon: 'swap-horizontal-outline',
     slotIndex: 1,
   },
   AddAction: {
@@ -34,21 +34,21 @@ const TAB_CONFIG = {
     isAction: true,
   },
   Planning: {
-    label: 'Metas',
-    activeIcon: 'grid',
-    inactiveIcon: 'grid-outline',
+    label: 'Planejamento',
+    activeIcon: 'stats-chart',
+    inactiveIcon: 'stats-chart-outline',
     slotIndex: 3,
   },
   Mais: {
     label: 'Mais',
-    activeIcon: 'menu',
-    inactiveIcon: 'menu-outline',
+    activeIcon: 'apps',
+    inactiveIcon: 'apps-outline',
     slotIndex: 4,
   },
   Settings: {
     label: 'Mais',
-    activeIcon: 'menu',
-    inactiveIcon: 'menu-outline',
+    activeIcon: 'apps',
+    inactiveIcon: 'apps-outline',
     slotIndex: 4,
   },
 };
@@ -151,7 +151,7 @@ export default function LiquidTabBar({ state, descriptors, navigation, onAddPres
               <Ionicons
                 name={isFocused ? config.activeIcon : config.inactiveIcon}
                 size={21}
-                color={isFocused ? '#0284C7' : '#334155'}
+                color={isFocused ? '#7C3AED' : '#64748B'}
               />
               <Text
                 style={[
@@ -179,12 +179,12 @@ const styles = StyleSheet.create({
     height: 64,
     borderRadius: 34,
     backgroundColor:
-      Platform.OS === 'ios' ? 'rgba(255, 255, 255, 0.72)' : 'rgba(255, 255, 255, 0.90)',
+      Platform.OS === 'ios' ? 'rgba(255, 255, 255, 0.78)' : 'rgba(255, 255, 255, 0.94)',
     borderWidth: 1.2,
     borderColor: 'rgba(255, 255, 255, 0.85)',
-    shadowColor: '#0A192F',
+    shadowColor: '#4C1D95',
     shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.14,
+    shadowOpacity: 0.12,
     shadowRadius: 20,
     elevation: 14,
     overflow: 'hidden',
@@ -200,10 +200,10 @@ const styles = StyleSheet.create({
     borderRadius: 25,
     backgroundColor: '#FFFFFF',
     borderWidth: 1.2,
-    borderColor: 'rgba(2, 132, 199, 0.20)',
-    shadowColor: '#0A192F',
+    borderColor: 'rgba(124, 58, 237, 0.22)',
+    shadowColor: '#4C1D95',
     shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.12,
+    shadowOpacity: 0.10,
     shadowRadius: 8,
     elevation: 5,
   },
@@ -227,7 +227,7 @@ const styles = StyleSheet.create({
     letterSpacing: -0.2,
   },
   tabLabelActive: {
-    color: '#0284C7',
+    color: '#7C3AED',
     fontWeight: '800',
   },
   tabLabelInactive: {
@@ -235,18 +235,18 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   centerAddButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: COLORS.navy,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#7C3AED',
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: COLORS.navy,
+    shadowColor: '#7C3AED',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 6,
-    elevation: 6,
+    shadowOpacity: 0.40,
+    shadowRadius: 8,
+    elevation: 8,
     borderWidth: 2,
-    borderColor: 'rgba(255, 255, 255, 0.85)',
+    borderColor: 'rgba(255, 255, 255, 0.9)',
   },
 });

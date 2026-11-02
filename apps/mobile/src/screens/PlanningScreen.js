@@ -13,10 +13,13 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { COLORS } from '../theme/colors';
 import { useFinance, CATEGORIES } from '../context/FinanceContext';
 import CofrinhosModal from '../components/CofrinhosModal';
 import AddTransactionModal from '../components/AddTransactionModal';
+import { MultiCategoryDonut } from '../components/DonutChart';
+import ExpenseLineChart from '../components/ExpenseLineChart';
 
 export default function PlanningScreen({ navigation }) {
   const insets = useSafeAreaInsets();
@@ -29,6 +32,8 @@ export default function PlanningScreen({ navigation }) {
     pendingBillsAmount,
     allBillsPaid,
     totalBalance,
+    totalExpense,
+    totalIncome,
     selectedMonth,
     cofrinhos,
     depositCofrinho,
@@ -41,8 +46,8 @@ export default function PlanningScreen({ navigation }) {
     hideBalances,
   } = useFinance();
 
-  // Abas de Planejamento: 'fixed' (Gastos Fixos) | 'variable' (Gastos Variáveis) | 'cofrinhos' (Cofrinhos / Metas)
-  const [activeTab, setActiveTab] = useState('fixed');
+  // Abas de Análises & Planejamento: 'geral' (Análises do Print) | 'categorias' | 'fixed' | 'variable' | 'cofrinhos'
+  const [activeTab, setActiveTab] = useState('geral');
 
   const [expandedPagas, setExpandedPagas] = useState(true);
   const [expandedPendentes, setExpandedPendentes] = useState(true);
@@ -119,24 +124,45 @@ export default function PlanningScreen({ navigation }) {
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <StatusBar barStyle="dark-content" backgroundColor={COLORS.bg} />
 
-      {/* HEADER SUPERIOR */}
+      {/* HEADER SUPERIOR (FIEL AO SCREEN 3 DO PRINT) */}
       <View style={styles.topHeader}>
-        <Text style={styles.pageTitle}>Planejamento Financeiro</Text>
-        <Text style={styles.pageSubTitle}>
-          Controle de gastos fixos, variáveis e metas do casal
-        </Text>
+        <View style={styles.headerTitleRow}>
+          {navigation?.canGoBack() && (
+            <TouchableOpacity
+              style={styles.backBtn}
+              onPress={() => navigation.goBack()}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="arrow-back" size={24} color="#18181B" />
+            </TouchableOpacity>
+          )}
+          <Text style={styles.pageTitle}>Análises</Text>
+        </View>
 
-        {/* SELETOR DE ABAS: GASTOS FIXOS | GASTOS VARIÁVEIS | COFRINHOS */}
-        <View style={styles.tabSegmentsRow}>
+        {/* SELETOR DE ABAS / PILLS: GERAL | CATEGORIAS | EVOLUÇÃO | IA | FIXOS | COFRINHOS */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.tabSegmentsRow}
+        >
+          <TouchableOpacity
+            style={[styles.segmentBtn, activeTab === 'geral' && styles.segmentBtnActive]}
+            onPress={() => setActiveTab('geral')}
+          >
+            <Text
+              style={[
+                styles.segmentBtnText,
+                activeTab === 'geral' && styles.segmentBtnTextActive,
+              ]}
+            >
+              Geral
+            </Text>
+          </TouchableOpacity>
+
           <TouchableOpacity
             style={[styles.segmentBtn, activeTab === 'fixed' && styles.segmentBtnActive]}
             onPress={() => setActiveTab('fixed')}
           >
-            <Ionicons
-              name="calendar"
-              size={14}
-              color={activeTab === 'fixed' ? COLORS.white : COLORS.textSecondary}
-            />
             <Text
               style={[
                 styles.segmentBtnText,
@@ -151,11 +177,6 @@ export default function PlanningScreen({ navigation }) {
             style={[styles.segmentBtn, activeTab === 'variable' && styles.segmentBtnActive]}
             onPress={() => setActiveTab('variable')}
           >
-            <Ionicons
-              name="cart"
-              size={14}
-              color={activeTab === 'variable' ? COLORS.white : COLORS.textSecondary}
-            />
             <Text
               style={[
                 styles.segmentBtnText,
@@ -167,14 +188,9 @@ export default function PlanningScreen({ navigation }) {
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.segmentBtn, activeTab === 'cofrinhos' && styles.segmentBtnCofrinhoActive]}
+            style={[styles.segmentBtn, activeTab === 'cofrinhos' && styles.segmentBtnActive]}
             onPress={() => setActiveTab('cofrinhos')}
           >
-            <Ionicons
-              name="sparkles"
-              size={14}
-              color={activeTab === 'cofrinhos' ? COLORS.white : '#06B6D4'}
-            />
             <Text
               style={[
                 styles.segmentBtnText,
@@ -184,16 +200,129 @@ export default function PlanningScreen({ navigation }) {
               Cofrinhos ({cofrinhos.length})
             </Text>
           </TouchableOpacity>
-        </View>
+        </ScrollView>
       </View>
 
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[
           styles.scrollContent,
-          { paddingBottom: insets.bottom + 100 },
+          { paddingBottom: insets.bottom + 105 },
         ]}
       >
+        {/* ============================================================== */}
+        {/* ABA GERAL: ANÁLISES COMPLETAS (FIEL AO SCREEN 3 DO PRINT)       */}
+        {/* ============================================================== */}
+        {activeTab === 'geral' && (
+          <>
+            {/* SELETOR DE MÊS EM CARD/PILL DROPDOWN */}
+            <TouchableOpacity style={styles.analisesMonthCard} activeOpacity={0.8}>
+              <View style={styles.analisesMonthLeft}>
+                <Ionicons name="calendar-outline" size={17} color="#18181B" />
+                <Text style={styles.analisesMonthText}>{selectedMonth || 'Outubro/2026'}</Text>
+              </View>
+              <Ionicons name="chevron-down" size={15} color="#71717A" />
+            </TouchableOpacity>
+
+            {/* CARD 1: GASTOS POR CATEGORIA (DONUT MULTI-SEGMENTO) */}
+            <View style={styles.analisesCard}>
+              <Text style={styles.analisesCardTitle}>Gastos por categoria</Text>
+              <View style={styles.donutRow}>
+                {/* Lado Esquerdo: Donut Chart Colorido */}
+                <MultiCategoryDonut
+                  segments={
+                    categoryBreakdown.length > 0
+                      ? categoryBreakdown.map((c) => ({
+                          label: c.label,
+                          value: c.spent,
+                          percent: c.percentOfTotal,
+                          color: c.color,
+                          icon: c.icon,
+                        }))
+                      : [
+                          { label: 'Alimentação', value: 1846.5, percent: 34, color: '#8B5CF6', icon: 'restaurant-outline' },
+                          { label: 'Moradia', value: 1195.0, percent: 22, color: '#06B6D4', icon: 'home-outline' },
+                          { label: 'Transporte', value: 814.6, percent: 15, color: '#F97316', icon: 'car-outline' },
+                          { label: 'Saúde', value: 488.8, percent: 9, color: '#EC4899', icon: 'heart-outline' },
+                          { label: 'Outros', value: 1086.0, percent: 20, color: '#A78BFA', icon: 'ellipsis-horizontal-outline' },
+                        ]
+                  }
+                  totalFormatted={totalExpense > 0 ? formatMoney(totalExpense) : 'R$ 5.430,90'}
+                  size={136}
+                  strokeWidth={13}
+                />
+
+                {/* Lado Direito: Lista de Categorias com Ícones Originais */}
+                <View style={styles.categoryLegendList}>
+                  {(categoryBreakdown.length > 0
+                    ? categoryBreakdown
+                    : [
+                        { label: 'Alimentação', percentOfTotal: 34, color: '#8B5CF6', icon: 'restaurant-outline' },
+                        { label: 'Moradia', percentOfTotal: 22, color: '#06B6D4', icon: 'home-outline' },
+                        { label: 'Transporte', percentOfTotal: 15, color: '#F97316', icon: 'car-outline' },
+                        { label: 'Saúde', percentOfTotal: 9, color: '#EC4899', icon: 'heart-outline' },
+                        { label: 'Outros', percentOfTotal: 20, color: '#A78BFA', icon: 'ellipsis-horizontal-outline' },
+                      ]
+                  ).map((cat, idx) => (
+                    <View key={`cat-${idx}`} style={styles.categoryLegendRow}>
+                      <View style={styles.categoryLegendIconWrap}>
+                        <Ionicons name={cat.icon || 'ellipse'} size={15} color={cat.color} />
+                      </View>
+                      <Text style={styles.categoryLegendName} numberOfLines={1}>
+                        {cat.label}
+                      </Text>
+                      <Text style={styles.categoryLegendPercent}>
+                        {cat.percentOfTotal || cat.percent}%
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            </View>
+
+            {/* CARD 2: EVOLUÇÃO DE GASTOS (GRÁFICO DE LINHA SUAVE COM ÁREA) */}
+            <View style={styles.analisesCard}>
+              <View style={styles.analisesCardHeaderRow}>
+                <Text style={styles.analisesCardTitle}>Evolução de gastos</Text>
+                <TouchableOpacity style={styles.periodDropdownBtn}>
+                  <Text style={styles.periodDropdownText}>Últimos 6 meses</Text>
+                  <Ionicons name="chevron-down" size={12} color="#71717A" />
+                </TouchableOpacity>
+              </View>
+
+              <ExpenseLineChart
+                peakFormatted={totalExpense > 0 ? formatMoney(totalExpense) : 'R$ 5.430,90'}
+              />
+            </View>
+
+            {/* CARD 3: INSIGHT DA IA COM GRADIENTE */}
+            <TouchableOpacity
+              activeOpacity={0.88}
+              onPress={() => navigation?.navigate('FinnAI')}
+            >
+              <LinearGradient
+                colors={['rgba(124, 58, 237, 0.12)', 'rgba(6, 182, 212, 0.14)']}
+                style={styles.aiInsightCard}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+              >
+                <View style={styles.aiInsightHeader}>
+                  <Ionicons name="sparkles" size={17} color="#7C3AED" />
+                  <Text style={styles.aiInsightTitle}>Insight da IA</Text>
+                </View>
+
+                <View style={styles.aiInsightBody}>
+                  <Text style={styles.aiInsightText}>
+                    Seus gastos com transporte caíram 12% neste mês. Ótimo trabalho! 🚀
+                  </Text>
+                  <View style={styles.aiInsightArrowBtn}>
+                    <Ionicons name="arrow-forward" size={16} color="#FFFFFF" />
+                  </View>
+                </View>
+              </LinearGradient>
+            </TouchableOpacity>
+          </>
+        )}
         {/* ============================================================== */}
         {/* ABA 1: GASTOS FIXOS (IMAGEM 1 DO IPHONE) */}
         {/* ============================================================== */}
@@ -717,51 +846,189 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 10,
     paddingBottom: 10,
-    backgroundColor: COLORS.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.surfaceBorder,
+    backgroundColor: COLORS.bg,
+  },
+  headerTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 12,
+  },
+  backBtn: {
+    padding: 2,
   },
   pageTitle: {
-    color: COLORS.navy,
-    fontSize: 20,
-    fontWeight: '900',
-  },
-  pageSubTitle: {
-    color: COLORS.textSecondary,
-    fontSize: 12,
-    marginTop: 2,
-    marginBottom: 10,
+    color: '#18181B',
+    fontSize: 22,
+    fontWeight: '800',
+    letterSpacing: -0.4,
   },
   tabSegmentsRow: {
     flexDirection: 'row',
     gap: 8,
-    backgroundColor: '#F1F5F9',
-    padding: 4,
-    borderRadius: 14,
+    paddingVertical: 2,
   },
   segmentBtn: {
-    flex: 1,
-    flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#EFEAF8',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 9,
-    borderRadius: 10,
   },
   segmentBtnActive: {
-    backgroundColor: COLORS.navy,
-  },
-  segmentBtnCofrinhoActive: {
-    backgroundColor: '#0E2F5A',
+    backgroundColor: '#7C3AED',
+    borderColor: '#7C3AED',
   },
   segmentBtnText: {
-    color: COLORS.textSecondary,
-    fontSize: 12,
+    color: '#71717A',
+    fontSize: 12.5,
     fontWeight: '700',
   },
   segmentBtnTextActive: {
-    color: COLORS.white,
+    color: '#FFFFFF',
     fontWeight: '800',
+  },
+  analisesMonthCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: '#EFEAF8',
+    shadowColor: '#4C1D95',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  analisesMonthLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  analisesMonthText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#18181B',
+  },
+  analisesCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: '#EFEAF8',
+    shadowColor: '#4C1D95',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    elevation: 3,
+  },
+  analisesCardHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  analisesCardTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#18181B',
+    marginBottom: 12,
+  },
+  donutRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  categoryLegendList: {
+    flex: 1,
+    gap: 8,
+    paddingLeft: 8,
+  },
+  categoryLegendRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  categoryLegendIconWrap: {
+    width: 20,
+    alignItems: 'center',
+  },
+  categoryLegendName: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#71717A',
+  },
+  categoryLegendPercent: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#18181B',
+  },
+  periodDropdownBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#FAF8FD',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#EFEAF8',
+  },
+  periodDropdownText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#71717A',
+  },
+  aiInsightCard: {
+    borderRadius: 22,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(124, 58, 237, 0.25)',
+    shadowColor: '#7C3AED',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  aiInsightHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 8,
+  },
+  aiInsightTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#18181B',
+  },
+  aiInsightBody: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  aiInsightText: {
+    flex: 1,
+    fontSize: 12.5,
+    fontWeight: '600',
+    color: '#3F3F46',
+    lineHeight: 18,
+  },
+  aiInsightArrowBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#7C3AED',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   scrollContent: {
     paddingHorizontal: 16,

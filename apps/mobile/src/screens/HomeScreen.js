@@ -14,10 +14,12 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import Svg, { Rect, Defs as SvgDefs, LinearGradient as SvgLinearGradient, Stop as SvgStop } from 'react-native-svg';
 import { COLORS } from '../theme/colors';
 import { useFinance } from '../context/FinanceContext';
 import AddTransactionModal from '../components/AddTransactionModal';
 import CofrinhosModal from '../components/CofrinhosModal';
+import { BudgetDonut } from '../components/DonutChart';
 
 const { width } = Dimensions.get('window');
 
@@ -114,26 +116,33 @@ export default function HomeScreen({ navigation }) {
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <StatusBar barStyle="dark-content" backgroundColor={COLORS.bg} />
 
-      {/* HEADER SUPERIOR: LOGO, SELETOR DE MÊS, NOTIFICAÇÕES E PERFIL */}
+      {/* HEADER SUPERIOR: LOGO FINN COM GRADIENTE, SUBTÍTULO E AÇÕES */}
       <View style={styles.topBar}>
         <View style={styles.brandGroup}>
-          <View style={styles.appIconBadge}>
-            <Ionicons name="wallet" size={18} color={COLORS.white} />
+          <View style={styles.brandIconContainer}>
+            <Svg width={30} height={30} viewBox="0 0 28 28">
+              <SvgDefs>
+                <SvgLinearGradient id="logoGrad" x1="0" y1="0" x2="1" y2="1">
+                  <SvgStop offset="0%" stopColor="#7C3AED" />
+                  <SvgStop offset="45%" stopColor="#D946EF" />
+                  <SvgStop offset="100%" stopColor="#06B6D4" />
+                </SvgLinearGradient>
+              </SvgDefs>
+              <Rect x="2" y="3" width="24" height="5.5" rx="2.75" fill="url(#logoGrad)" />
+              <Rect x="5" y="11" width="21" height="5.5" rx="2.75" fill="url(#logoGrad)" />
+              <Rect x="8" y="19" width="18" height="5.5" rx="2.75" fill="url(#logoGrad)" />
+            </Svg>
           </View>
-          <Text style={styles.brandTitle}>FINN</Text>
+          <View style={{ marginLeft: 8 }}>
+            <Text style={styles.brandTitle}>FINN</Text>
+            <Text style={styles.brandSubtitle}>Gestor Financeiro Inteligente</Text>
+          </View>
         </View>
-
-        {/* SELETOR DE MÊS NO CENTRO (< Out 2026 >) */}
-        <TouchableOpacity style={styles.monthPill}>
-          <Ionicons name="chevron-back" size={14} color={COLORS.textSecondary} />
-          <Text style={styles.monthText}>{selectedMonth}</Text>
-          <Ionicons name="chevron-forward" size={14} color={COLORS.textSecondary} />
-        </TouchableOpacity>
 
         {/* ÍCONES DA DIREITA: NOTIFICAÇÃO E AVATAR */}
         <View style={styles.rightIcons}>
           <TouchableOpacity style={styles.iconCircle}>
-            <Ionicons name="notifications-outline" size={18} color={COLORS.text} />
+            <Ionicons name="notifications-outline" size={19} color="#18181B" />
             <View style={styles.notificationDot} />
           </TouchableOpacity>
 
@@ -141,9 +150,7 @@ export default function HomeScreen({ navigation }) {
             style={styles.avatarCircle}
             onPress={() => navigation.navigate('Mais')}
           >
-            <Text style={styles.avatarText}>
-              {currentUserName.charAt(0).toUpperCase()}
-            </Text>
+            <Ionicons name="person" size={17} color="#7C3AED" />
           </TouchableOpacity>
         </View>
       </View>
@@ -155,115 +162,159 @@ export default function HomeScreen({ navigation }) {
           { paddingBottom: insets.bottom + 105 },
         ]}
       >
-        {/* CARD HERO AZUL ESCURO: SALDO TOTAL VINCULADO & RESULTADO DO MÊS */}
+        {/* SAUDAÇÃO PERSONALIZADA (Olá, Lucas 👋) */}
+        <View style={styles.greetingWrap}>
+          <Text style={styles.greetingTitle}>Olá, {currentUserName} 👋</Text>
+          <Text style={styles.greetingSub}>Aqui está o resumo das suas finanças.</Text>
+        </View>
+
+        {/* CARD HERO GRADIENTE LIQUIDO (AZUL -> ROXO -> MAGENTA -> LARANJA) */}
         <LinearGradient
-          colors={[COLORS.navyGradientStart, COLORS.navyGradientEnd]}
+          colors={['#1D4ED8', '#2563EB', '#7C3AED', '#C026D3', '#F97316']}
           style={styles.heroCard}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
         >
-          {/* TOPO DO CARD: ALTERNADOR ENTRE SALDO TOTAL EM CONTAS E RESULTADO DO MÊS */}
-          <View style={styles.heroTop}>
+          {/* Topo do card: Pill de Saldo + Ícone de Banco */}
+          <View style={styles.heroTopRow}>
             <TouchableOpacity
-              style={styles.heroModePill}
-              onPress={toggleHeroCardMode}
+              style={styles.heroPill}
+              onPress={toggleHideBalances}
               activeOpacity={0.8}
             >
-              <Ionicons
-                name={heroCardMode === 'balance' ? 'wallet' : 'trending-up'}
-                size={13}
-                color={COLORS.white}
-              />
-              <Text style={styles.heroTitle}>
-                {heroCardMode === 'balance' ? 'SALDO TOTAL EM CONTAS' : 'RESULTADO DO MÊS'}
-              </Text>
-              <Ionicons name="swap-horizontal" size={13} color="rgba(255,255,255,0.7)" />
-            </TouchableOpacity>
-
-            <TouchableOpacity onPress={toggleHideBalances} style={styles.eyeBtn}>
+              <Text style={styles.heroPillText}>Saldo atual (contas)</Text>
               <Ionicons
                 name={hideBalances ? 'eye-off-outline' : 'eye-outline'}
-                size={18}
-                color="rgba(255,255,255,0.9)"
+                size={14}
+                color="rgba(255, 255, 255, 0.9)"
               />
+            </TouchableOpacity>
+
+            <View style={styles.bankIconBadge}>
+              <Ionicons name="business-outline" size={18} color="#FFFFFF" />
+            </View>
+          </View>
+
+          {/* Valor Principal em Destaque */}
+          <Text style={styles.heroMainBalance}>
+            {formatMoney(heroCardMode === 'balance' ? totalBalance : resultadoDoMes)}
+          </Text>
+
+          {/* Tag de Tendência / Comparativo Inferior */}
+          <View style={styles.heroCompareTag}>
+            <Ionicons name="arrow-up" size={12} color="#34D399" />
+            <Text style={styles.heroCompareText}>
+              +4,8% em relação ao mês anterior
+            </Text>
+          </View>
+        </LinearGradient>
+
+        {/* DOIS CARDS RÁPIDOS LADO A LADO: ENTRADAS E SAÍDAS */}
+        <View style={styles.metricCardsRow}>
+          {/* Card Entradas */}
+          <View style={styles.metricCard}>
+            <View style={styles.incomeCircleIcon}>
+              <Ionicons name="arrow-down" size={19} color="#FFFFFF" />
+            </View>
+            <View style={styles.metricCardInfo}>
+              <Text style={styles.metricCardLabel}>Entradas</Text>
+              <Text style={styles.metricCardValue}>{formatMoney(totalIncome)}</Text>
+            </View>
+          </View>
+
+          {/* Card Saídas */}
+          <View style={styles.metricCard}>
+            <View style={styles.expenseCircleIcon}>
+              <Ionicons name="arrow-up" size={19} color="#FFFFFF" />
+            </View>
+            <View style={styles.metricCardInfo}>
+              <Text style={styles.metricCardLabel}>Saídas</Text>
+              <Text style={styles.metricCardValue}>{formatMoney(totalExpense)}</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* CARD RESUMO DO MÊS (COM DONUT CHART E LEGENDA) */}
+        <View style={styles.resumoCard}>
+          <View style={styles.resumoHeader}>
+            <Text style={styles.resumoTitle}>Resumo do mês</Text>
+            <TouchableOpacity style={styles.monthSelectorBtn}>
+              <Text style={styles.monthSelectorText}>{selectedMonth}</Text>
+              <Ionicons name="chevron-down" size={13} color="#71717A" />
             </TouchableOpacity>
           </View>
 
-          {/* VALOR PRINCIPAL VINCULADO E GRÁFICO */}
-          <View style={styles.heroValueRow}>
-            <View>
-              <Text style={styles.heroValue}>
-                {formatMoney(heroCardMode === 'balance' ? totalBalance : resultadoDoMes)}
+          <View style={styles.resumoBody}>
+            {/* Lado Esquerdo: Donut Chart com Porcentagem do Orçamento */}
+            <BudgetDonut
+              percent={budgetProgress > 0 ? budgetProgress : 66}
+              centerValue={`${budgetProgress > 0 ? budgetProgress : 66}%`}
+              centerLabel="Do orçamento"
+              size={116}
+            />
+
+            {/* Lado Direito: Legenda com Valores */}
+            <View style={styles.resumoLegendList}>
+              {/* Gastos */}
+              <View style={styles.legendRow}>
+                <View style={[styles.legendDot, { backgroundColor: '#EC4899' }]} />
+                <Text style={styles.legendLabel}>Gastos</Text>
+                <Text style={styles.legendValue}>{formatMoney(totalExpense)}</Text>
+              </View>
+
+              {/* Orçamento */}
+              <View style={styles.legendRow}>
+                <View style={[styles.legendDot, { backgroundColor: '#3B82F6' }]} />
+                <Text style={styles.legendLabel}>Orçamento</Text>
+                <Text style={styles.legendValue}>{formatMoney(totalBudget)}</Text>
+              </View>
+
+              {/* Restante */}
+              <View style={styles.legendRow}>
+                <View style={[styles.legendDot, { backgroundColor: '#8B5CF6' }]} />
+                <Text style={styles.legendLabel}>Restante</Text>
+                <Text style={[styles.legendValue, { color: '#10B981' }]}>
+                  {formatMoney(Math.max(totalBudget - totalExpense, 0))}
+                </Text>
+              </View>
+            </View>
+          </View>
+        </View>
+
+        {/* BANNER FINN INSIGHTS */}
+        <TouchableOpacity
+          activeOpacity={0.88}
+          onPress={() => navigation.navigate('FinnAI')}
+        >
+          <LinearGradient
+            colors={['#7C3AED', '#9333EA', '#C026D3']}
+            style={styles.insightsCard}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+          >
+            <View style={styles.insightsHeader}>
+              <View style={styles.insightsTitleGroup}>
+                <Ionicons name="sparkles" size={15} color="#FFFFFF" />
+                <Text style={styles.insightsTitle}>FINN Insights</Text>
+              </View>
+              <View style={styles.novoPill}>
+                <Text style={styles.novoPillText}>Novo</Text>
+              </View>
+            </View>
+
+            <View style={styles.insightsBody}>
+              <View style={styles.targetIconCircle}>
+                <Ionicons name="disc" size={20} color="#FFFFFF" />
+              </View>
+              <Text style={styles.insightsText}>
+                Seus gastos com alimentação subiram 18% neste mês.
               </Text>
-              <View style={styles.trendingBadge}>
-                <Ionicons
-                  name={resultadoDoMes >= 0 ? 'arrow-up' : 'arrow-down'}
-                  size={11}
-                  color={resultadoDoMes >= 0 ? COLORS.income : COLORS.expense}
-                />
-                <Text style={styles.trendingText}>
-                  {heroCardMode === 'balance'
-                    ? (resultadoDoMes === 0
-                        ? 'Patrimônio em contas'
-                        : resultadoDoMes >= 0
-                        ? `+ ${formatMoney(resultadoDoMes)} no mês`
-                        : `${formatMoney(resultadoDoMes)} no mês`)
-                    : (totalIncome === 0 && totalExpense === 0
-                        ? `Nas contas: ${formatMoney(totalBalance)}`
-                        : resultadoDoMes >= 0
-                        ? 'Superávit no mês'
-                        : 'Déficit no mês')}
-                </Text>
+              <View style={styles.insightsChevronBtn}>
+                <Ionicons name="chevron-forward" size={16} color="#FFFFFF" />
               </View>
             </View>
-
-            {/* CURVA DE TENDÊNCIA ESTILIZADA (SPARKLINE) */}
-            <View style={styles.sparklineWrap}>
-              <View style={styles.sparkDot1} />
-              <View style={styles.sparkLine1} />
-              <View style={styles.sparkDot2} />
-              <View style={styles.sparkLine2} />
-              <View style={styles.sparkDot3} />
-            </View>
-          </View>
-
-          {/* SUB-CARDS INFERIORES: ENTRADAS (COM FREELANCE) E SAÍDAS (COM FIXAS/VARIÁVEIS) */}
-          <View style={styles.heroMetricsGrid}>
-            <View style={styles.heroMetricPill}>
-              <View style={styles.incomeArrowCircle}>
-                <Ionicons name="arrow-down" size={14} color={COLORS.income} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.metricPillLabel}>Entradas</Text>
-                <Text style={styles.metricPillValue}>
-                  {formatMoney(totalIncome)}
-                </Text>
-                {totalFreelanceIncome > 0 && (
-                  <Text style={styles.metricSubBadge}>
-                    ⚡ {formatMoney(totalFreelanceIncome)} freela
-                  </Text>
-                )}
-              </View>
-            </View>
-
-            <View style={styles.heroMetricPill}>
-              <View style={styles.expenseArrowCircle}>
-                <Ionicons name="arrow-up" size={14} color={COLORS.expense} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.metricPillLabel}>Saídas</Text>
-                <Text style={styles.metricPillValue}>
-                  {formatMoney(totalExpense)}
-                </Text>
-                {totalFixedExpenses > 0 && (
-                  <Text style={styles.metricSubBadge}>
-                    Fixos: {formatMoney(totalFixedExpenses)}
-                  </Text>
-                )}
-              </View>
-            </View>
-          </View>
-        </LinearGradient>
+          </LinearGradient>
+        </TouchableOpacity>
 
         {/* SEÇÃO "VISÃO GERAL" (3 MINI CARDS - IMAGEM 3 & 2) */}
         <Text style={styles.sectionHeaderTitle}>Visão geral</Text>
@@ -695,44 +746,32 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 18,
+    paddingHorizontal: 16,
     paddingVertical: 10,
     backgroundColor: COLORS.bg,
   },
   brandGroup: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
   },
-  appIconBadge: {
-    width: 28,
-    height: 28,
-    borderRadius: 8,
-    backgroundColor: COLORS.navy,
+  brandIconContainer: {
+    width: 32,
+    height: 32,
     alignItems: 'center',
     justifyContent: 'center',
   },
   brandTitle: {
-    color: COLORS.navy,
+    color: '#18181B',
     fontSize: 18,
     fontWeight: '900',
     letterSpacing: 0.5,
+    lineHeight: 20,
   },
-  monthPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: COLORS.surface,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: COLORS.surfaceBorder,
-  },
-  monthText: {
-    color: COLORS.text,
-    fontSize: 13,
-    fontWeight: '700',
+  brandSubtitle: {
+    color: '#71717A',
+    fontSize: 10.5,
+    fontWeight: '600',
+    letterSpacing: -0.2,
   },
   rightIcons: {
     flexDirection: 'row',
@@ -740,38 +779,320 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   iconCircle: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: COLORS.surface,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: COLORS.surfaceBorder,
+    borderColor: '#EFEAF8',
+    shadowColor: '#4C1D95',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 2,
   },
   notificationDot: {
     position: 'absolute',
-    top: 7,
-    right: 8,
+    top: 9,
+    right: 10,
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: COLORS.expense,
+    backgroundColor: '#EC4899',
   },
   avatarCircle: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: '#FFE5D9',
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#EDE9FE',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: '#FED7AA',
+    borderColor: 'rgba(124, 58, 237, 0.25)',
+    shadowColor: '#4C1D95',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 2,
   },
-  avatarText: {
-    color: '#EA580C',
+  greetingWrap: {
+    paddingHorizontal: 4,
+    paddingTop: 4,
+    paddingBottom: 4,
+  },
+  greetingTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#18181B',
+    letterSpacing: -0.5,
+  },
+  greetingSub: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#71717A',
+    marginTop: 2,
+  },
+  heroCard: {
+    borderRadius: 24,
+    padding: 20,
+    shadowColor: '#1D4ED8',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.22,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  heroTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  heroPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(255, 255, 255, 0.18)',
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.25)',
+  },
+  heroPillText: {
+    color: '#FFFFFF',
+    fontSize: 11.5,
+    fontWeight: '700',
+  },
+  bankIconBadge: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255, 255, 255, 0.18)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.25)',
+  },
+  heroMainBalance: {
+    color: '#FFFFFF',
+    fontSize: 29,
+    fontWeight: '800',
+    letterSpacing: -0.6,
+    marginVertical: 8,
+  },
+  heroCompareTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(0, 0, 0, 0.16)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    marginTop: 4,
+  },
+  heroCompareText: {
+    color: '#34D399',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  metricCardsRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  metricCard: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    borderWidth: 1,
+    borderColor: '#EFEAF8',
+    shadowColor: '#4C1D95',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  incomeCircleIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#10B981',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#10B981',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  expenseCircleIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#EC4899',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#EC4899',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  metricCardInfo: {
+    flex: 1,
+  },
+  metricCardLabel: {
+    fontSize: 11.5,
+    fontWeight: '600',
+    color: '#71717A',
+  },
+  metricCardValue: {
     fontSize: 14,
     fontWeight: '800',
+    color: '#18181B',
+    marginTop: 2,
+    letterSpacing: -0.3,
+  },
+  resumoCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: '#EFEAF8',
+    shadowColor: '#4C1D95',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    elevation: 3,
+  },
+  resumoHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 14,
+  },
+  resumoTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#18181B',
+  },
+  monthSelectorBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#FAF8FD',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#EFEAF8',
+  },
+  monthSelectorText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#71717A',
+  },
+  resumoBody: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+  },
+  resumoLegendList: {
+    flex: 1,
+    gap: 10,
+  },
+  legendRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  legendDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 6,
+  },
+  legendLabel: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#71717A',
+  },
+  legendValue: {
+    fontSize: 12.5,
+    fontWeight: '800',
+    color: '#18181B',
+  },
+  insightsCard: {
+    borderRadius: 22,
+    padding: 16,
+    shadowColor: '#7C3AED',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.22,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  insightsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  insightsTitleGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  insightsTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  novoPill: {
+    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 10,
+  },
+  novoPillText: {
+    color: '#FFFFFF',
+    fontSize: 10.5,
+    fontWeight: '800',
+  },
+  insightsBody: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  targetIconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  insightsText: {
+    flex: 1,
+    color: '#FFFFFF',
+    fontSize: 12.5,
+    fontWeight: '600',
+    lineHeight: 18,
+  },
+  insightsChevronBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: 'rgba(255, 255, 255, 0.22)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   scrollContent: {
     paddingHorizontal: 16,

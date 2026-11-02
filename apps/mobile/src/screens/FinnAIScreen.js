@@ -13,6 +13,7 @@ import {
   Alert,
   Modal,
   Animated,
+  Image,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -558,105 +559,113 @@ export default function FinnAIScreen({ navigation }) {
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <StatusBar barStyle="dark-content" backgroundColor={COLORS.bg} />
 
-      {/* HEADER DA IA */}
+      {/* HEADER DA IA (FIEL AO SCREEN 2 DO PRINT) */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           {navigation?.canGoBack() && (
             <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-              <Ionicons name="chevron-back" size={24} color={COLORS.navy} />
+              <Ionicons name="arrow-back" size={24} color="#18181B" />
             </TouchableOpacity>
           )}
-          <LinearGradient
-            colors={currentSkin.gradient}
-            style={styles.avatarWrap}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-          >
-            <Text style={{ fontSize: 18 }}>{currentSkin.emoji}</Text>
-          </LinearGradient>
-          <View>
-            <View style={styles.titleRow}>
-              <Text style={styles.headerTitle}>FINN AI</Text>
-              <View style={[styles.skinHeaderBadge, { backgroundColor: currentSkin.badgeBg }]}>
-                <Text style={[styles.skinHeaderBadgeText, { color: currentSkin.color }]}>
-                  {currentSkin.name}
-                </Text>
-              </View>
-            </View>
-            <Text style={styles.headerSubtitle}>
-              {currentSkin.title} • {members.user1} & {members.user2}
-            </Text>
+        </View>
+
+        <View style={styles.headerCenter}>
+          <View style={styles.titleRow}>
+            <Ionicons name="sparkles" size={17} color="#7C3AED" />
+            <Text style={styles.headerTitle}>FINN AI</Text>
           </View>
+          <Text style={styles.headerSubtitle}>Seu assistente financeiro</Text>
         </View>
 
         <View style={styles.headerRightGroup}>
-          {/* BOTÃO MODO CONVERSA GEMINI LIVE */}
-          <TouchableOpacity
-            style={styles.geminiLiveHeaderBtn}
-            onPress={openGeminiLive}
-            activeOpacity={0.8}
-          >
-            <LinearGradient
-              colors={['#06B6D4', '#8B5CF6']}
-              style={styles.liveGradientPill}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-            >
-              <Ionicons name="sparkles" size={13} color={COLORS.white} />
-              <Text style={styles.liveBtnText}>Gemini Live</Text>
-            </LinearGradient>
-          </TouchableOpacity>
-
           <TouchableOpacity
             style={styles.settingsMiniBtn}
             onPress={() => navigation?.navigate('Settings')}
           >
-            <Ionicons name="settings-outline" size={18} color={COLORS.textSecondary} />
+            <Ionicons name="ellipsis-vertical" size={20} color="#18181B" />
           </TouchableOpacity>
         </View>
-      </View>
-
-      {/* SELETOR DE SKINS FINANCEIRAS E DE INTELIGÊNCIA */}
-      <View style={styles.skinsBar}>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.skinsScrollContent}
-        >
-          {AI_SKINS.map((skin) => {
-            const isSelected = skin.id === currentSkin.id;
-            return (
-              <TouchableOpacity
-                key={skin.id}
-                style={[
-                  styles.skinChip,
-                  isSelected && {
-                    backgroundColor: skin.color,
-                    borderColor: skin.color,
-                  },
-                ]}
-                onPress={() => setAiSkin(skin.id)}
-                activeOpacity={0.75}
-              >
-                <Text style={styles.skinChipEmoji}>{skin.emoji}</Text>
-                <Text
-                  style={[
-                    styles.skinChipText,
-                    isSelected && styles.skinChipTextActive,
-                  ]}
-                >
-                  {skin.name}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
       </View>
 
       {/* CHAT MESSAGES SCROLL */}
       <ScrollView
         ref={scrollViewRef}
         style={styles.chatScroll}
+        contentContainerStyle={styles.chatContent}
+        keyboardShouldPersistTaps="handled"
+      >
+        {/* HERO ASSISTENTE FINANCEIRO (MASCOTE 3D E CARDS DE SUGESTÃO IGUAL AO PRINT) */}
+        <View style={styles.aiHeroContainer}>
+          {/* AURA GLOW E ROBÔ MASCOTE 3D */}
+          <View style={styles.mascotHaloWrap}>
+            <View style={styles.mascotHaloCircle} />
+            <Image
+              source={require('../../assets/finn-mascot.jpg')}
+              style={styles.mascot3DImage}
+              resizeMode="contain"
+            />
+          </View>
+
+          <Text style={styles.aiHeroTitle}>Como posso te ajudar hoje?</Text>
+          <Text style={styles.aiHeroSub}>
+            Analiso seus gastos, organizo suas finanças e te dou insights para economizar mais.
+          </Text>
+
+          {/* 4 CARDS DE SUGESTÃO (VERTICAL, IDENTICO AO SCREEN 2) */}
+          <View style={styles.aiActionList}>
+            {/* 1. Analisar meus gastos do mês */}
+            <TouchableOpacity
+              style={styles.aiActionCard}
+              onPress={() => handleSend('Analise meus gastos deste mês e me dê um resumo inteligente.')}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.aiActionIconWrap, { backgroundColor: '#EDE9FE' }]}>
+                <Ionicons name="bar-chart" size={18} color="#7C3AED" />
+              </View>
+              <Text style={styles.aiActionText}>Analisar meus gastos do mês</Text>
+              <Ionicons name="chevron-forward" size={16} color="#A1A1AA" />
+            </TouchableOpacity>
+
+            {/* 2. Sugerir como economizar */}
+            <TouchableOpacity
+              style={styles.aiActionCard}
+              onPress={() => handleSend('Como posso economizar este mês com base nos meus gastos atuais?')}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.aiActionIconWrap, { backgroundColor: '#FCE7F3' }]}>
+                <Ionicons name="disc" size={18} color="#EC4899" />
+              </View>
+              <Text style={styles.aiActionText}>Sugerir como economizar</Text>
+              <Ionicons name="chevron-forward" size={16} color="#A1A1AA" />
+            </TouchableOpacity>
+
+            {/* 3. Planejar o próximo mês */}
+            <TouchableOpacity
+              style={styles.aiActionCard}
+              onPress={() => handleSend('Como devemos planejar o orçamento do próximo mês?')}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.aiActionIconWrap, { backgroundColor: '#E0F2FE' }]}>
+                <Ionicons name="calendar" size={18} color="#0284C7" />
+              </View>
+              <Text style={styles.aiActionText}>Planejar o próximo mês</Text>
+              <Ionicons name="chevron-forward" size={16} color="#A1A1AA" />
+            </TouchableOpacity>
+
+            {/* 4. Registrar um gasto por foto */}
+            <TouchableOpacity
+              style={styles.aiActionCard}
+              onPress={handlePickReceipt}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.aiActionIconWrap, { backgroundColor: '#F3E8FF' }]}>
+                <Ionicons name="document-text" size={18} color="#9333EA" />
+              </View>
+              <Text style={styles.aiActionText}>Registrar um gasto por foto</Text>
+              <Ionicons name="chevron-forward" size={16} color="#A1A1AA" />
+            </TouchableOpacity>
+          </View>
+        </View>
         contentContainerStyle={styles.chatContent}
         keyboardShouldPersistTaps="handled"
       >
@@ -809,41 +818,65 @@ export default function FinnAIScreen({ navigation }) {
             </ScrollView>
           </View>
 
-          {/* INPUT BAR FIXO NO RODAPÉ COM MICROFONE ESTILO WHATSAPP */}
+          {/* INPUT BAR FIXO NO RODAPÉ ESTILO SCREEN 2 */}
           <KeyboardAvoidingView
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
             keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
           >
-            <View style={[styles.inputBar, { paddingBottom: Math.max(insets.bottom, 12) }]}>
-              <TextInput
-                style={styles.textInput}
-                placeholder={`Fale com o FINN (${members.user1} ou ${members.user2})...`}
-                placeholderTextColor={COLORS.textMuted}
-                value={inputText}
-                onChangeText={setInputText}
-                multiline
-                editable={!analyzing}
-              />
+            <View style={[styles.modernInputBar, { paddingBottom: Math.max(insets.bottom, 12) }]}>
+              {/* Botão de Foto / Comprovante na Esquerda */}
+              <TouchableOpacity
+                style={styles.mediaIconBtn}
+                onPress={handlePickReceipt}
+                disabled={analyzing}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="image-outline" size={24} color="#71717A" />
+              </TouchableOpacity>
 
+              {/* Campo de Texto em Cápsula Arredondada */}
+              <View style={styles.textInputCapsule}>
+                <TextInput
+                  style={styles.modernTextInput}
+                  placeholder="Digite uma mensagem..."
+                  placeholderTextColor="#A1A1AA"
+                  value={inputText}
+                  onChangeText={setInputText}
+                  multiline
+                  editable={!analyzing}
+                />
+              </View>
+
+              {/* Botão de Enviar com Aviãozinho de Papel Roxo ou Microfone WhatsApp */}
               {inputText.trim().length > 0 ? (
-                /* Botão de Enviar Texto quando há algo digitado */
                 <TouchableOpacity
-                  style={[styles.sendBtn, analyzing && styles.sendBtnDisabled]}
+                  style={[styles.modernSendBtn, analyzing && styles.sendBtnDisabled]}
                   disabled={analyzing}
                   onPress={() => handleSend()}
+                  activeOpacity={0.85}
                 >
-                  <Ionicons name="arrow-up" size={20} color={COLORS.white} />
+                  <Ionicons name="send" size={17} color="#FFFFFF" style={{ marginLeft: 2 }} />
                 </TouchableOpacity>
               ) : (
-                /* Botão de Microfone Estilo WhatsApp quando não há texto */
-                <TouchableOpacity
-                  style={styles.whatsappMicBtn}
-                  onPress={startRecordingWhatsApp}
-                  disabled={analyzing}
-                  activeOpacity={0.8}
-                >
-                  <Ionicons name="mic" size={22} color={COLORS.white} />
-                </TouchableOpacity>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <TouchableOpacity
+                    style={styles.whatsappMicCircleBtn}
+                    onPress={startRecordingWhatsApp}
+                    disabled={analyzing}
+                    activeOpacity={0.85}
+                  >
+                    <Ionicons name="mic" size={20} color="#FFFFFF" />
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.modernSendBtn, { opacity: 0.6 }]}
+                    onPress={() => handleSend('Me dê um insight rápido sobre minhas finanças.')}
+                    disabled={analyzing}
+                    activeOpacity={0.85}
+                  >
+                    <Ionicons name="send" size={17} color="#FFFFFF" style={{ marginLeft: 2 }} />
+                  </TouchableOpacity>
+                </View>
               )}
             </View>
           </KeyboardAvoidingView>
@@ -1012,27 +1045,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 18,
+    paddingHorizontal: 16,
     paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.surfaceBorder,
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.bg,
   },
   headerLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    flex: 1,
+    width: 40,
+    alignItems: 'flex-start',
   },
-  avatarWrap: {
-    width: 38,
-    height: 38,
-    borderRadius: 13,
-    backgroundColor: 'rgba(2, 132, 199, 0.12)',
+  headerCenter: {
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(2, 132, 199, 0.25)',
   },
   titleRow: {
     flexDirection: 'row',
@@ -1040,9 +1063,154 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   headerTitle: {
-    color: COLORS.text,
-    fontSize: 16,
+    color: '#18181B',
+    fontSize: 18,
+    fontWeight: '900',
+    letterSpacing: 0.2,
+  },
+  headerSubtitle: {
+    color: '#71717A',
+    fontSize: 12,
+    fontWeight: '500',
+    marginTop: 2,
+  },
+  headerRightGroup: {
+    width: 40,
+    alignItems: 'flex-end',
+  },
+  aiHeroContainer: {
+    alignItems: 'center',
+    paddingTop: 6,
+    paddingBottom: 16,
+    width: '100%',
+  },
+  mascotHaloWrap: {
+    width: 140,
+    height: 140,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+    marginBottom: 8,
+  },
+  mascotHaloCircle: {
+    position: 'absolute',
+    width: 130,
+    height: 130,
+    borderRadius: 65,
+    backgroundColor: 'rgba(192, 132, 252, 0.25)',
+  },
+  mascot3DImage: {
+    width: 120,
+    height: 120,
+    zIndex: 2,
+  },
+  aiHeroTitle: {
+    fontSize: 22,
     fontWeight: '800',
+    color: '#18181B',
+    letterSpacing: -0.4,
+    textAlign: 'center',
+    marginTop: 4,
+  },
+  aiHeroSub: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#71717A',
+    textAlign: 'center',
+    lineHeight: 18,
+    marginTop: 6,
+    marginBottom: 18,
+    paddingHorizontal: 20,
+  },
+  aiActionList: {
+    width: '100%',
+    gap: 10,
+  },
+  aiActionCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    borderWidth: 1,
+    borderColor: '#EFEAF8',
+    shadowColor: '#4C1D95',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 2,
+    gap: 12,
+  },
+  aiActionIconWrap: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  aiActionText: {
+    flex: 1,
+    fontSize: 13.5,
+    fontWeight: '700',
+    color: '#18181B',
+  },
+  modernInputBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingTop: 10,
+    backgroundColor: COLORS.bg,
+    gap: 10,
+  },
+  mediaIconBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  textInputCapsule: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    paddingHorizontal: 16,
+    paddingVertical: Platform.OS === 'ios' ? 10 : 6,
+    borderWidth: 1,
+    borderColor: '#EFEAF8',
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  modernTextInput: {
+    fontSize: 14,
+    color: '#18181B',
+    maxHeight: 100,
+  },
+  modernSendBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#7C3AED',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#7C3AED',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.35,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  whatsappMicCircleBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#10B981',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#10B981',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.30,
+    shadowRadius: 6,
+    elevation: 4,
   },
   skinHeaderBadge: {
     paddingHorizontal: 7,

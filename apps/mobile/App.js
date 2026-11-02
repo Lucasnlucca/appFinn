@@ -53,7 +53,7 @@ function MainTabs({ navigation }) {
         <Tab.Screen
           name="Transactions"
           component={TransactionsScreen}
-          options={{ tabBarLabel: 'Extrato' }}
+          options={{ tabBarLabel: 'Transações' }}
         />
 
         {/* 3. Botão Central (+) */}
@@ -63,11 +63,11 @@ function MainTabs({ navigation }) {
           options={{ tabBarLabel: '' }}
         />
 
-        {/* 4. Planejamento / Metas */}
+        {/* 4. Planejamento */}
         <Tab.Screen
           name="Planning"
           component={PlanningScreen}
-          options={{ tabBarLabel: 'Metas' }}
+          options={{ tabBarLabel: 'Planejamento' }}
         />
 
         {/* 5. Mais */}

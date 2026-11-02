@@ -812,7 +812,7 @@ const styles = StyleSheet.create({
     marginLeft: 2,
   },
   activeFilterBadgeText: {
-    color: '#0284C7',
+    color: '#7C3AED',
     fontSize: 10,
     fontWeight: '900',
   },
@@ -857,8 +857,8 @@ const styles = StyleSheet.create({
     borderColor: COLORS.surfaceBorder,
   },
   quickPeriodChipActive: {
-    backgroundColor: 'rgba(2, 132, 199, 0.12)',
-    borderColor: '#0284C7',
+    backgroundColor: 'rgba(124, 58, 237, 0.12)',
+    borderColor: '#7C3AED',
   },
   quickPeriodChipText: {
     color: COLORS.textSecondary,
@@ -866,7 +866,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   quickPeriodChipTextActive: {
-    color: '#0284C7',
+    color: '#7C3AED',
     fontWeight: '800',
   },
   filterRow: {
@@ -882,8 +882,8 @@ const styles = StyleSheet.create({
     borderColor: COLORS.surfaceBorder,
   },
   filterChipActive: {
-    backgroundColor: COLORS.primaryLight,
-    borderColor: COLORS.primary,
+    backgroundColor: '#7C3AED',
+    borderColor: '#7C3AED',
   },
   filterChipText: {
     color: COLORS.textSecondary,
@@ -891,7 +891,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   filterChipTextActive: {
-    color: COLORS.primary,
+    color: '#FFFFFF',
     fontWeight: '800',
   },
   summaryBar: {
