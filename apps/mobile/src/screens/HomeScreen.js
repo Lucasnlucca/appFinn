@@ -10,16 +10,21 @@ import {
   Modal,
   TextInput,
   Alert,
+  Image,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useVideoPlayer, VideoView } from 'expo-video';
 import Svg, { Rect, Defs as SvgDefs, LinearGradient as SvgLinearGradient, Stop as SvgStop } from 'react-native-svg';
 import { COLORS } from '../theme/colors';
 import { useFinance } from '../context/FinanceContext';
 import AddTransactionModal from '../components/AddTransactionModal';
 import CofrinhosModal from '../components/CofrinhosModal';
 import { BudgetDonut } from '../components/DonutChart';
+
+const heroVideoSource = require('../../assets/hero-robot.mp4');
+const heroBgSource = require('../../assets/hero-robot-bg.jpg');
 
 const { width } = Dimensions.get('window');
 
@@ -62,6 +67,25 @@ export default function HomeScreen({ navigation }) {
   const [newAccName, setNewAccName] = useState('');
   const [newAccBank, setNewAccBank] = useState('');
   const [newAccBalance, setNewAccBalance] = useState('');
+
+  // Player de vídeo animado do robô FINN no card de saldo
+  const player = useVideoPlayer(heroVideoSource, (p) => {
+    p.loop = false;
+    p.muted = true;
+    p.play();
+  });
+
+  const handleReplayHeroAnimation = () => {
+    if (!player) return;
+    try {
+      player.replay();
+    } catch (e) {
+      try {
+        player.currentTime = 0;
+        player.play();
+      } catch (err) {}
+    }
+  };
 
   // Formatação em Real (com suporte a ocultar valores)
   const formatMoney = (val) => {
@@ -168,46 +192,71 @@ export default function HomeScreen({ navigation }) {
           <Text style={styles.greetingSub}>Aqui está o resumo das suas finanças.</Text>
         </View>
 
-        {/* CARD HERO GRADIENTE LIQUIDO (AZUL -> ROXO -> MAGENTA -> LARANJA) */}
-        <LinearGradient
-          colors={['#1D4ED8', '#2563EB', '#7C3AED', '#C026D3', '#F97316']}
-          style={styles.heroCard}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-        >
-          {/* Topo do card: Pill de Saldo + Ícone de Banco */}
-          <View style={styles.heroTopRow}>
-            <TouchableOpacity
-              style={styles.heroPill}
-              onPress={toggleHideBalances}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.heroPillText}>Saldo atual (contas)</Text>
-              <Ionicons
-                name={hideBalances ? 'eye-off-outline' : 'eye-outline'}
-                size={14}
-                color="rgba(255, 255, 255, 0.9)"
-              />
-            </TouchableOpacity>
+        {/* CARD HERO ROBÔ COM VÍDEO ANIMADO E SALDO DINÂMICO */}
+        <View style={styles.heroCardContainer}>
+          {/* Fundo de fallback estático imediato (evita qualquer piscar antes do vídeo inicializar) */}
+          <Image
+            source={heroBgSource}
+            style={StyleSheet.absoluteFillObject}
+            resizeMode="cover"
+          />
 
-            <View style={styles.bankIconBadge}>
-              <Ionicons name="business-outline" size={18} color="#FFFFFF" />
+          {/* Vídeo Animado do Robô FINN (pisca os olhos luminosos e finaliza na pose estática) */}
+          {player && (
+            <VideoView
+              player={player}
+              style={StyleSheet.absoluteFillObject}
+              contentFit="cover"
+              nativeControls={false}
+              allowsFullscreen={false}
+              allowsPictureInPicture={false}
+              surfaceType="textureView"
+              pointerEvents="none"
+            />
+          )}
+
+          {/* Overlay clicável (tocar no card repete a animação suave do mascote) */}
+          <TouchableOpacity
+            style={styles.heroOverlayTouch}
+            activeOpacity={0.92}
+            onPress={handleReplayHeroAnimation}
+          >
+            <View style={styles.heroContentLeft}>
+              {/* Pill Saldo Atual com Carteira e Olho */}
+              <TouchableOpacity
+                style={styles.heroWalletPill}
+                onPress={toggleHideBalances}
+                activeOpacity={0.75}
+              >
+                <View style={styles.walletIconBox}>
+                  <Ionicons name="wallet-outline" size={14} color="#FFFFFF" />
+                </View>
+                <Text style={styles.heroWalletText}>Saldo atual (contas)</Text>
+                <Ionicons
+                  name={hideBalances ? 'eye-off-outline' : 'eye-outline'}
+                  size={15}
+                  color="#FFFFFF"
+                />
+              </TouchableOpacity>
+
+              {/* Saldo Principal Formatado em Destaque */}
+              <Text
+                style={styles.heroBalanceValue}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+              >
+                {formatMoney(heroCardMode === 'balance' ? totalBalance : resultadoDoMes)}
+              </Text>
+
+              {/* Tag de Comparativo / Tendência Inferior */}
+              <View style={styles.heroTrendPill}>
+                <Ionicons name="arrow-up" size={12} color="#34D399" />
+                <Text style={styles.heroTrendPercent}>+4,8%</Text>
+                <Text style={styles.heroTrendLabel}> em relação ao mês anterior</Text>
+              </View>
             </View>
-          </View>
-
-          {/* Valor Principal em Destaque */}
-          <Text style={styles.heroMainBalance}>
-            {formatMoney(heroCardMode === 'balance' ? totalBalance : resultadoDoMes)}
-          </Text>
-
-          {/* Tag de Tendência / Comparativo Inferior */}
-          <View style={styles.heroCompareTag}>
-            <Ionicons name="arrow-up" size={12} color="#34D399" />
-            <Text style={styles.heroCompareText}>
-              +4,8% em relação ao mês anterior
-            </Text>
-          </View>
-        </LinearGradient>
+          </TouchableOpacity>
+        </View>
 
         {/* DOIS CARDS RÁPIDOS LADO A LADO: ENTRADAS E SAÍDAS */}
         <View style={styles.metricCardsRow}>
@@ -834,69 +883,87 @@ const styles = StyleSheet.create({
     color: '#71717A',
     marginTop: 2,
   },
-  heroCard: {
+  heroCardContainer: {
     borderRadius: 24,
-    padding: 20,
-    shadowColor: '#1D4ED8',
+    overflow: 'hidden',
+    aspectRatio: 16 / 9,
+    backgroundColor: '#0F0826',
+    borderWidth: 1.5,
+    borderColor: 'rgba(168, 85, 247, 0.45)',
+    shadowColor: '#7C3AED',
     shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.22,
+    shadowOpacity: 0.3,
     shadowRadius: 16,
     elevation: 8,
+    marginTop: 4,
+    marginBottom: 4,
   },
-  heroTopRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  heroOverlayTouch: {
+    ...StyleSheet.absoluteFillObject,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    justifyContent: 'center',
+  },
+  heroContentLeft: {
+    maxWidth: '63%',
+    height: '100%',
     justifyContent: 'space-between',
-    marginBottom: 8,
+    alignItems: 'flex-start',
   },
-  heroPill: {
+  heroWalletPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    backgroundColor: 'rgba(255, 255, 255, 0.18)',
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 14,
+    gap: 7,
+    backgroundColor: 'rgba(255, 255, 255, 0.14)',
+    borderRadius: 20,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.25)',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
   },
-  heroPillText: {
-    color: '#FFFFFF',
-    fontSize: 11.5,
-    fontWeight: '700',
-  },
-  bankIconBadge: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+  walletIconBox: {
+    width: 24,
+    height: 24,
+    borderRadius: 7,
     backgroundColor: 'rgba(255, 255, 255, 0.18)',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.25)',
   },
-  heroMainBalance: {
+  heroWalletText: {
     color: '#FFFFFF',
-    fontSize: 29,
-    fontWeight: '800',
-    letterSpacing: -0.6,
-    marginVertical: 8,
+    fontSize: 12,
+    fontWeight: '700',
   },
-  heroCompareTag: {
+  heroBalanceValue: {
+    color: '#FFFFFF',
+    fontSize: 28,
+    fontWeight: '900',
+    letterSpacing: -0.6,
+    textShadowColor: 'rgba(0, 0, 0, 0.45)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 6,
+    marginVertical: 4,
+  },
+  heroTrendPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-    alignSelf: 'flex-start',
-    backgroundColor: 'rgba(0, 0, 0, 0.16)',
-    paddingHorizontal: 10,
+    backgroundColor: 'rgba(15, 23, 42, 0.55)',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.18)',
     paddingVertical: 4,
-    borderRadius: 12,
-    marginTop: 4,
+    paddingHorizontal: 8,
   },
-  heroCompareText: {
+  heroTrendPercent: {
     color: '#34D399',
     fontSize: 11,
-    fontWeight: '700',
+    fontWeight: '800',
+    marginLeft: 3,
+  },
+  heroTrendLabel: {
+    color: 'rgba(255, 255, 255, 0.9)',
+    fontSize: 10,
+    fontWeight: '500',
   },
   metricCardsRow: {
     flexDirection: 'row',
@@ -1099,7 +1166,7 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     gap: 14,
   },
-  heroCard: {
+  oldHeroCard: {
     borderRadius: 22,
     padding: 18,
     shadowColor: COLORS.navy,
