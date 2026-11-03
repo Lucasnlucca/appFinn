@@ -65,6 +65,20 @@ const INITIAL_CARDS = [
     logoType: 'c6',
     owner: 'Casal',
   },
+  {
+    id: 'card-itau',
+    name: 'Itaú',
+    bank: 'Itaú',
+    limit: 3500.00,
+    currentInvoice: 0.00,
+    dueDay: 15,
+    dueDateText: 'Vence em 15/11/2026',
+    status: 'Em aberto',
+    usedPercent: 0,
+    color: '#EC7000',
+    logoType: 'itau',
+    owner: 'Casal',
+  },
 ];
 
 // Contas e faturas mensais (conforme Print da Agenda do Mês)

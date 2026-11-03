@@ -17,6 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { COLORS } from '../theme/colors';
 import { useFinance } from '../context/FinanceContext';
+import BankLogo, { getBankInfo } from '../components/BankLogo';
 
 const happyRobotBg = require('../../assets/agenda-robot-happy.jpg');
 const sadRobotBg = require('../../assets/agenda-robot-sad.jpg');
@@ -679,32 +680,14 @@ export default function MonthlyAgendaScreen({ navigation }) {
   );
 }
 
-// Renderiza o badge específico de cada conta igual ao print
+// Renderiza o badge específico de cada conta igual ao print ou logo oficial do banco
 function renderBillIcon(bill) {
-  const isC6 = bill.title?.toLowerCase().includes('c6');
-  const isNu = bill.title?.toLowerCase().includes('nu');
   const isCar = bill.title?.toLowerCase().includes('carro') || bill.category === 'transporte';
   const isHome =
     bill.title?.toLowerCase().includes('aluguel') ||
     bill.title?.toLowerCase().includes('net') ||
     bill.title?.toLowerCase().includes('internet') ||
     bill.category === 'moradia';
-
-  if (isC6) {
-    return (
-      <View style={[styles.billIconSquare, { backgroundColor: '#18181B' }]}>
-        <Text style={styles.c6BadgeText}>C6</Text>
-      </View>
-    );
-  }
-
-  if (isNu) {
-    return (
-      <View style={[styles.billIconSquare, { backgroundColor: '#820AD1' }]}>
-        <Text style={styles.nuBadgeText}>nu</Text>
-      </View>
-    );
-  }
 
   if (isCar) {
     return (
@@ -720,6 +703,12 @@ function renderBillIcon(bill) {
         <Ionicons name="home" size={20} color="#0284C7" />
       </View>
     );
+  }
+
+  // Verifica se a conta é um banco / fatura de cartão de crédito
+  const bankInfo = getBankInfo(bill.title);
+  if (bill.type === 'fatura' || bill.category === 'cartao' || bankInfo.id !== 'other') {
+    return <BankLogo bank={bill.title} size={42} />;
   }
 
   return (

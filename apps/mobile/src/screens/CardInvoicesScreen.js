@@ -17,6 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { COLORS } from '../theme/colors';
 import { useFinance } from '../context/FinanceContext';
+import BankLogo, { ALL_BANKS, getBankInfo } from '../components/BankLogo';
 
 const wavesBannerSource = require('../../assets/card-invoices-waves.png');
 const finnLogoSource = require('../../assets/finn-logo.png');
@@ -32,7 +33,7 @@ export default function CardInvoicesScreen({ navigation }) {
   const [modalEvolucao, setModalEvolucao] = useState(false);
 
   // Formulário para novo cartão
-  const [newCardName, setNewCardName] = useState('');
+  const [newCardName, setNewCardName] = useState('Nubank');
   const [newCardBank, setNewCardBank] = useState('Nubank');
   const [newCardLimit, setNewCardLimit] = useState('');
   const [newCardInvoice, setNewCardInvoice] = useState('');
@@ -48,15 +49,25 @@ export default function CardInvoicesScreen({ navigation }) {
     );
   };
 
+  // Bancos dinâmicos baseados nos cartões cadastrados
+  const dynamicBanks = Array.from(
+    new Set(cards.map((c) => getBankInfo(c.bank || c.name).shortName))
+  );
+  const filterPills = ['Todos', ...dynamicBanks];
+
   // Filtragem dos cartões
   const filteredCards =
     selectedBankFilter === 'Todos'
       ? cards
-      : cards.filter(
-          (c) =>
+      : cards.filter((c) => {
+          const info = getBankInfo(c.bank || c.name);
+          return (
+            info.shortName.toLowerCase() === selectedBankFilter.toLowerCase() ||
+            info.name.toLowerCase() === selectedBankFilter.toLowerCase() ||
             c.bank?.toLowerCase() === selectedBankFilter.toLowerCase() ||
             c.name?.toLowerCase().includes(selectedBankFilter.toLowerCase())
-        );
+          );
+        });
 
   // Totais calculados
   const totalOpenInvoices = cards.reduce((sum, c) => sum + (c.currentInvoice || 0), 0);
@@ -72,23 +83,23 @@ export default function CardInvoicesScreen({ navigation }) {
     const dueDayNum = parseInt(newCardDueDay, 10) || 10;
     const used = limitNum > 0 ? Math.min(Math.round((invNum / limitNum) * 100), 100) : 0;
 
-    const isNu = newCardBank.toLowerCase().includes('nu');
-    const isC6 = newCardBank.toLowerCase().includes('c6');
+    const bankInfo = getBankInfo(newCardBank);
 
     await addCard({
       name: newCardName.trim(),
-      bank: newCardBank.trim(),
+      bank: bankInfo.name,
       limit: limitNum,
       currentInvoice: invNum,
       dueDay: dueDayNum,
       dueDateText: `Vence em ${dueDayNum}/11/2026`,
       status: 'Em aberto',
       usedPercent: used,
-      color: isNu ? '#820AD1' : isC6 ? '#242424' : '#7C3AED',
-      logoType: isNu ? 'nu' : isC6 ? 'c6' : 'other',
+      color: bankInfo.color,
+      logoType: bankInfo.id,
     });
 
-    setNewCardName('');
+    setNewCardName('Nubank');
+    setNewCardBank('Nubank');
     setNewCardLimit('');
     setNewCardInvoice('');
     setNewCardDueDay('10');
@@ -150,7 +161,7 @@ export default function CardInvoicesScreen({ navigation }) {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.filterPillsRow}
         >
-          {['Todos', 'Nubank', 'C6 Bank'].map((filterName) => {
+          {filterPills.map((filterName) => {
             const isActive = selectedBankFilter === filterName;
             return (
               <TouchableOpacity
@@ -226,8 +237,7 @@ export default function CardInvoicesScreen({ navigation }) {
         {/* LISTA DE CARTÕES */}
         <View style={styles.cardsList}>
           {filteredCards.map((card) => {
-            const isNu = card.bank?.toLowerCase().includes('nu') || card.logoType === 'nu';
-            const isC6 = card.bank?.toLowerCase().includes('c6') || card.logoType === 'c6';
+            const bankInfo = getBankInfo(card.bank || card.name);
             const limit = card.limit || 5000;
             const invoice = card.currentInvoice || 0;
             const usedPercent =
@@ -237,21 +247,8 @@ export default function CardInvoicesScreen({ navigation }) {
             return (
               <View key={card.id} style={styles.cardItem}>
                 <View style={styles.cardItemTopRow}>
-                  {/* LOGO DO BANCO */}
-                  <View
-                    style={[
-                      styles.bankLogoBox,
-                      { backgroundColor: isNu ? '#820AD1' : isC6 ? '#242424' : '#7C3AED' },
-                    ]}
-                  >
-                    {isNu ? (
-                      <Text style={styles.nuLogoText}>nu</Text>
-                    ) : isC6 ? (
-                      <Text style={styles.c6LogoText}>C6</Text>
-                    ) : (
-                      <Ionicons name="card" size={18} color="#FFFFFF" />
-                    )}
-                  </View>
+                  {/* LOGO OFICIAL DO BANCO */}
+                  <BankLogo bank={card.bank || card.name} size={44} />
 
                   {/* INFORMAÇÕES CENTRAIS */}
                   <View style={styles.cardItemInfo}>
@@ -282,7 +279,7 @@ export default function CardInvoicesScreen({ navigation }) {
                         styles.progressFill,
                         {
                           width: `${usedPercent}%`,
-                          backgroundColor: isNu ? '#820AD1' : '#7C3AED',
+                          backgroundColor: bankInfo.color,
                         },
                       ]}
                     />
@@ -327,28 +324,51 @@ export default function CardInvoicesScreen({ navigation }) {
               onChangeText={setNewCardName}
             />
 
-            <Text style={styles.inputLabel}>Banco / Emissor</Text>
-            <View style={styles.bankOptionsRow}>
-              {['Nubank', 'C6 Bank', 'Inter', 'Itaú'].map((b) => (
-                <TouchableOpacity
-                  key={b}
-                  style={[
-                    styles.bankOptionPill,
-                    newCardBank === b && styles.bankOptionPillActive,
-                  ]}
-                  onPress={() => setNewCardBank(b)}
-                >
-                  <Text
+            <Text style={styles.inputLabel}>Selecione o Banco / Emissor</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.bankPickerContainer}
+            >
+              {ALL_BANKS.map((b) => {
+                const isSelected =
+                  newCardBank === b.name ||
+                  newCardBank === b.id ||
+                  newCardBank === b.shortName;
+                return (
+                  <TouchableOpacity
+                    key={b.id}
                     style={[
-                      styles.bankOptionText,
-                      newCardBank === b && styles.bankOptionTextActive,
+                      styles.bankPickerItem,
+                      isSelected && styles.bankPickerItemActive,
                     ]}
+                    onPress={() => {
+                      setNewCardBank(b.name);
+                      if (!newCardName.trim() || ALL_BANKS.some((x) => x.name === newCardName)) {
+                        setNewCardName(b.name);
+                      }
+                    }}
+                    activeOpacity={0.8}
                   >
-                    {b}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+                    <BankLogo bank={b.id} size={36} />
+                    <Text
+                      style={[
+                        styles.bankPickerName,
+                        isSelected && styles.bankPickerNameActive,
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {b.shortName}
+                    </Text>
+                    {isSelected && (
+                      <View style={styles.bankSelectedBadge}>
+                        <Ionicons name="checkmark-circle" size={16} color="#7C3AED" />
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
 
             <View style={{ flexDirection: 'row', gap: 12 }}>
               <View style={{ flex: 1 }}>
@@ -758,6 +778,46 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#111827',
   },
+  bankPickerContainer: {
+    flexDirection: 'row',
+    gap: 10,
+    paddingVertical: 6,
+    paddingHorizontal: 2,
+    marginBottom: 6,
+  },
+  bankPickerItem: {
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+    backgroundColor: '#F9FAFB',
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
+    minWidth: 78,
+    position: 'relative',
+  },
+  bankPickerItemActive: {
+    backgroundColor: '#F3EEFF',
+    borderColor: '#7C3AED',
+  },
+  bankPickerName: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#4B5563',
+    marginTop: 6,
+    textAlign: 'center',
+  },
+  bankPickerNameActive: {
+    color: '#7C3AED',
+    fontWeight: '800',
+  },
+  bankSelectedBadge: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+  },
   bankOptionsRow: {
     flexDirection: 'row',
     gap: 8,
@@ -849,3 +909,4 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 });
+
