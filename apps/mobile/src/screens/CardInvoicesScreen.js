@@ -373,7 +373,7 @@ export default function CardInvoicesScreen({ navigation }) {
               }
               cardId={filteredCards[0]?.id}
               holderName={filteredCards[0]?.holderName || defaultUserName}
-              lastFourDigits={filteredCards[0]?.lastFourDigits || '4568'}
+              lastFourDigits={filteredCards[0]?.lastFourDigits || ''}
               expiryMonth={filteredCards[0]?.expiryMonth || '10'}
               expiryYear={filteredCards[0]?.expiryYear || '26'}
             />

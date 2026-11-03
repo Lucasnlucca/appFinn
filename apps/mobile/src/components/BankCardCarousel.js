@@ -40,7 +40,7 @@ export default function BankCardCarousel({
         <BankCard
           bankId="nubank"
           holderName={userName}
-          lastFourDigits="4568"
+          lastFourDigits=""
           expiryMonth="10"
           expiryYear="26"
         />
@@ -59,7 +59,7 @@ export default function BankCardCarousel({
           bankId={theme.bankId}
           cardId={card.id}
           holderName={card.holderName || userName}
-          lastFourDigits={card.lastFourDigits || String(card.dueDay || '4568')}
+          lastFourDigits={card.lastFourDigits || ''}
           expiryMonth={card.expiryMonth || '10'}
           expiryYear={card.expiryYear || '26'}
         />
@@ -107,7 +107,7 @@ export default function BankCardCarousel({
                 bankId={theme.bankId}
                 cardId={card.id}
                 holderName={card.holderName || userName}
-                lastFourDigits={card.lastFourDigits || String(card.dueDay || '4568')}
+                lastFourDigits={card.lastFourDigits || ''}
                 expiryMonth={card.expiryMonth || '10'}
                 expiryYear={card.expiryYear || '26'}
               />

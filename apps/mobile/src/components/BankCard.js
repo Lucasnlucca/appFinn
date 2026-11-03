@@ -401,8 +401,8 @@ function CardHeaderLogo({ bankId, theme }) {
 export default function BankCard({
   bankId = 'nubank',
   cardId,
-  holderName = 'NOME SOBRENOME',
-  lastFourDigits = '4568',
+  holderName = '',
+  lastFourDigits = '',
   expiryMonth = '10',
   expiryYear = '26',
   variant = 'premium',
@@ -410,11 +410,15 @@ export default function BankCard({
 }) {
   const theme = getBankTheme(bankId);
 
-  // Formatação dos 4 blocos de números do cartão
-  const digitsClean = String(lastFourDigits || '4568').slice(-4);
-  const formattedCardNumber = `1234  4568  1234  ${digitsClean}`;
+  // Formatação segura e neutra dos blocos de números do cartão (sem dados fictícios)
+  const digitsClean = lastFourDigits ? String(lastFourDigits).slice(-4) : '';
+  const formattedCardNumber = digitsClean
+    ? `••••  ••••  ••••  ${digitsClean}`
+    : '••••  ••••  ••••  ••••';
 
-  const displayName = String(holderName || 'NOME SOBRENOME').toUpperCase().trim();
+  const displayName = holderName
+    ? String(holderName).toUpperCase().trim()
+    : 'NOME DO TITULAR';
   const displayExpiry = `${String(expiryMonth || '10').padStart(2, '0')}/${String(
     expiryYear || '26'
   ).slice(-2)}`;
