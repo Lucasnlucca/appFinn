@@ -233,8 +233,9 @@ export default function MonthlyAgendaScreen({ navigation }) {
               {/* IMAGEM DE FUNDO DO CARD (FELIZ OU TRISTE) */}
               <Image
                 source={isEverythingPaid ? happyRobotBg : sadRobotBg}
-                style={StyleSheet.absoluteFillObject}
-                resizeMode="cover"
+                style={styles.heroMedia}
+                resizeMode="contain"
+                pointerEvents="none"
               />
 
               {/* CONTEÚDO SOBREPOSTO AO LADO ESQUERDO DO CARD */}
@@ -836,41 +837,52 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   heroCardContainer: {
+    position: 'relative',
     width: '100%',
     aspectRatio: 1024 / 447,
-    borderRadius: 22,
+    borderRadius: 24,
     overflow: 'hidden',
-    position: 'relative',
     backgroundColor: '#0F0826',
     borderWidth: 1.5,
-    borderColor: 'rgba(168, 85, 247, 0.6)',
+    borderColor: 'rgba(168, 85, 247, 0.5)',
     shadowColor: '#7C3AED',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.25,
-    shadowRadius: 14,
-    elevation: 6,
-    marginBottom: 20,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
+    elevation: 8,
+    marginTop: 4,
+    marginBottom: 16,
+  },
+  heroMedia: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: '100%',
+    height: '100%',
   },
   heroOverlayContent: {
     position: 'absolute',
     top: 0,
     left: 0,
     bottom: 0,
-    width: '64%',
-    padding: 16,
+    width: '58%',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     justifyContent: 'space-between',
+    zIndex: 10,
+    elevation: 10,
   },
   heroBadgeRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 7,
+    gap: 6,
   },
   heroBadgeTitle: {
-    fontSize: 19,
+    fontSize: 18,
     fontWeight: '900',
     color: '#FFFFFF',
     letterSpacing: -0.3,
-    textShadowColor: 'rgba(0, 0, 0, 0.4)',
+    textShadowColor: 'rgba(0, 0, 0, 0.5)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 4,
   },
@@ -878,14 +890,17 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     color: 'rgba(255, 255, 255, 0.95)',
-    marginVertical: 4,
+    marginVertical: 2,
+    textShadowColor: 'rgba(0, 0, 0, 0.5)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
   heroProgressTrack: {
-    height: 6,
+    height: 5,
     backgroundColor: 'rgba(255, 255, 255, 0.25)',
     borderRadius: 3,
     overflow: 'hidden',
-    marginVertical: 4,
+    marginVertical: 2,
   },
   heroProgressFill: {
     height: '100%',
@@ -899,16 +914,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: 'rgba(15, 23, 42, 0.45)',
-    borderRadius: 10,
-    paddingVertical: 5,
-    paddingHorizontal: 8,
+    backgroundColor: 'rgba(15, 23, 42, 0.55)',
+    borderRadius: 8,
+    paddingVertical: 4,
+    paddingHorizontal: 7,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.15)',
+    borderColor: 'rgba(255, 255, 255, 0.18)',
   },
   heroFooterText: {
     flex: 1,
-    fontSize: 10,
+    fontSize: 9.5,
     fontWeight: '600',
     color: '#FFFFFF',
     marginRight: 4,
@@ -1172,3 +1187,4 @@ const styles = StyleSheet.create({
     color: '#7C3AED',
   },
 });
+
