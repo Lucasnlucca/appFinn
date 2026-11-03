@@ -12,6 +12,7 @@ import {
   setStoredSession,
   syncTransactionToAppwrite,
 } from '../services/appwriteService';
+import { getBankTheme } from '../constants/BankThemeRegistry';
 
 const FinanceContext = createContext(null);
 
@@ -41,6 +42,11 @@ const INITIAL_CARDS = [
     id: 'card-nu',
     name: 'Nubank',
     bank: 'Nubank',
+    bankId: 'nubank',
+    holderName: 'LUCAS SILVA',
+    lastFourDigits: '4568',
+    expiryMonth: '10',
+    expiryYear: '26',
     limit: 5000.00,
     currentInvoice: 579.60,
     dueDay: 10,
@@ -55,6 +61,11 @@ const INITIAL_CARDS = [
     id: 'card-c6',
     name: 'C6 Bank',
     bank: 'C6 Bank',
+    bankId: 'c6',
+    holderName: 'LUCAS SILVA',
+    lastFourDigits: '4568',
+    expiryMonth: '11',
+    expiryYear: '26',
     limit: 4000.00,
     currentInvoice: 21.90,
     dueDay: 22,
@@ -69,6 +80,11 @@ const INITIAL_CARDS = [
     id: 'card-itau',
     name: 'Itaú',
     bank: 'Itaú',
+    bankId: 'itau',
+    holderName: 'LUCAS SILVA',
+    lastFourDigits: '4568',
+    expiryMonth: '08',
+    expiryYear: '27',
     limit: 3500.00,
     currentInvoice: 0.00,
     dueDay: 15,
@@ -549,20 +565,46 @@ export function FinanceProvider({ children }) {
   };
 
   const addCard = async (cardData) => {
+    const theme = getBankTheme(cardData.bankId || cardData.bank || cardData.name);
     const newCard = {
       id: 'card-' + Date.now(),
-      name: cardData.name || 'Cartão de Crédito',
-      bank: cardData.bank || 'Banco',
+      name: cardData.name || theme.name,
+      bank: cardData.bank || theme.name,
+      bankId: theme.bankId,
+      holderName: cardData.holderName || 'LUCAS SILVA',
+      lastFourDigits: cardData.lastFourDigits || '4568',
+      expiryMonth: cardData.expiryMonth || '10',
+      expiryYear: cardData.expiryYear || '26',
       limit: parseFloat(cardData.limit) || 0,
       currentInvoice: parseFloat(cardData.currentInvoice) || 0,
       dueDay: parseInt(cardData.dueDay, 10) || 10,
+      dueDateText: cardData.dueDateText || `Vence em ${cardData.dueDay || 10}/11/2026`,
+      status: cardData.status || 'Em aberto',
+      usedPercent: cardData.usedPercent !== undefined ? cardData.usedPercent : 0,
+      color: theme.gradientColors[0],
+      logoType: theme.bankId,
       owner: cardData.owner || 'Casal',
-      color: cardData.color || '#0E2F5A',
     };
     const nextCards = [...cards, newCard];
     setCards(nextCards);
     await AsyncStorage.setItem(STORAGE_KEYS.CARDS, JSON.stringify(nextCards));
     return newCard;
+  };
+
+  const updateCard = async (cardId, updatedData) => {
+    const nextCards = cards.map((c) => {
+      if (c.id !== cardId) return c;
+      const theme = getBankTheme(updatedData.bankId || updatedData.bank || c.bankId || c.bank);
+      return {
+        ...c,
+        ...updatedData,
+        bankId: theme.bankId,
+        color: theme.gradientColors[0],
+        logoType: theme.bankId,
+      };
+    });
+    setCards(nextCards);
+    await AsyncStorage.setItem(STORAGE_KEYS.CARDS, JSON.stringify(nextCards));
   };
 
   const removeCard = async (cardId) => {
@@ -1029,6 +1071,7 @@ Responda de forma clara, motivadora e estruturada em tópicos!`;
         updateAccount,
         removeAccount,
         addCard,
+        updateCard,
         removeCard,
         loadDemoData,
         clearAllData,

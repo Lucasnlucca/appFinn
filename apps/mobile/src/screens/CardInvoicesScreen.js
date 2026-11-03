@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -11,33 +11,67 @@ import {
   Modal,
   TextInput,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { COLORS } from '../theme/colors';
 import { useFinance } from '../context/FinanceContext';
-import BankLogo, { ALL_BANKS, getBankInfo } from '../components/BankLogo';
+import BankLogo, { getBankInfo } from '../components/BankLogo';
+import BankCard from '../components/BankCard';
+import BankCardCarousel from '../components/BankCardCarousel';
+import {
+  ALL_BANK_THEMES,
+  getBankTheme,
+} from '../constants/BankThemeRegistry';
 
-const wavesBannerSource = require('../../assets/card-invoices-waves.png');
 const finnLogoSource = require('../../assets/finn-logo.png');
-
 const { width } = Dimensions.get('window');
 
 export default function CardInvoicesScreen({ navigation }) {
   const insets = useSafeAreaInsets();
-  const { cards, addCard, removeCard } = useFinance();
+  const {
+    cards,
+    addCard,
+    updateCard,
+    removeCard,
+    members,
+    loggedInUser,
+  } = useFinance();
+
+  const defaultUserName =
+    loggedInUser?.name || members?.user1 || 'LUCAS SILVA';
 
   const [selectedBankFilter, setSelectedBankFilter] = useState('Todos');
+  const [focusedCardId, setFocusedCardId] = useState(cards[0]?.id || null);
+
+  // Modais
   const [modalNewCard, setModalNewCard] = useState(false);
+  const [modalEditCard, setModalEditCard] = useState(false);
   const [modalEvolucao, setModalEvolucao] = useState(false);
 
-  // Formulário para novo cartão
+  // Estado do formulário de criação
+  const [newCardBankId, setNewCardBankId] = useState('nubank');
   const [newCardName, setNewCardName] = useState('Nubank');
-  const [newCardBank, setNewCardBank] = useState('Nubank');
+  const [newCardHolderName, setNewCardHolderName] = useState(defaultUserName);
+  const [newCardLastFourDigits, setNewCardLastFourDigits] = useState('4568');
+  const [newCardExpiry, setNewCardExpiry] = useState('10/26');
   const [newCardLimit, setNewCardLimit] = useState('');
   const [newCardInvoice, setNewCardInvoice] = useState('');
   const [newCardDueDay, setNewCardDueDay] = useState('10');
+  const [bankSearchText, setBankSearchText] = useState('');
+
+  // Estado do formulário de edição
+  const [editingCardId, setEditingCardId] = useState(null);
+  const [editCardBankId, setEditCardBankId] = useState('nubank');
+  const [editCardName, setEditCardName] = useState('');
+  const [editCardHolderName, setEditCardHolderName] = useState('');
+  const [editCardLastFourDigits, setEditCardLastFourDigits] = useState('');
+  const [editCardExpiry, setEditCardExpiry] = useState('');
+  const [editCardLimit, setEditCardLimit] = useState('');
+  const [editCardInvoice, setEditCardInvoice] = useState('');
+  const [editCardDueDay, setEditCardDueDay] = useState('10');
 
   const formatMoney = (val) => {
     return (
@@ -50,70 +84,195 @@ export default function CardInvoicesScreen({ navigation }) {
   };
 
   // Bancos dinâmicos baseados nos cartões cadastrados
-  const dynamicBanks = Array.from(
-    new Set(cards.map((c) => getBankInfo(c.bank || c.name).shortName))
-  );
+  const dynamicBanks = useMemo(() => {
+    const names = cards.map((c) => {
+      const theme = getBankTheme(c.bankId || c.bank || c.name);
+      return theme.name;
+    });
+    return Array.from(new Set(names));
+  }, [cards]);
+
   const filterPills = ['Todos', ...dynamicBanks];
 
-  // Filtragem dos cartões
-  const filteredCards =
-    selectedBankFilter === 'Todos'
-      ? cards
-      : cards.filter((c) => {
-          const info = getBankInfo(c.bank || c.name);
-          return (
-            info.shortName.toLowerCase() === selectedBankFilter.toLowerCase() ||
-            info.name.toLowerCase() === selectedBankFilter.toLowerCase() ||
-            c.bank?.toLowerCase() === selectedBankFilter.toLowerCase() ||
-            c.name?.toLowerCase().includes(selectedBankFilter.toLowerCase())
-          );
-        });
+  // Filtragem dos cartões de acordo com a pill selecionada
+  const filteredCards = useMemo(() => {
+    if (selectedBankFilter === 'Todos') return cards;
+    return cards.filter((c) => {
+      const theme = getBankTheme(c.bankId || c.bank || c.name);
+      return (
+        theme.name.toLowerCase() === selectedBankFilter.toLowerCase() ||
+        theme.bankId.toLowerCase() === selectedBankFilter.toLowerCase() ||
+        (c.bank && c.bank.toLowerCase().includes(selectedBankFilter.toLowerCase())) ||
+        (c.name && c.name.toLowerCase().includes(selectedBankFilter.toLowerCase()))
+      );
+    });
+  }, [cards, selectedBankFilter]);
 
   // Totais calculados
-  const totalOpenInvoices = cards.reduce((sum, c) => sum + (c.currentInvoice || 0), 0);
+  const totalOpenInvoices = useMemo(() => {
+    return cards.reduce((sum, c) => sum + (c.currentInvoice || 0), 0);
+  }, [cards]);
+
   const totalCardsCount = cards.length;
 
+  // Bancos filtrados pela barra de busca do modal
+  const filteredBankThemes = useMemo(() => {
+    if (!bankSearchText.trim()) return ALL_BANK_THEMES;
+    const q = bankSearchText.toLowerCase().trim();
+    return ALL_BANK_THEMES.filter(
+      (b) =>
+        b.name.toLowerCase().includes(q) ||
+        b.bankId.toLowerCase().includes(q) ||
+        (b.brandLabel && b.brandLabel.toLowerCase().includes(q))
+    );
+  }, [bankSearchText]);
+
+  // Abertura do modal de criação
+  const handleOpenAddModal = () => {
+    setNewCardBankId('nubank');
+    setNewCardName('Nubank');
+    setNewCardHolderName(defaultUserName);
+    setNewCardLastFourDigits('4568');
+    setNewCardExpiry('10/26');
+    setNewCardLimit('');
+    setNewCardInvoice('');
+    setNewCardDueDay('10');
+    setBankSearchText('');
+    setModalNewCard(true);
+  };
+
+  // Salvar novo cartão
   const handleCreateCard = async () => {
-    if (!newCardName.trim()) {
-      Alert.alert('Atenção', 'Informe o nome do cartão.');
-      return;
-    }
+    const theme = getBankTheme(newCardBankId);
+    const cardTitle = newCardName.trim() || theme.name;
     const limitNum = parseFloat(newCardLimit.replace(',', '.')) || 0;
     const invNum = parseFloat(newCardInvoice.replace(',', '.')) || 0;
     const dueDayNum = parseInt(newCardDueDay, 10) || 10;
-    const used = limitNum > 0 ? Math.min(Math.round((invNum / limitNum) * 100), 100) : 0;
+    const used =
+      limitNum > 0 ? Math.min(Math.round((invNum / limitNum) * 100), 100) : 0;
 
-    const bankInfo = getBankInfo(newCardBank);
+    const [expMonth, expYear] = (newCardExpiry || '10/26').split('/');
 
-    await addCard({
-      name: newCardName.trim(),
-      bank: bankInfo.name,
+    const newCreated = await addCard({
+      name: cardTitle,
+      bank: theme.name,
+      bankId: theme.bankId,
+      holderName: (newCardHolderName.trim() || defaultUserName).toUpperCase(),
+      lastFourDigits: (newCardLastFourDigits.trim() || '4568').slice(-4),
+      expiryMonth: expMonth || '10',
+      expiryYear: expYear || '26',
       limit: limitNum,
       currentInvoice: invNum,
       dueDay: dueDayNum,
       dueDateText: `Vence em ${dueDayNum}/11/2026`,
       status: 'Em aberto',
       usedPercent: used,
-      color: bankInfo.color,
-      logoType: bankInfo.id,
+      color: theme.gradientColors[0],
+      logoType: theme.bankId,
+      owner: 'Casal',
     });
 
-    setNewCardName('Nubank');
-    setNewCardBank('Nubank');
-    setNewCardLimit('');
-    setNewCardInvoice('');
-    setNewCardDueDay('10');
     setModalNewCard(false);
+    if (newCreated && newCreated.id) {
+      setFocusedCardId(newCreated.id);
+      setSelectedBankFilter(theme.name);
+    }
+    Alert.alert('Sucesso', `Cartão ${theme.name} adicionado com sucesso!`);
+  };
+
+  // Abertura do modal de edição
+  const handleOpenEditModal = (card) => {
+    const theme = getBankTheme(card.bankId || card.bank || card.name);
+    setEditingCardId(card.id);
+    setEditCardBankId(theme.bankId);
+    setEditCardName(card.name || theme.name);
+    setEditCardHolderName(card.holderName || defaultUserName);
+    setEditCardLastFourDigits(card.lastFourDigits || '4568');
+    setEditCardExpiry(`${card.expiryMonth || '10'}/${card.expiryYear || '26'}`);
+    setEditCardLimit(card.limit ? String(card.limit) : '');
+    setEditCardInvoice(card.currentInvoice ? String(card.currentInvoice) : '');
+    setEditCardDueDay(card.dueDay ? String(card.dueDay) : '10');
+    setModalEditCard(true);
+  };
+
+  // Salvar edição do cartão
+  const handleSaveEditCard = async () => {
+    if (!editingCardId) return;
+    const theme = getBankTheme(editCardBankId);
+    const cardTitle = editCardName.trim() || theme.name;
+    const limitNum = parseFloat(editCardLimit.replace(',', '.')) || 0;
+    const invNum = parseFloat(editCardInvoice.replace(',', '.')) || 0;
+    const dueDayNum = parseInt(editCardDueDay, 10) || 10;
+    const used =
+      limitNum > 0 ? Math.min(Math.round((invNum / limitNum) * 100), 100) : 0;
+    const [expMonth, expYear] = (editCardExpiry || '10/26').split('/');
+
+    await updateCard(editingCardId, {
+      name: cardTitle,
+      bank: theme.name,
+      bankId: theme.bankId,
+      holderName: (editCardHolderName.trim() || defaultUserName).toUpperCase(),
+      lastFourDigits: (editCardLastFourDigits.trim() || '4568').slice(-4),
+      expiryMonth: expMonth || '10',
+      expiryYear: expYear || '26',
+      limit: limitNum,
+      currentInvoice: invNum,
+      dueDay: dueDayNum,
+      dueDateText: `Vence em ${dueDayNum}/11/2026`,
+      status: 'Em aberto',
+      usedPercent: used,
+      color: theme.gradientColors[0],
+      logoType: theme.bankId,
+    });
+
+    setModalEditCard(false);
+    setEditingCardId(null);
+    Alert.alert('Atualizado', 'Os dados do cartão foram salvos com sucesso.');
+  };
+
+  // Excluir cartão com confirmação
+  const handleConfirmDeleteCard = (card) => {
+    Alert.alert(
+      'Remover Cartão',
+      `Tem certeza que deseja remover o cartão "${card.name || card.bank}"?`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Remover',
+          style: 'destructive',
+          onPress: async () => {
+            await removeCard(card.id);
+            if (focusedCardId === card.id) {
+              setFocusedCardId(cards[0]?.id || null);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  // Trata seleção de filtro
+  const handleSelectFilter = (bankName) => {
+    setSelectedBankFilter(bankName);
+    if (bankName !== 'Todos') {
+      const match = cards.find((c) => {
+        const theme = getBankTheme(c.bankId || c.bank || c.name);
+        return theme.name.toLowerCase() === bankName.toLowerCase();
+      });
+      if (match) {
+        setFocusedCardId(match.id);
+      }
+    }
   };
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      <StatusBar barStyle="dark-content" backgroundColor="#F5F2FA" />
+      <StatusBar barStyle="dark-content" backgroundColor="#F7F5FC" />
 
       {/* HEADER SUPERIOR */}
       <View style={styles.topHeader}>
         <TouchableOpacity
-          style={styles.backBtn}
+          style={styles.headerBtn}
           onPress={() => navigation?.goBack?.()}
           activeOpacity={0.7}
         >
@@ -130,9 +289,9 @@ export default function CardInvoicesScreen({ navigation }) {
           <Text style={styles.headerLogoText}>FINN</Text>
         </View>
 
-        {/* BOTÃO DE AJUDA / INFORMAÇÕES */}
+        {/* BOTÃO DE AJUDA / CONFIGURAÇÕES */}
         <TouchableOpacity
-          style={styles.helpBtn}
+          style={styles.headerSettingsBtn}
           activeOpacity={0.7}
           onPress={() =>
             Alert.alert(
@@ -141,7 +300,7 @@ export default function CardInvoicesScreen({ navigation }) {
             )
           }
         >
-          <Ionicons name="help-circle-outline" size={22} color="#71717A" />
+          <Ionicons name="settings-sharp" size={19} color="#71717A" />
         </TouchableOpacity>
       </View>
 
@@ -167,7 +326,7 @@ export default function CardInvoicesScreen({ navigation }) {
               <TouchableOpacity
                 key={filterName}
                 style={[styles.filterPill, isActive && styles.filterPillActive]}
-                onPress={() => setSelectedBankFilter(filterName)}
+                onPress={() => handleSelectFilter(filterName)}
                 activeOpacity={0.8}
               >
                 <Text
@@ -182,6 +341,16 @@ export default function CardInvoicesScreen({ navigation }) {
             );
           })}
         </ScrollView>
+
+        {/* CARTÃO VISUAL PRINCIPAL / CARROSSEL */}
+        <View style={styles.cardHeroContainer}>
+          <BankCardCarousel
+            cards={filteredCards.length > 0 ? filteredCards : cards}
+            activeCardId={focusedCardId || filteredCards[0]?.id || cards[0]?.id}
+            onSelectCard={(c) => setFocusedCardId(c.id)}
+            userName={defaultUserName}
+          />
+        </View>
 
         {/* DOIS CARDS DE RESUMO SUPERIOR */}
         <View style={styles.summaryRow}>
@@ -202,23 +371,14 @@ export default function CardInvoicesScreen({ navigation }) {
             </View>
             <Text style={styles.summaryLabel}>Em aberto</Text>
             <Text style={styles.summaryValue}>
-              {formatMoney(totalOpenInvoices > 0 ? totalOpenInvoices : 1856.90)}
+              {formatMoney(totalOpenInvoices > 0 ? totalOpenInvoices : 601.5)}
             </Text>
             <Text style={styles.summarySub}>
               {totalCardsCount > 0
                 ? `${totalCardsCount} faturas em aberto`
-                : '7 faturas em aberto'}
+                : '3 faturas em aberto'}
             </Text>
           </View>
-        </View>
-
-        {/* ILUSTRAÇÃO DO MASCOTE ROBÔ SOBRE AS ONDAS */}
-        <View style={styles.wavesContainer}>
-          <Image
-            source={wavesBannerSource}
-            style={styles.wavesImage}
-            resizeMode="contain"
-          />
         </View>
 
         {/* SEÇÃO "SEUS CARTÕES" */}
@@ -237,24 +397,40 @@ export default function CardInvoicesScreen({ navigation }) {
         {/* LISTA DE CARTÕES */}
         <View style={styles.cardsList}>
           {filteredCards.map((card) => {
-            const bankInfo = getBankInfo(card.bank || card.name);
+            const theme = getBankTheme(card.bankId || card.bank || card.name);
             const limit = card.limit || 5000;
             const invoice = card.currentInvoice || 0;
             const usedPercent =
-              card.usedPercent ||
-              (limit > 0 ? Math.min(Math.round((invoice / limit) * 100), 100) : 0);
+              card.usedPercent !== undefined
+                ? card.usedPercent
+                : limit > 0
+                ? Math.min(Math.round((invoice / limit) * 100), 100)
+                : 0;
+
+            const isCardFocused = focusedCardId === card.id;
 
             return (
-              <View key={card.id} style={styles.cardItem}>
+              <TouchableOpacity
+                key={card.id}
+                style={[
+                  styles.cardItem,
+                  isCardFocused && styles.cardItemFocused,
+                ]}
+                activeOpacity={0.9}
+                onPress={() => setFocusedCardId(card.id)}
+              >
                 <View style={styles.cardItemTopRow}>
                   {/* LOGO OFICIAL DO BANCO */}
-                  <BankLogo bank={card.bank || card.name} size={44} />
+                  <BankLogo bank={theme.bankId} size={44} />
 
                   {/* INFORMAÇÕES CENTRAIS */}
                   <View style={styles.cardItemInfo}>
-                    <Text style={styles.cardItemName}>{card.name || card.bank}</Text>
+                    <Text style={styles.cardItemName}>
+                      {card.name || theme.name}
+                    </Text>
                     <Text style={styles.cardItemDueDate}>
-                      {card.dueDateText || `Vence em ${card.dueDay || 10}/11/2026`}
+                      {card.dueDateText ||
+                        `Vence em ${card.dueDay || 10}/11/2026`}
                     </Text>
                   </View>
 
@@ -279,16 +455,44 @@ export default function CardInvoicesScreen({ navigation }) {
                         styles.progressFill,
                         {
                           width: `${usedPercent}%`,
-                          backgroundColor: bankInfo.color,
+                          backgroundColor: theme.gradientColors[0],
                         },
                       ]}
                     />
                   </View>
-                  <Text style={styles.progressMetaText}>
-                    {usedPercent}% do limite usado · Limite: {formatMoney(limit)}
-                  </Text>
+                  <View style={styles.cardItemBottomActionsRow}>
+                    <Text style={styles.progressMetaText}>
+                      {usedPercent}% do limite usado · Limite: {formatMoney(limit)}
+                    </Text>
+
+                    {/* BOTÕES DE AÇÃO: EDITAR E EXCLUIR */}
+                    <View style={styles.actionButtonsRow}>
+                      <TouchableOpacity
+                        style={styles.miniActionBtn}
+                        onPress={() => handleOpenEditModal(card)}
+                        activeOpacity={0.7}
+                      >
+                        <Ionicons
+                          name="pencil-outline"
+                          size={15}
+                          color="#7C3AED"
+                        />
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.miniActionBtn, styles.miniDeleteBtn]}
+                        onPress={() => handleConfirmDeleteCard(card)}
+                        activeOpacity={0.7}
+                      >
+                        <Ionicons
+                          name="trash-outline"
+                          size={15}
+                          color="#EF4444"
+                        />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
                 </View>
-              </View>
+              </TouchableOpacity>
             );
           })}
         </View>
@@ -297,16 +501,21 @@ export default function CardInvoicesScreen({ navigation }) {
         <TouchableOpacity
           style={styles.addCardBtn}
           activeOpacity={0.8}
-          onPress={() => setModalNewCard(true)}
+          onPress={handleOpenAddModal}
         >
           <Ionicons name="add-circle-outline" size={18} color="#7C3AED" />
           <Text style={styles.addCardBtnText}>Adicionar outro cartão</Text>
         </TouchableOpacity>
       </ScrollView>
 
-      {/* MODAL NOVO CARTÃO */}
+      {/* ========================================================================= */}
+      {/* MODAL ADICIONAR CARTÃO COM PRÉ-VISUALIZAÇÃO AO VIVO E 18 BANCOS SUPORTADOS */}
+      {/* ========================================================================= */}
       <Modal visible={modalNewCard} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalOverlay}
+        >
           <View style={styles.modalBox}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Adicionar Cartão</Text>
@@ -315,108 +524,301 @@ export default function CardInvoicesScreen({ navigation }) {
               </TouchableOpacity>
             </View>
 
-            <Text style={styles.inputLabel}>Nome do Cartão</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Ex: Nubank Ultravioleta"
-              placeholderTextColor="#9CA3AF"
-              value={newCardName}
-              onChangeText={setNewCardName}
-            />
-
-            <Text style={styles.inputLabel}>Selecione o Banco / Emissor</Text>
             <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.bankPickerContainer}
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.modalScrollContent}
+              keyboardShouldPersistTaps="handled"
             >
-              {ALL_BANKS.map((b) => {
-                const isSelected =
-                  newCardBank === b.name ||
-                  newCardBank === b.id ||
-                  newCardBank === b.shortName;
-                return (
-                  <TouchableOpacity
-                    key={b.id}
-                    style={[
-                      styles.bankPickerItem,
-                      isSelected && styles.bankPickerItemActive,
-                    ]}
-                    onPress={() => {
-                      setNewCardBank(b.name);
-                      if (!newCardName.trim() || ALL_BANKS.some((x) => x.name === newCardName)) {
-                        setNewCardName(b.name);
-                      }
-                    }}
-                    activeOpacity={0.8}
-                  >
-                    <BankLogo bank={b.id} size={36} />
-                    <Text
-                      style={[
-                        styles.bankPickerName,
-                        isSelected && styles.bankPickerNameActive,
-                      ]}
-                      numberOfLines={1}
-                    >
-                      {b.shortName}
-                    </Text>
-                    {isSelected && (
-                      <View style={styles.bankSelectedBadge}>
-                        <Ionicons name="checkmark-circle" size={16} color="#7C3AED" />
-                      </View>
-                    )}
+              {/* PRÉ-VISUALIZAÇÃO INTERATIVA EM TEMPO REAL */}
+              <Text style={styles.previewSectionTitle}>
+                Pré-visualização do Cartão
+              </Text>
+              <View style={styles.previewCardWrapper}>
+                <BankCard
+                  bankId={newCardBankId}
+                  holderName={newCardHolderName || 'NOME SOBRENOME'}
+                  lastFourDigits={newCardLastFourDigits || '4568'}
+                  expiryMonth={newCardExpiry.split('/')[0] || '10'}
+                  expiryYear={newCardExpiry.split('/')[1] || '26'}
+                />
+              </View>
+
+              {/* BUSCA DE BANCO */}
+              <Text style={styles.inputLabel}>
+                Selecione o Banco / Emissor (18 bancos)
+              </Text>
+              <View style={styles.searchBox}>
+                <Ionicons name="search-outline" size={18} color="#9CA3AF" />
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder="Buscar banco ou emissor..."
+                  placeholderTextColor="#9CA3AF"
+                  value={bankSearchText}
+                  onChangeText={setBankSearchText}
+                />
+                {bankSearchText ? (
+                  <TouchableOpacity onPress={() => setBankSearchText('')}>
+                    <Ionicons name="close-circle" size={18} color="#9CA3AF" />
                   </TouchableOpacity>
-                );
-              })}
+                ) : null}
+              </View>
+
+              {/* GRADE / CARROSSEL DOS 18 BANCOS SUPORTADOS */}
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.bankPickerContainer}
+              >
+                {filteredBankThemes.map((b) => {
+                  const isSelected = newCardBankId === b.bankId;
+                  return (
+                    <TouchableOpacity
+                      key={b.bankId}
+                      style={[
+                        styles.bankPickerItem,
+                        isSelected && styles.bankPickerItemActive,
+                      ]}
+                      onPress={() => {
+                        setNewCardBankId(b.bankId);
+                        if (
+                          !newCardName.trim() ||
+                          ALL_BANK_THEMES.some((x) => x.name === newCardName)
+                        ) {
+                          setNewCardName(b.name);
+                        }
+                      }}
+                      activeOpacity={0.8}
+                    >
+                      <BankLogo bank={b.bankId} size={36} />
+                      <Text
+                        style={[
+                          styles.bankPickerName,
+                          isSelected && styles.bankPickerNameActive,
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {b.name}
+                      </Text>
+                      {isSelected && (
+                        <View style={styles.bankSelectedBadge}>
+                          <Ionicons
+                            name="checkmark-circle"
+                            size={16}
+                            color="#7C3AED"
+                          />
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+
+              {/* CAMPOS DO FORMULÁRIO */}
+              <Text style={styles.inputLabel}>Nome do Titular no Cartão</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Ex: LUCAS SILVA"
+                placeholderTextColor="#9CA3AF"
+                value={newCardHolderName}
+                onChangeText={(t) => setNewCardHolderName(t.toUpperCase())}
+                autoCapitalize="characters"
+              />
+
+              <Text style={styles.inputLabel}>Apelido do Cartão</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Ex: Nubank Ultravioleta"
+                placeholderTextColor="#9CA3AF"
+                value={newCardName}
+                onChangeText={setNewCardName}
+              />
+
+              <View style={styles.formRow}>
+                <View style={styles.formCol}>
+                  <Text style={styles.inputLabel}>Últimos 4 Dígitos</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="4568"
+                    keyboardType="number-pad"
+                    maxLength={4}
+                    placeholderTextColor="#9CA3AF"
+                    value={newCardLastFourDigits}
+                    onChangeText={setNewCardLastFourDigits}
+                  />
+                </View>
+                <View style={styles.formCol}>
+                  <Text style={styles.inputLabel}>Validade (MM/AA)</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="10/26"
+                    maxLength={5}
+                    placeholderTextColor="#9CA3AF"
+                    value={newCardExpiry}
+                    onChangeText={setNewCardExpiry}
+                  />
+                </View>
+              </View>
+
+              <View style={styles.formRow}>
+                <View style={styles.formCol}>
+                  <Text style={styles.inputLabel}>Limite Total (R$)</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="5000,00"
+                    keyboardType="numeric"
+                    placeholderTextColor="#9CA3AF"
+                    value={newCardLimit}
+                    onChangeText={setNewCardLimit}
+                  />
+                </View>
+                <View style={styles.formCol}>
+                  <Text style={styles.inputLabel}>Fatura Atual (R$)</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="500,00"
+                    keyboardType="numeric"
+                    placeholderTextColor="#9CA3AF"
+                    value={newCardInvoice}
+                    onChangeText={setNewCardInvoice}
+                  />
+                </View>
+              </View>
+
+              <Text style={styles.inputLabel}>Dia do Vencimento</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="10"
+                keyboardType="number-pad"
+                placeholderTextColor="#9CA3AF"
+                value={newCardDueDay}
+                onChangeText={setNewCardDueDay}
+              />
+
+              <TouchableOpacity
+                style={styles.modalSaveBtn}
+                activeOpacity={0.85}
+                onPress={handleCreateCard}
+              >
+                <Text style={styles.modalSaveBtnText}>Salvar Cartão</Text>
+              </TouchableOpacity>
             </ScrollView>
-
-            <View style={{ flexDirection: 'row', gap: 12 }}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.inputLabel}>Limite Total (R$)</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="5000,00"
-                  keyboardType="numeric"
-                  placeholderTextColor="#9CA3AF"
-                  value={newCardLimit}
-                  onChangeText={setNewCardLimit}
-                />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.inputLabel}>Fatura Atual (R$)</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="500,00"
-                  keyboardType="numeric"
-                  placeholderTextColor="#9CA3AF"
-                  value={newCardInvoice}
-                  onChangeText={setNewCardInvoice}
-                />
-              </View>
-            </View>
-
-            <Text style={styles.inputLabel}>Dia do Vencimento</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="10"
-              keyboardType="number-pad"
-              placeholderTextColor="#9CA3AF"
-              value={newCardDueDay}
-              onChangeText={setNewCardDueDay}
-            />
-
-            <TouchableOpacity
-              style={styles.modalSaveBtn}
-              activeOpacity={0.85}
-              onPress={handleCreateCard}
-            >
-              <Text style={styles.modalSaveBtnText}>Salvar Cartão</Text>
-            </TouchableOpacity>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
+      {/* ========================================================================= */}
+      {/* MODAL EDITAR CARTÃO */}
+      {/* ========================================================================= */}
+      <Modal visible={modalEditCard} transparent animationType="slide">
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalOverlay}
+        >
+          <View style={styles.modalBox}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Editar Cartão</Text>
+              <TouchableOpacity onPress={() => setModalEditCard(false)}>
+                <Ionicons name="close" size={24} color="#71717A" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.modalScrollContent}
+              keyboardShouldPersistTaps="handled"
+            >
+              {/* PRÉ-VISUALIZAÇÃO DO CARTÃO EDITADO */}
+              <View style={styles.previewCardWrapper}>
+                <BankCard
+                  bankId={editCardBankId}
+                  holderName={editCardHolderName || 'NOME SOBRENOME'}
+                  lastFourDigits={editCardLastFourDigits || '4568'}
+                  expiryMonth={editCardExpiry.split('/')[0] || '10'}
+                  expiryYear={editCardExpiry.split('/')[1] || '26'}
+                />
+              </View>
+
+              <Text style={styles.inputLabel}>Nome / Apelido</Text>
+              <TextInput
+                style={styles.input}
+                value={editCardName}
+                onChangeText={setEditCardName}
+              />
+
+              <Text style={styles.inputLabel}>Nome do Titular no Cartão</Text>
+              <TextInput
+                style={styles.input}
+                value={editCardHolderName}
+                onChangeText={(t) => setEditCardHolderName(t.toUpperCase())}
+                autoCapitalize="characters"
+              />
+
+              <View style={styles.formRow}>
+                <View style={styles.formCol}>
+                  <Text style={styles.inputLabel}>Últimos 4 Dígitos</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={editCardLastFourDigits}
+                    maxLength={4}
+                    keyboardType="number-pad"
+                    onChangeText={setEditCardLastFourDigits}
+                  />
+                </View>
+                <View style={styles.formCol}>
+                  <Text style={styles.inputLabel}>Validade (MM/AA)</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={editCardExpiry}
+                    maxLength={5}
+                    onChangeText={setEditCardExpiry}
+                  />
+                </View>
+              </View>
+
+              <View style={styles.formRow}>
+                <View style={styles.formCol}>
+                  <Text style={styles.inputLabel}>Limite Total (R$)</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={editCardLimit}
+                    keyboardType="numeric"
+                    onChangeText={setEditCardLimit}
+                  />
+                </View>
+                <View style={styles.formCol}>
+                  <Text style={styles.inputLabel}>Fatura Atual (R$)</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={editCardInvoice}
+                    keyboardType="numeric"
+                    onChangeText={setEditCardInvoice}
+                  />
+                </View>
+              </View>
+
+              <Text style={styles.inputLabel}>Dia do Vencimento</Text>
+              <TextInput
+                style={styles.input}
+                value={editCardDueDay}
+                keyboardType="number-pad"
+                onChangeText={setEditCardDueDay}
+              />
+
+              <TouchableOpacity
+                style={styles.modalSaveBtn}
+                activeOpacity={0.85}
+                onPress={handleSaveEditCard}
+              >
+                <Text style={styles.modalSaveBtnText}>Salvar Alterações</Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* ========================================================================= */}
       {/* MODAL EVOLUÇÃO DAS FATURAS */}
+      {/* ========================================================================= */}
       <Modal visible={modalEvolucao} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalBox}>
@@ -448,7 +850,10 @@ export default function CardInvoicesScreen({ navigation }) {
                   <View style={styles.evolucaoTrack}>
                     <LinearGradient
                       colors={['#7C3AED', '#A855F7']}
-                      style={[styles.evolucaoFill, { height: `${item.percent}%` }]}
+                      style={[
+                        styles.evolucaoFill,
+                        { height: `${item.percent}%` },
+                      ]}
                     />
                   </View>
                   <Text style={styles.evolucaoMonthText}>{item.month}</Text>
@@ -488,10 +893,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 12,
   },
-  backBtn: {
+  headerBtn: {
     width: 40,
     height: 40,
     borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerSettingsBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#E5E7EB',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -510,13 +923,6 @@ const styles = StyleSheet.create({
     color: '#18181B',
     letterSpacing: 1.2,
   },
-  helpBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   scrollContent: {
     paddingHorizontal: 20,
   },
@@ -524,14 +930,14 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: '800',
     color: '#18181B',
-    marginTop: 8,
+    marginTop: 4,
     marginBottom: 16,
     letterSpacing: -0.3,
   },
   filterPillsRow: {
     flexDirection: 'row',
     gap: 8,
-    marginBottom: 18,
+    marginBottom: 16,
   },
   filterPill: {
     paddingHorizontal: 18,
@@ -550,10 +956,15 @@ const styles = StyleSheet.create({
   filterPillTextActive: {
     color: '#FFFFFF',
   },
+  cardHeroContainer: {
+    width: '100%',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
   summaryRow: {
     flexDirection: 'row',
     gap: 12,
-    marginBottom: 6,
+    marginBottom: 16,
   },
   summaryCard: {
     flex: 1,
@@ -595,18 +1006,6 @@ const styles = StyleSheet.create({
     color: '#9CA3AF',
     fontWeight: '500',
   },
-  wavesContainer: {
-    width: '100%',
-    height: 105,
-    marginTop: -8,
-    marginBottom: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  wavesImage: {
-    width: '100%',
-    height: '100%',
-  },
   cardsSectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -643,27 +1042,13 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 2,
   },
+  cardItemFocused: {
+    borderColor: '#C4B5FD',
+    backgroundColor: '#FCFBFE',
+  },
   cardItemTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
-  },
-  bankLogoBox: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  nuLogoText: {
-    color: '#FFFFFF',
-    fontSize: 20,
-    fontWeight: '900',
-    letterSpacing: -1,
-  },
-  c6LogoText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '900',
   },
   cardItemInfo: {
     flex: 1,
@@ -714,10 +1099,31 @@ const styles = StyleSheet.create({
     height: '100%',
     borderRadius: 3,
   },
+  cardItemBottomActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
   progressMetaText: {
     fontSize: 12,
     color: '#6B7280',
     fontWeight: '500',
+  },
+  actionButtonsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  miniActionBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#F3EEFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  miniDeleteBtn: {
+    backgroundColor: '#FEE2E2',
   },
   addCardBtn: {
     flexDirection: 'row',
@@ -730,7 +1136,7 @@ const styles = StyleSheet.create({
     borderStyle: 'dashed',
     borderRadius: 16,
     paddingVertical: 14,
-    marginTop: 14,
+    marginTop: 16,
   },
   addCardBtnText: {
     fontSize: 14,
@@ -748,24 +1154,56 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 28,
     paddingHorizontal: 20,
     paddingTop: 20,
-    paddingBottom: 36,
+    paddingBottom: 28,
+    maxHeight: '92%',
+  },
+  modalScrollContent: {
+    paddingBottom: 24,
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 12,
   },
   modalTitle: {
     fontSize: 20,
     fontWeight: '800',
     color: '#18181B',
   },
+  previewSectionTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#6B7280',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  previewCardWrapper: {
+    width: '100%',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  searchBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F3F4F6',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    gap: 8,
+    marginBottom: 10,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+    color: '#111827',
+    padding: 0,
+  },
   inputLabel: {
     fontSize: 13,
     fontWeight: '700',
     color: '#374151',
-    marginTop: 12,
+    marginTop: 10,
     marginBottom: 6,
   },
   input: {
@@ -774,7 +1212,7 @@ const styles = StyleSheet.create({
     borderColor: '#E5E7EB',
     borderRadius: 12,
     paddingHorizontal: 14,
-    paddingVertical: 12,
+    paddingVertical: 11,
     fontSize: 15,
     color: '#111827',
   },
@@ -793,7 +1231,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#F9FAFB',
     borderWidth: 1.5,
     borderColor: '#E5E7EB',
-    minWidth: 78,
+    minWidth: 84,
     position: 'relative',
   },
   bankPickerItemActive: {
@@ -818,33 +1256,19 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderRadius: 8,
   },
-  bankOptionsRow: {
+  formRow: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 12,
   },
-  bankOptionPill: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 10,
-    backgroundColor: '#F3F4F6',
-  },
-  bankOptionPillActive: {
-    backgroundColor: '#7C3AED',
-  },
-  bankOptionText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#4B5563',
-  },
-  bankOptionTextActive: {
-    color: '#FFFFFF',
+  formCol: {
+    flex: 1,
   },
   modalSaveBtn: {
     backgroundColor: '#7C3AED',
     borderRadius: 14,
     paddingVertical: 14,
     alignItems: 'center',
-    marginTop: 24,
+    marginTop: 20,
   },
   modalSaveBtnText: {
     color: '#FFFFFF',
@@ -909,4 +1333,3 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 });
-
