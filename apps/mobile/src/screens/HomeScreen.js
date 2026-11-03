@@ -342,7 +342,11 @@ export default function HomeScreen({ navigation }) {
         <View style={styles.resumoCard}>
           <View style={styles.resumoHeader}>
             <Text style={styles.resumoTitle}>Resumo do mês</Text>
-            <TouchableOpacity style={styles.monthSelectorBtn}>
+            <TouchableOpacity
+              style={styles.monthSelectorBtn}
+              activeOpacity={0.75}
+              onPress={() => navigation.navigate('MonthlyAgenda')}
+            >
               <Text style={styles.monthSelectorText}>{selectedMonth}</Text>
               <Ionicons name="chevron-down" size={13} color="#71717A" />
             </TouchableOpacity>
@@ -423,22 +427,22 @@ export default function HomeScreen({ navigation }) {
         {/* SEÇÃO "VISÃO GERAL" (3 MINI CARDS - IMAGEM 3 & 2) */}
         <Text style={styles.sectionHeaderTitle}>Visão geral</Text>
         <View style={styles.overviewGrid}>
-          {/* CARD 1: NAS CONTAS */}
+          {/* CARD 1: NAS CONTAS / FATURAS DOS CARTÕES */}
           <TouchableOpacity
             style={styles.overviewCard}
-            onPress={() => navigation.navigate('Mais')}
+            onPress={() => navigation.navigate('CardInvoices')}
           >
-            <Ionicons name="wallet-outline" size={18} color={COLORS.textSecondary} />
-            <Text style={styles.overviewLabel}>Nas contas</Text>
+            <Ionicons name="card-outline" size={18} color={COLORS.textSecondary} />
+            <Text style={styles.overviewLabel}>Faturas</Text>
             <Text style={styles.overviewValue} numberOfLines={1}>
               {formatMoney(totalBalance)}
             </Text>
           </TouchableOpacity>
 
-          {/* CARD 2: FALTA PAGAR (TUDO PAGO) */}
+          {/* CARD 2: AGENDA DO MÊS / FALTA PAGAR (TUDO PAGO) */}
           <TouchableOpacity
             style={styles.overviewCard}
-            onPress={() => navigation.navigate('Planning')}
+            onPress={() => navigation.navigate('MonthlyAgenda')}
           >
             <Ionicons name="calendar-outline" size={18} color={COLORS.textSecondary} />
             <Text style={styles.overviewLabel}>Falta pagar</Text>

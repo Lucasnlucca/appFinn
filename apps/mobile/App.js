@@ -18,6 +18,8 @@ import PlanningScreen from './src/screens/PlanningScreen';
 import FinnAIScreen from './src/screens/FinnAIScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 import CardsAccountsScreen from './src/screens/CardsAccountsScreen';
+import CardInvoicesScreen from './src/screens/CardInvoicesScreen';
+import MonthlyAgendaScreen from './src/screens/MonthlyAgendaScreen';
 import LoginScreen from './src/screens/LoginScreen';
 import AddTransactionModal from './src/components/AddTransactionModal';
 import FloatingAiButton from './src/components/FloatingAiButton';
@@ -118,6 +120,8 @@ function MainAppContent({ assetsLoaded, isFontsReady }) {
         <Stack.Screen name="Mais" component={SettingsScreen} />
         <Stack.Screen name="Settings" component={SettingsScreen} />
         <Stack.Screen name="CardsAccounts" component={CardsAccountsScreen} />
+        <Stack.Screen name="CardInvoices" component={CardInvoicesScreen} />
+        <Stack.Screen name="MonthlyAgenda" component={MonthlyAgendaScreen} />
         <Stack.Screen
           name="FinnAI"
           component={FinnAIScreen}
@@ -144,6 +148,9 @@ export default function App() {
           require('./assets/finn-hero-poster.jpg'),
           require('./assets/hero-robot-bg.jpg'),
           require('./assets/finn-logo.png'),
+          require('./assets/agenda-robot-happy.jpg'),
+          require('./assets/agenda-robot-sad.jpg'),
+          require('./assets/card-invoices-waves.png'),
         ]);
       } catch (e) {
         console.warn('Aviso no pré-carregamento de assets locais:', e);

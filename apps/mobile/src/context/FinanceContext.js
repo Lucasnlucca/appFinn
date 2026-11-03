@@ -35,8 +35,103 @@ const INITIAL_ACCOUNTS = [
   { id: 'acc-1', name: 'Conta Corrente', bank: 'Nubank', balance: 0.00, owner: 'Casal', icon: 'wallet-outline', color: '#820AD1' },
 ];
 
-const INITIAL_CARDS = [];
-const INITIAL_BILLS = [];
+// Cartões reais para faturas do casal (conforme Print dos Cartões)
+const INITIAL_CARDS = [
+  {
+    id: 'card-nu',
+    name: 'Nubank',
+    bank: 'Nubank',
+    limit: 5000.00,
+    currentInvoice: 579.60,
+    dueDay: 10,
+    dueDateText: 'Vence em 10/11/2026',
+    status: 'Em aberto',
+    usedPercent: 36,
+    color: '#820AD1',
+    logoType: 'nu',
+    owner: 'Casal',
+  },
+  {
+    id: 'card-c6',
+    name: 'C6 Bank',
+    bank: 'C6 Bank',
+    limit: 4000.00,
+    currentInvoice: 21.90,
+    dueDay: 22,
+    dueDateText: 'Vence em 22/11/2026',
+    status: 'Em aberto',
+    usedPercent: 2,
+    color: '#242424',
+    logoType: 'c6',
+    owner: 'Casal',
+  },
+];
+
+// Contas e faturas mensais (conforme Print da Agenda do Mês)
+const INITIAL_BILLS = [
+  {
+    id: 'bill-c6',
+    title: 'C6 Bank',
+    subtext: 'Fatura paga · venceu 22 out',
+    amount: 99.90,
+    paid: true,
+    dueDay: 22,
+    category: 'cartao',
+    icon: 'card',
+    iconColor: '#18181B',
+    type: 'fatura',
+    isRecurring: false,
+  },
+  {
+    id: 'bill-seguro',
+    title: 'Seguro do carro',
+    subtext: 'Pago · 12 out',
+    amount: 210.00,
+    paid: true,
+    dueDay: 12,
+    category: 'transporte',
+    icon: 'car',
+    iconColor: '#7C3AED',
+    isRecurring: true,
+  },
+  {
+    id: 'bill-net',
+    title: 'Internet',
+    subtext: 'Pago · 10 out',
+    amount: 120.00,
+    paid: true,
+    dueDay: 10,
+    category: 'moradia',
+    icon: 'home',
+    iconColor: '#3B82F6',
+    isRecurring: true,
+  },
+  {
+    id: 'bill-nu',
+    title: 'Nubank',
+    subtext: 'Fatura paga · venceu 10 out',
+    amount: 851.30,
+    paid: true,
+    dueDay: 10,
+    category: 'cartao',
+    icon: 'card',
+    iconColor: '#820AD1',
+    type: 'fatura',
+    isRecurring: false,
+  },
+  {
+    id: 'bill-aluguel',
+    title: 'Aluguel',
+    subtext: 'Pago · 5 out',
+    amount: 1450.00,
+    paid: true,
+    dueDay: 5,
+    category: 'moradia',
+    icon: 'home',
+    iconColor: '#3B82F6',
+    isRecurring: true,
+  },
+];
 const INITIAL_TRANSACTIONS = [];
 
 // Cofrinhos / Metas Financeiras (conforme Print 1 do usuário)
@@ -131,8 +226,19 @@ export function FinanceProvider({ children }) {
 
         if (savedTrans) setTransactions(JSON.parse(savedTrans));
         if (savedAccs) setAccounts(JSON.parse(savedAccs));
-        if (savedCards) setCards(JSON.parse(savedCards));
-        if (savedBills) setBills(JSON.parse(savedBills));
+        if (savedCards) {
+          const parsedCards = JSON.parse(savedCards);
+          setCards(parsedCards && parsedCards.length > 0 ? parsedCards : INITIAL_CARDS);
+        } else {
+          setCards(INITIAL_CARDS);
+        }
+
+        if (savedBills) {
+          const parsedBills = JSON.parse(savedBills);
+          setBills(parsedBills && parsedBills.length > 0 ? parsedBills : INITIAL_BILLS);
+        } else {
+          setBills(INITIAL_BILLS);
+        }
         if (savedCofs) setCofrinhos(JSON.parse(savedCofs));
         if (savedMember) setActiveMember(savedMember);
         if (savedChat) setAiChat(JSON.parse(savedChat));
@@ -446,14 +552,10 @@ export function FinanceProvider({ children }) {
 
   // Carregar dados de demonstração (se o usuário quiser ver o exemplo)
   const loadDemoData = async () => {
-    setTransactions(DEMO_TRANSACTIONS);
-    setAccounts(DEMO_ACCOUNTS);
-    setCards(DEMO_CARDS);
-    setBills(DEMO_BILLS);
-    await AsyncStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(DEMO_TRANSACTIONS));
-    await AsyncStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(DEMO_ACCOUNTS));
-    await AsyncStorage.setItem(STORAGE_KEYS.CARDS, JSON.stringify(DEMO_CARDS));
-    await AsyncStorage.setItem(STORAGE_KEYS.BILLS, JSON.stringify(DEMO_BILLS));
+    setCards(INITIAL_CARDS);
+    setBills(INITIAL_BILLS);
+    await AsyncStorage.setItem(STORAGE_KEYS.CARDS, JSON.stringify(INITIAL_CARDS));
+    await AsyncStorage.setItem(STORAGE_KEYS.BILLS, JSON.stringify(INITIAL_BILLS));
     await AsyncStorage.setItem(STORAGE_KEYS.IS_DEMO, 'true');
   };
 

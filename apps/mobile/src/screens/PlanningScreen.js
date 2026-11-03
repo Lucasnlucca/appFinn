@@ -369,7 +369,11 @@ export default function PlanningScreen({ navigation }) {
             </View>
 
             {/* CARD: PROJEÇÃO REAL FIM DO MÊS */}
-            <TouchableOpacity style={styles.projectionCard} activeOpacity={0.85}>
+            <TouchableOpacity
+              style={styles.projectionCard}
+              activeOpacity={0.85}
+              onPress={() => navigation?.navigate?.('MonthlyAgenda')}
+            >
               <View style={{ flex: 1 }}>
                 <Text style={styles.projectionLabel}>
                   Se tudo acontecer, no fim do mês sobra

@@ -26,7 +26,7 @@ import {
   setGeminiModel,
 } from '../services/geminiService';
 
-export default function SettingsScreen() {
+export default function SettingsScreen({ navigation }) {
   const insets = useSafeAreaInsets();
   const {
     members,
@@ -173,6 +173,66 @@ export default function SettingsScreen() {
             </View>
           </View>
         )}
+
+        {/* MÓDULOS FINANCEIROS DO FINN */}
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <View style={[styles.iconCircle, { backgroundColor: 'rgba(124, 58, 237, 0.15)' }]}>
+              <Ionicons name="apps-outline" size={20} color="#7C3AED" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.cardTitle}>Módulos Financeiros</Text>
+              <Text style={styles.cardSubtitle}>Faturas, Agenda do Mês e Open Finance</Text>
+            </View>
+          </View>
+
+          <View style={{ gap: 10, marginTop: 10 }}>
+            <TouchableOpacity
+              style={styles.moduleNavBtn}
+              activeOpacity={0.8}
+              onPress={() => navigation?.navigate?.('CardInvoices')}
+            >
+              <View style={[styles.moduleIconBox, { backgroundColor: '#EDE9FE' }]}>
+                <Ionicons name="card-outline" size={18} color="#7C3AED" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.moduleNavTitle}>Faturas dos Cartões</Text>
+                <Text style={styles.moduleNavSub}>A pagar e em aberto de Nubank, C6 e outros</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color="#71717A" />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.moduleNavBtn}
+              activeOpacity={0.8}
+              onPress={() => navigation?.navigate?.('MonthlyAgenda')}
+            >
+              <View style={[styles.moduleIconBox, { backgroundColor: '#DCFCE7' }]}>
+                <Ionicons name="calendar-outline" size={18} color="#16A34A" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.moduleNavTitle}>Agenda do Mês</Text>
+                <Text style={styles.moduleNavSub}>Mascote Feliz/Triste com contas pagas e a pagar</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color="#71717A" />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.moduleNavBtn}
+              activeOpacity={0.8}
+              onPress={() => navigation?.navigate?.('CardsAccounts')}
+            >
+              <View style={[styles.moduleIconBox, { backgroundColor: '#E0F2FE' }]}>
+                <Ionicons name="business-outline" size={18} color="#0284C7" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.moduleNavTitle}>Contas & Open Finance</Text>
+                <Text style={styles.moduleNavSub}>Ajuste manual de saldo e conexões bancárias</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color="#71717A" />
+            </TouchableOpacity>
+          </View>
+        </View>
 
         {/* 1. GOOGLE GEMINI AI CONFIG */}
         <View style={styles.card}>
@@ -634,6 +694,33 @@ const styles = StyleSheet.create({
     color: COLORS.expense,
     fontWeight: '700',
     fontSize: 14,
+  },
+  moduleNavBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.surfaceLight,
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: COLORS.surfaceBorder,
+    gap: 12,
+  },
+  moduleIconBox: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  moduleNavTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.text,
+  },
+  moduleNavSub: {
+    fontSize: 11,
+    color: COLORS.textMuted,
+    marginTop: 2,
   },
   versionText: {
     textAlign: 'center',
