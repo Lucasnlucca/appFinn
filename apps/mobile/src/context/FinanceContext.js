@@ -20,6 +20,7 @@ import {
   createAccount as apiCreateAccount,
   logoutUser,
   getStoredUser,
+  getStoredToken,
 } from '../services/apiService';
 import { getBankTheme } from '../constants/BankThemeRegistry';
 
@@ -219,7 +220,7 @@ export function FinanceProvider({ children }) {
   const [selectedMonth, setSelectedMonth] = useState('Outubro 2026');
   const [hideBalances, setHideBalances] = useState(false);
   const [aiSkin, setAiSkin] = useState('estrategista'); // 'estrategista' | 'direto' | 'poupador' | 'investidor' | 'casal'
-  const [loggedInUser, setLoggedInUser] = useState({ id: 'user-lucas', name: 'Lucas', email: 'lucas@finn.app' });
+  const [loggedInUser, setLoggedInUser] = useState(null);
   const [postgresStatus, setPostgresStatus] = useState({
     isOnline: false,
     latencyMs: null,
@@ -255,6 +256,8 @@ export function FinanceProvider({ children }) {
           savedHeroMode,
           savedSession,
           savedSkin,
+          storedUser,
+          storedToken,
         ] = await Promise.all([
           AsyncStorage.getItem(STORAGE_KEYS.TRANSACTIONS),
           AsyncStorage.getItem(STORAGE_KEYS.ACCOUNTS),
@@ -268,6 +271,8 @@ export function FinanceProvider({ children }) {
           AsyncStorage.getItem(STORAGE_KEYS.HERO_VIEW_MODE),
           getStoredSession(),
           AsyncStorage.getItem(STORAGE_KEYS.AI_SKIN),
+          getStoredUser(),
+          getStoredToken(),
         ]);
 
         if (savedTrans) setTransactions(JSON.parse(savedTrans));
@@ -291,7 +296,13 @@ export function FinanceProvider({ children }) {
         if (savedNames) setMembers(JSON.parse(savedNames));
         if (savedHide) setHideBalances(JSON.parse(savedHide));
         if (savedHeroMode) setHeroCardMode(JSON.parse(savedHeroMode));
-        if (savedSession) setLoggedInUser(savedSession);
+        if (storedUser && storedToken) {
+          setLoggedInUser(storedUser);
+        } else if (savedSession) {
+          setLoggedInUser(savedSession);
+        } else {
+          setLoggedInUser(null);
+        }
         if (savedSkin) setAiSkin(savedSkin);
       } catch (e) {
         console.warn('Erro ao carregar dados locais:', e);

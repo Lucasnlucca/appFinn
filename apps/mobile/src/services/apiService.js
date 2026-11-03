@@ -438,3 +438,4 @@ export async function syncDatabaseWithPostgres({ localCards = [], localAccounts 
     };
   }
 }
+

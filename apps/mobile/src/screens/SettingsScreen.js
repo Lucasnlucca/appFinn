@@ -24,6 +24,11 @@ import {
   DEFAULT_API_URL,
 } from '../services/apiService';
 import {
+  checkBiometricSupport,
+  isBiometricLoginEnabled,
+  setBiometricLoginEnabled,
+} from '../services/biometricService';
+import {
   getGeminiApiKey,
   setGeminiApiKey,
   getGeminiModel,
@@ -62,6 +67,11 @@ export default function SettingsScreen({ navigation }) {
   const [testingVps, setTestingVps] = useState(false);
   const [vpsPingStatus, setVpsPingStatus] = useState(null);
 
+  // Biometria
+  const [biometricsSupported, setBiometricsSupported] = useState(false);
+  const [biometricType, setBiometricType] = useState('Digital');
+  const [biometricActive, setBiometricActive] = useState(false);
+
   // Google Gemini
   const [geminiKey, setGeminiKeyState] = useState('');
   const [geminiModel, setGeminiModelState] = useState('gemini-3.5-flash');
@@ -74,17 +84,34 @@ export default function SettingsScreen({ navigation }) {
 
   const loadSettings = async () => {
     try {
-      const [cfg, key, model] = await Promise.all([
+      const [cfg, key, model, bioSupport, isBioOn] = await Promise.all([
         getAppwriteConfig(),
         getGeminiApiKey(),
         getGeminiModel(),
+        checkBiometricSupport(),
+        isBiometricLoginEnabled(),
       ]);
       setAppwriteConfigState(cfg);
       if (key) setGeminiKeyState(key);
       if (model) setGeminiModelState(model);
+      setBiometricsSupported(bioSupport.available);
+      setBiometricType(bioSupport.biometricType || 'Digital');
+      setBiometricActive(isBioOn);
     } catch (e) {
       console.warn('Erro ao carregar configurações:', e);
     }
+  };
+
+  const handleToggleBiometric = async () => {
+    const nextVal = !biometricActive;
+    await setBiometricLoginEnabled(nextVal, loggedInUser);
+    setBiometricActive(nextVal);
+    Alert.alert(
+      `Login com ${biometricType}`,
+      nextVal
+        ? `O acesso com ${biometricType.toLowerCase()} está ativo para os próximos logins!`
+        : `O acesso com ${biometricType.toLowerCase()} foi desativado.`
+    );
   };
 
   const toggleSection = (sectionId) => {
@@ -277,6 +304,40 @@ export default function SettingsScreen({ navigation }) {
                     </View>
                   </View>
                 )}
+
+                {/* Configuração de Biometria / Digital */}
+                <View style={styles.biometricSettingBox}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
+                    <View style={styles.biometricIconCircle}>
+                      <Ionicons name="finger-print-outline" size={20} color="#7C3AED" />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.biometricSettingTitle}>Acesso com {biometricType}</Text>
+                      <Text style={styles.biometricSettingSubtitle}>
+                        {biometricActive
+                          ? `Ativado para entrar no FINN com sua ${biometricType.toLowerCase()}`
+                          : `Desativado • Ative para entrar com sua ${biometricType.toLowerCase()}`}
+                      </Text>
+                    </View>
+                  </View>
+                  <TouchableOpacity
+                    style={[
+                      styles.biometricToggleBtn,
+                      biometricActive && styles.biometricToggleBtnActive,
+                    ]}
+                    onPress={handleToggleBiometric}
+                    activeOpacity={0.8}
+                  >
+                    <Text
+                      style={[
+                        styles.biometricToggleBtnText,
+                        biometricActive && styles.biometricToggleBtnTextActive,
+                      ]}
+                    >
+                      {biometricActive ? 'Ativo' : 'Ativar'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
 
                 {/* Alternador de Membro Ativo */}
                 <Text style={styles.inputLabel}>VISUALIZAÇÃO ATIVA NO APP</Text>
@@ -1257,5 +1318,54 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     color: '#7C3AED',
+  },
+  biometricSettingBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#F8F7FF',
+    borderWidth: 1,
+    borderColor: '#DDD6FE',
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 16,
+  },
+  biometricIconCircle: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#EDE9FE',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  biometricSettingTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#18181B',
+  },
+  biometricSettingSubtitle: {
+    fontSize: 11,
+    color: '#6B7280',
+    marginTop: 2,
+  },
+  biometricToggleBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 10,
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  biometricToggleBtnActive: {
+    backgroundColor: '#7C3AED',
+    borderColor: '#7C3AED',
+  },
+  biometricToggleBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#6B7280',
+  },
+  biometricToggleBtnTextActive: {
+    color: '#FFFFFF',
   },
 });
