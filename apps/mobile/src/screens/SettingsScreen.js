@@ -27,6 +27,7 @@ import {
 } from '../services/geminiService';
 
 const finnLogoSource = require('../../assets/finn-logo.png');
+const finnAvatarSource = require('../../assets/finn-ai-avatar.png');
 
 export default function SettingsScreen({ navigation }) {
   const insets = useSafeAreaInsets();
@@ -426,7 +427,11 @@ export default function SettingsScreen({ navigation }) {
               onPress={() => toggleSection('ia')}
             >
               <View style={[styles.accordionIconBox, { backgroundColor: '#EDE9FE' }]}>
-                <Ionicons name="sparkles" size={20} color="#7C3AED" />
+                <Image
+                  source={finnAvatarSource}
+                  style={{ width: 28, height: 28, borderRadius: 14 }}
+                  resizeMode="cover"
+                />
               </View>
               <View style={styles.accordionHeaderInfo}>
                 <Text style={styles.accordionTitle}>Inteligência Artificial</Text>

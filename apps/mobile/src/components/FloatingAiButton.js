@@ -6,12 +6,13 @@ import {
   StyleSheet,
   Dimensions,
   Platform,
+  Image,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../theme/colors';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const BUTTON_SIZE = 54;
+const finnAvatarSource = require('../../assets/finn-ai-avatar.png');
 
 export default function FloatingAiButton({ onPress }) {
   const pan = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
@@ -120,7 +121,11 @@ export default function FloatingAiButton({ onPress }) {
         activeOpacity={0.82}
         onPress={triggerOpen}
       >
-        <Ionicons name="sparkles" size={22} color={COLORS.white} />
+        <Image
+          source={finnAvatarSource}
+          style={styles.avatarImg}
+          resizeMode="cover"
+        />
       </TouchableOpacity>
     </Animated.View>
   );
@@ -138,16 +143,21 @@ const styles = StyleSheet.create({
     width: BUTTON_SIZE,
     height: BUTTON_SIZE,
     borderRadius: BUTTON_SIZE / 2,
-    backgroundColor: COLORS.navy,
+    backgroundColor: '#7C3AED',
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: COLORS.navy,
+    shadowColor: '#7C3AED',
     shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.4,
+    shadowOpacity: 0.35,
     shadowRadius: 10,
     elevation: 10,
     borderWidth: 2,
-    borderColor: 'rgba(255, 255, 255, 0.3)',
+    borderColor: '#FFFFFF',
+    overflow: 'hidden',
+  },
+  avatarImg: {
+    width: BUTTON_SIZE,
+    height: BUTTON_SIZE,
+    borderRadius: BUTTON_SIZE / 2,
   },
 });
-

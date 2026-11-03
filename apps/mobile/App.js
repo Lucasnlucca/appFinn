@@ -151,6 +151,8 @@ export default function App() {
           require('./assets/agenda-robot-happy.jpg'),
           require('./assets/agenda-robot-sad.jpg'),
           require('./assets/card-invoices-waves.png'),
+          require('./assets/finn-ai-avatar.png'),
+          require('./assets/finn-chat-hero.png'),
         ]);
       } catch (e) {
         console.warn('Aviso no pré-carregamento de assets locais:', e);

@@ -14,6 +14,7 @@ import {
   Modal,
   Animated,
   Image,
+  Dimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -30,7 +31,15 @@ import {
 } from 'expo-audio';
 import * as Speech from 'expo-speech';
 
-// Função segura para ler qualquer arquivo em Base64 compatível com Expo SDK 58 (legacy + new File API)
+import { COLORS } from '../theme/colors';
+import { useFinance } from '../context/FinanceContext';
+
+const finnAvatarSource = require('../../assets/finn-ai-avatar.png');
+const finnChatHeroSource = require('../../assets/finn-chat-hero.png');
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
+// Função segura para ler arquivos em Base64 compatível com Expo SDK 58
 async function readFileAsBase64(uri) {
   try {
     if (FileSystem?.readAsStringAsync) {
@@ -51,10 +60,6 @@ async function readFileAsBase64(uri) {
   }
 }
 
-import { COLORS } from '../theme/colors';
-import { useFinance } from '../context/FinanceContext';
-import { AI_SKINS } from '../theme/aiSkins';
-
 // Limpa texto para fala natural no sintetizador de voz (sem markdown e sem emojis)
 function cleanTextForSpeech(text) {
   if (!text) return '';
@@ -71,11 +76,13 @@ function FormattedMessage({ text, isUser, navigation, onSpeak, isSpeaking }) {
     return <Text style={[styles.bubbleText, styles.userBubbleText]}>{text}</Text>;
   }
 
-  // Sanitiza qualquer tag [TRANSACTION: ...] caso venha no texto bruto ou do histórico
+  // Sanitiza qualquer tag [TRANSACTION: ...]
   const safeText = (text || '').replace(/\[TRANSACTION:\s*\{[\s\S]*?\}\]/gi, '').trim();
   const displayText = safeText || 'Lançamento registrado com sucesso!';
-
-  const isKeyWarning = displayText.includes('Chave') || displayText.includes('aistudio.google.com') || displayText.includes('Revogada');
+  const isKeyWarning =
+    displayText.includes('Chave') ||
+    displayText.includes('aistudio.google.com') ||
+    displayText.includes('Revogada');
   const paragraphs = displayText.split('\n');
 
   return (
@@ -86,7 +93,8 @@ function FormattedMessage({ text, isUser, navigation, onSpeak, isSpeaking }) {
         }
 
         const parts = paragraph.split(/(\*\*.*?\*\*)/g);
-        const isBullet = paragraph.trim().startsWith('•') || paragraph.trim().startsWith('-');
+        const isBullet =
+          paragraph.trim().startsWith('•') || paragraph.trim().startsWith('-');
 
         return (
           <Text
@@ -117,7 +125,9 @@ function FormattedMessage({ text, isUser, navigation, onSpeak, isSpeaking }) {
           onPress={() => navigation.navigate('Settings')}
         >
           <Ionicons name="key-outline" size={15} color={COLORS.primary} />
-          <Text style={styles.keyWarningActionText}>Ir para Configurações e Colar Chave</Text>
+          <Text style={styles.keyWarningActionText}>
+            Ir para Configurações e Colar Chave
+          </Text>
         </TouchableOpacity>
       )}
 
@@ -132,7 +142,12 @@ function FormattedMessage({ text, isUser, navigation, onSpeak, isSpeaking }) {
           size={14}
           color={isSpeaking ? '#0284C7' : COLORS.textSecondary}
         />
-        <Text style={[styles.listenBtnText, isSpeaking && styles.listenBtnTextActive]}>
+        <Text
+          style={[
+            styles.listenBtnText,
+            isSpeaking && styles.listenBtnTextActive,
+          ]}
+        >
           {isSpeaking ? 'Parar voz' : 'Ouvir resposta'}
         </Text>
       </TouchableOpacity>
@@ -148,12 +163,8 @@ export default function FinnAIScreen({ navigation }) {
     processReceiptMedia,
     processPdfInvoice,
     processAudioMessage,
-    members,
-    aiSkin,
-    setAiSkin,
+    clearAllData,
   } = useFinance();
-
-  const currentSkin = AI_SKINS.find((s) => s.id === aiSkin) || AI_SKINS[0];
 
   const [inputText, setInputText] = useState('');
   const [analyzing, setAnalyzing] = useState(false);
@@ -168,6 +179,10 @@ export default function FinnAIScreen({ navigation }) {
   // Sintetizador de Voz (Speech)
   const [speakingMsgId, setSpeakingMsgId] = useState(null);
 
+  // Modais de Anexo e Mais Opções
+  const [attachModalVisible, setAttachModalVisible] = useState(false);
+  const [menuModalVisible, setMenuModalVisible] = useState(false);
+
   // MODAL GEMINI LIVE (Conversação contínua estilo IA do Gemini)
   const [liveModalVisible, setLiveModalVisible] = useState(false);
   const [liveState, setLiveState] = useState('idle'); // 'idle' | 'recording' | 'thinking' | 'speaking'
@@ -180,6 +195,23 @@ export default function FinnAIScreen({ navigation }) {
   const orbScale = useRef(new Animated.Value(1)).current;
   const orbGlow = useRef(new Animated.Value(0.4)).current;
   const orbAnimLoop = useRef(null);
+
+  // Conjuntos de Sugestões Rápidas (alternáveis com "Trocar")
+  const [quickSetIndex, setQuickSetIndex] = useState(0);
+  const quickSuggestionSets = [
+    [
+      { id: 'mes', icon: 'calendar-outline', text: 'Como foi meu mês?', prompt: 'Como foi o desempenho financeiro do meu mês até agora?' },
+      { id: 'gastos', icon: 'trending-up-outline', text: 'Onde mais gastei?', prompt: 'Quais foram minhas maiores despesas e categorias que mais gastei?' },
+      { id: 'eco', icon: 'wallet-outline', text: 'Como economizar?', prompt: 'Com base no meu extrato, como posso economizar dinheiro de forma inteligente?' },
+      { id: 'meta', icon: 'disc-outline', text: 'Definir meta de economia', prompt: 'Me ajude a definir uma meta realista de economia para este mês.' },
+    ],
+    [
+      { id: 'faturas', icon: 'card-outline', text: 'Faturas em aberto?', prompt: 'Qual o valor total das minhas faturas de cartão de crédito em aberto?' },
+      { id: 'saldo', icon: 'cash-outline', text: 'Quanto sobrou hoje?', prompt: 'Qual é o meu saldo livre hoje descontando as despesas fixas?' },
+      { id: 'dica', icon: 'bulb-outline', text: 'Dica do dia', prompt: 'Me dê uma dica rápida de educação financeira personalizada para mim.' },
+      { id: 'comparar', icon: 'bar-chart-outline', text: 'Comparar com mês passado', prompt: 'Compare meus gastos deste mês com os do mês anterior.' },
+    ],
+  ];
 
   const scrollViewRef = useRef();
 
@@ -234,7 +266,6 @@ export default function FinnAIScreen({ navigation }) {
       );
       orbAnimLoop.current.start();
     } else {
-      // Idle
       orbAnimLoop.current = Animated.loop(
         Animated.sequence([
           Animated.parallel([
@@ -294,8 +325,9 @@ export default function FinnAIScreen({ navigation }) {
     }
   };
 
-  // 3. ANEXAR FOTO DO COMPROVANTE
+  // 3. ANEXAR FOTO DO COMPROVANTE (GALERIA)
   const handlePickReceipt = async () => {
+    setAttachModalVisible(false);
     try {
       const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!perm.granted) {
@@ -324,8 +356,39 @@ export default function FinnAIScreen({ navigation }) {
     }
   };
 
-  // 4. ANEXAR PDF
+  // 4. TIRAR FOTO DO COMPROVANTE (CÂMERA)
+  const handleCameraReceipt = async () => {
+    setAttachModalVisible(false);
+    try {
+      const perm = await ImagePicker.requestCameraPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert('Permissão necessária', 'Permita o acesso à câmera para fotografar comprovantes.');
+        return;
+      }
+
+      const result = await ImagePicker.launchCameraAsync({
+        allowsEditing: false,
+        quality: 0.8,
+        base64: true,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const asset = result.assets[0];
+        setAnalyzing(true);
+        setAnalyzingStatus('Analisando foto com Google Gemini...');
+        const mime = asset.mimeType || 'image/jpeg';
+        await processReceiptMedia(asset.base64, mime);
+      }
+    } catch (e) {
+      Alert.alert('Erro na câmera', e.message);
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
+  // 5. ANEXAR PDF
   const handlePickPdf = async () => {
+    setAttachModalVisible(false);
     try {
       const result = await DocumentPicker.getDocumentAsync({
         type: 'application/pdf',
@@ -347,41 +410,54 @@ export default function FinnAIScreen({ navigation }) {
     }
   };
 
-  // 5. ANEXAR ARQUIVO DE ÁUDIO (FALLBACK DOCUMENT PICKER)
-  const handlePickAudioFile = async () => {
+  // 6. ANEXAR CSV
+  const handlePickCsv = async () => {
+    setAttachModalVisible(false);
     try {
       const result = await DocumentPicker.getDocumentAsync({
-        type: ['audio/*', 'audio/m4a', 'audio/mp3', 'audio/ogg', 'audio/wav', 'audio/aac'],
+        type: ['text/csv', 'text/comma-separated-values', 'text/plain', 'application/vnd.ms-excel'],
         copyToCacheDirectory: true,
       });
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
         const asset = result.assets[0];
         setAnalyzing(true);
-        setAnalyzingStatus('Ouvindo áudio com o Google Gemini...');
+        setAnalyzingStatus('Lendo e analisando extrato CSV...');
 
-        const base64Audio = await readFileAsBase64(asset.uri);
-        const mime = asset.mimeType || 'audio/m4a';
-        await processAudioMessage(base64Audio, mime);
+        let content = '';
+        try {
+          if (FileSystem?.readAsStringAsync) {
+            content = await FileSystem.readAsStringAsync(asset.uri, {
+              encoding: FileSystem.EncodingType?.UTF8 || 'utf8',
+            });
+          }
+        } catch (err) {
+          console.warn('readAsStringAsync utf8 falhou:', err);
+        }
+
+        if (content) {
+          await sendAiMessage(
+            `[EXTRATO CSV ANEXADO: ${asset.name}]\n${content.slice(0, 3000)}\n\nPor favor, analise as movimentações desse extrato e registre as receitas e despesas identificadas.`
+          );
+        } else {
+          const base64 = await readFileAsBase64(asset.uri);
+          await processPdfInvoice(base64);
+        }
       }
     } catch (e) {
-      Alert.alert('Erro ao carregar áudio', e.message);
+      Alert.alert('Erro ao carregar CSV', e.message);
     } finally {
       setAnalyzing(false);
     }
   };
 
-  // =========================================================================
-  // GRAVAÇÃO DE ÁUDIO ESTILO WHATSAPP
-  // =========================================================================
+  // 7. GRAVAÇÃO DE VOZ (MICROFONE)
   const startRecordingWhatsApp = async () => {
+    Speech.stop();
     try {
       const { granted } = await requestRecordingPermissionsAsync();
       if (!granted) {
-        Alert.alert(
-          'Permissão de Microfone',
-          'Permita o acesso ao microfone para enviar mensagens de áudio para a IA.'
-        );
+        Alert.alert('Permissão necessária', 'Permita o microfone para enviar áudios.');
         return;
       }
 
@@ -392,7 +468,6 @@ export default function FinnAIScreen({ navigation }) {
 
       await audioRecorder.prepareToRecordAsync();
       audioRecorder.record();
-
       setIsRecording(true);
       setRecordingSeconds(0);
 
@@ -402,8 +477,6 @@ export default function FinnAIScreen({ navigation }) {
       }, 1000);
     } catch (err) {
       console.warn('Erro ao gravar áudio nativo:', err);
-      // Se der qualquer impedimento, abre o selecionador seguro
-      handlePickAudioFile();
     }
   };
 
@@ -425,7 +498,6 @@ export default function FinnAIScreen({ navigation }) {
         const base64Audio = await readFileAsBase64(uri);
         const result = await processAudioMessage(base64Audio, 'audio/m4a');
         if (result?.text) {
-          // Fala a resposta automaticamente se for mensagem por voz
           handleSpeak('auto-' + Date.now(), result.text);
         }
       }
@@ -449,10 +521,9 @@ export default function FinnAIScreen({ navigation }) {
     setRecordingSeconds(0);
   };
 
-  // =========================================================================
-  // MODO CONVERSAÇÃO ESTILO GEMINI LIVE (CHAMADA DE VOZ INTERATIVA)
-  // =========================================================================
+  // 8. GEMINI LIVE (CHAMADA CONTÍNUA)
   const openGeminiLive = () => {
+    setMenuModalVisible(false);
     Speech.stop();
     setLiveState('idle');
     setLiveUserTranscript('');
@@ -484,7 +555,6 @@ export default function FinnAIScreen({ navigation }) {
     }
 
     if (liveState === 'recording') {
-      // Para de gravar e envia para a IA
       try {
         setLiveState('thinking');
         if (audioRecorder && audioRecorder.isRecording) {
@@ -524,12 +594,11 @@ export default function FinnAIScreen({ navigation }) {
         setLiveState('idle');
       }
     } else {
-      // Começa a gravar
       try {
         Speech.stop();
         const { granted } = await requestRecordingPermissionsAsync();
         if (!granted) {
-          Alert.alert('Permissão de Microfone', 'Permita o microfone para falar com a FINN.');
+          Alert.alert('Permissão de Microfone', 'Permita o microfone para falar com o FINN.');
           return;
         }
 
@@ -548,484 +617,596 @@ export default function FinnAIScreen({ navigation }) {
     }
   };
 
-  const quickPrompts = [
-    'Qual o nosso saldo atual?',
-    'Gastei 55 no mercado no débito',
-    'Entrou 800 do meu freela',
-    'O que acha de pedirmos pizza hoje?',
-  ];
+  const handleToggleQuickSet = () => {
+    setQuickSetIndex((prev) => (prev + 1) % quickSuggestionSets.length);
+  };
+
+  const currentQuickSuggestions = quickSuggestionSets[quickSetIndex];
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      <StatusBar barStyle="dark-content" backgroundColor={COLORS.bg} />
+      <StatusBar barStyle="dark-content" backgroundColor="#F7F5FC" />
 
-      {/* HEADER DA IA (FIEL AO SCREEN 2 DO PRINT) */}
+      {/* CABEÇALHO SUPERIOR FIEL AO PRINT 1 COM FOTINHA DO ROBÔ NO LUGAR DAS 3 ESTRELAS */}
       <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          {navigation?.canGoBack() && (
-            <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-              <Ionicons name="arrow-back" size={24} color="#18181B" />
-            </TouchableOpacity>
-          )}
-        </View>
+        <TouchableOpacity
+          style={styles.headerCircleBtn}
+          onPress={() => navigation?.goBack?.()}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="arrow-back" size={22} color="#18181B" />
+        </TouchableOpacity>
 
         <View style={styles.headerCenter}>
-          <View style={styles.titleRow}>
-            <Ionicons name="sparkles" size={17} color="#7C3AED" />
+          <View style={styles.headerTitleRow}>
+            {/* FOTINHA DO ROBÔ FINN NO LUGAR DA FOTO COM 3 ESTRELAS */}
+            <Image
+              source={finnAvatarSource}
+              style={styles.headerAvatar}
+              resizeMode="cover"
+            />
             <Text style={styles.headerTitle}>FINN AI</Text>
           </View>
           <Text style={styles.headerSubtitle}>Seu assistente financeiro</Text>
         </View>
 
-        <View style={styles.headerRightGroup}>
-          <TouchableOpacity
-            style={styles.settingsMiniBtn}
-            onPress={() => navigation?.navigate('Settings')}
-          >
-            <Ionicons name="ellipsis-vertical" size={20} color="#18181B" />
-          </TouchableOpacity>
-        </View>
+        <TouchableOpacity
+          style={styles.headerCircleBtn}
+          onPress={() => setMenuModalVisible(true)}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="ellipsis-vertical" size={20} color="#18181B" />
+        </TouchableOpacity>
       </View>
 
-      {/* CHAT MESSAGES SCROLL */}
-      <ScrollView
-        ref={scrollViewRef}
-        style={styles.chatScroll}
-        contentContainerStyle={styles.chatContent}
-        keyboardShouldPersistTaps="handled"
+      {/* ÁREA DE ROLAGEM COM O NOVO DESIGN */}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={{ flex: 1 }}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 10 : 0}
       >
-        {/* HERO ASSISTENTE FINANCEIRO (MASCOTE 3D E CARDS DE SUGESTÃO IGUAL AO PRINT) */}
-        <View style={styles.aiHeroContainer}>
-          {/* AURA GLOW E ROBÔ MASCOTE 3D */}
-          <View style={styles.mascotHaloWrap}>
-            <View style={styles.mascotHaloCircle} />
-            <Image
-              source={require('../../assets/finn-mascot.jpg')}
-              style={styles.mascot3DImage}
-              resizeMode="contain"
-            />
-          </View>
-
-          <Text style={styles.aiHeroTitle}>Como posso te ajudar hoje?</Text>
-          <Text style={styles.aiHeroSub}>
-            Analiso seus gastos, organizo suas finanças e te dou insights para economizar mais.
-          </Text>
-
-          {/* 4 CARDS DE SUGESTÃO (VERTICAL, IDENTICO AO SCREEN 2) */}
-          <View style={styles.aiActionList}>
-            {/* 1. Analisar meus gastos do mês */}
-            <TouchableOpacity
-              style={styles.aiActionCard}
-              onPress={() => handleSend('Analise meus gastos deste mês e me dê um resumo inteligente.')}
-              activeOpacity={0.8}
-            >
-              <View style={[styles.aiActionIconWrap, { backgroundColor: '#EDE9FE' }]}>
-                <Ionicons name="bar-chart" size={18} color="#7C3AED" />
-              </View>
-              <Text style={styles.aiActionText}>Analisar meus gastos do mês</Text>
-              <Ionicons name="chevron-forward" size={16} color="#A1A1AA" />
-            </TouchableOpacity>
-
-            {/* 2. Sugerir como economizar */}
-            <TouchableOpacity
-              style={styles.aiActionCard}
-              onPress={() => handleSend('Como posso economizar este mês com base nos meus gastos atuais?')}
-              activeOpacity={0.8}
-            >
-              <View style={[styles.aiActionIconWrap, { backgroundColor: '#FCE7F3' }]}>
-                <Ionicons name="disc" size={18} color="#EC4899" />
-              </View>
-              <Text style={styles.aiActionText}>Sugerir como economizar</Text>
-              <Ionicons name="chevron-forward" size={16} color="#A1A1AA" />
-            </TouchableOpacity>
-
-            {/* 3. Planejar o próximo mês */}
-            <TouchableOpacity
-              style={styles.aiActionCard}
-              onPress={() => handleSend('Como devemos planejar o orçamento do próximo mês?')}
-              activeOpacity={0.8}
-            >
-              <View style={[styles.aiActionIconWrap, { backgroundColor: '#E0F2FE' }]}>
-                <Ionicons name="calendar" size={18} color="#0284C7" />
-              </View>
-              <Text style={styles.aiActionText}>Planejar o próximo mês</Text>
-              <Ionicons name="chevron-forward" size={16} color="#A1A1AA" />
-            </TouchableOpacity>
-
-            {/* 4. Registrar um gasto por foto */}
-            <TouchableOpacity
-              style={styles.aiActionCard}
-              onPress={handlePickReceipt}
-              activeOpacity={0.8}
-            >
-              <View style={[styles.aiActionIconWrap, { backgroundColor: '#F3E8FF' }]}>
-                <Ionicons name="document-text" size={18} color="#9333EA" />
-              </View>
-              <Text style={styles.aiActionText}>Registrar um gasto por foto</Text>
-              <Ionicons name="chevron-forward" size={16} color="#A1A1AA" />
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {aiChat.map((msg) => {
-          const isUser = msg.sender === 'user';
-          return (
-            <View
-              key={msg.id}
-              style={[styles.messageBubbleWrap, isUser ? styles.userBubbleWrap : styles.aiBubbleWrap]}
-            >
-              {!isUser && (
-                <View style={styles.aiAvatarSmall}>
-                  <Ionicons name="sparkles" size={13} color={COLORS.primary} />
-                </View>
-              )}
-              <View style={[styles.bubble, isUser ? styles.userBubble : styles.aiBubble]}>
-                <FormattedMessage
-                  text={msg.text}
-                  isUser={isUser}
-                  navigation={navigation}
-                  onSpeak={() => handleSpeak(msg.id, msg.text)}
-                  isSpeaking={speakingMsgId === msg.id}
-                />
-
-                {/* Cards de Transações Lançadas Automaticamente (suporta 1 ou múltiplos lançamentos) */}
-                {((msg.transactions && msg.transactions.length > 0)
-                  ? msg.transactions
-                  : (msg.transaction ? [msg.transaction] : [])
-                ).map((tx, txIdx) => (
-                  <View key={tx.id || `tx-${txIdx}`} style={styles.txCardInChat}>
-                    <View style={styles.txCardHeader}>
-                      <Ionicons
-                        name={tx.type === 'income' ? 'arrow-up-circle' : 'arrow-down-circle'}
-                        size={16}
-                        color={tx.type === 'income' ? COLORS.income : COLORS.expense}
-                      />
-                      <Text style={styles.txCardDesc}>{tx.description}</Text>
-                      <Text
-                        style={[
-                          styles.txCardAmount,
-                          { color: tx.type === 'income' ? COLORS.income : COLORS.expense },
-                        ]}
-                      >
-                        R$ {(tx.amount || 0).toFixed(2).replace('.', ',')}
-                      </Text>
-                    </View>
-                    <Text style={styles.txCardSub}>
-                      Lançado para {tx.author || 'Casal'} • Extrato atualizado
-                    </Text>
-                  </View>
-                ))}
-
-                <Text style={[styles.timeText, isUser ? styles.userTimeText : styles.aiTimeText]}>
-                  {msg.time}
-                </Text>
-              </View>
+        <ScrollView
+          ref={scrollViewRef}
+          style={styles.scrollArea}
+          contentContainerStyle={[
+            styles.scrollContent,
+            { paddingBottom: insets.bottom + 85 },
+          ]}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          {/* SEÇÃO HERO CENTRAL (DESIGN FIEL AO PRINT 1) */}
+          <View style={styles.heroSection}>
+            {/* Robô 3D com a aura luminosa */}
+            <View style={styles.robotImageWrapper}>
+              <Image
+                source={finnChatHeroSource}
+                style={styles.robotHeroImage}
+                resizeMode="contain"
+              />
             </View>
-          );
-        })}
 
-        {/* LOADING INDICATOR QUANDO ANALISANDO COM GEMINI */}
-        {analyzing && (
-          <View style={styles.analyzingCard}>
-            <ActivityIndicator size="small" color="#0284C7" />
-            <Text style={styles.analyzingText}>{analyzingStatus}</Text>
-          </View>
-        )}
-      </ScrollView>
+            {/* Título Central */}
+            <Text style={styles.heroTitle}>Como posso te ajudar hoje?</Text>
 
-      {/* ========================================================================= */}
-      {/* BARRA INFERIOR: MODO GRAVAÇÃO ESTILO WHATSAPP VS BARRA NORMAL DE INPUT    */}
-      {/* ========================================================================= */}
-      {isRecording ? (
-        <View style={[styles.whatsappRecordBar, { paddingBottom: Math.max(insets.bottom, 12) }]}>
-          {/* Lixeira de Cancelar */}
-          <TouchableOpacity
-            style={styles.cancelRecordBtn}
-            onPress={cancelRecordingWhatsApp}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="trash-outline" size={22} color="#EF4444" />
-          </TouchableOpacity>
-
-          {/* Ponto Vermelho e Contador */}
-          <View style={styles.recordTimerWrap}>
-            <View style={styles.blinkingRedDot} />
-            <Text style={styles.recordingTimerText}>{formatTimer(recordingSeconds)}</Text>
-            <Text style={styles.recordingWaveText}>Gravando áudio...</Text>
-          </View>
-
-          {/* Botão de Enviar Áudio */}
-          <TouchableOpacity
-            style={styles.sendRecordBtn}
-            onPress={stopAndSendRecordingWhatsApp}
-            activeOpacity={0.8}
-          >
-            <Ionicons name="send" size={18} color={COLORS.white} />
-          </TouchableOpacity>
-        </View>
-      ) : (
-        <>
-          {/* BARRA DE ATALHOS MULTIMODAIS (PRINT, PDF, CONVERSA) */}
-          <View style={styles.multimodalBar}>
-            <TouchableOpacity
-              style={styles.multimodalBtn}
-              onPress={handlePickReceipt}
-              disabled={analyzing}
-            >
-              <Ionicons name="camera-outline" size={16} color={COLORS.primary} />
-              <Text style={styles.multimodalBtnText}>Comprovante</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.multimodalBtn}
-              onPress={handlePickPdf}
-              disabled={analyzing}
-            >
-              <Ionicons name="document-text-outline" size={16} color="#3B82F6" />
-              <Text style={styles.multimodalBtnText}>Boleto / PDF</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.multimodalBtn}
-              onPress={openGeminiLive}
-              disabled={analyzing}
-            >
-              <Ionicons name="mic-outline" size={16} color="#06B6D4" />
-              <Text style={styles.multimodalBtnText}>Gemini Live</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* SUGESTÕES RÁPIDAS (PROMPT PILLS) */}
-          <View style={styles.quickPromptsWrap}>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.quickPromptsList}
-            >
-              {quickPrompts.map((p, idx) => (
-                <TouchableOpacity
-                  key={idx}
-                  style={styles.promptPill}
-                  onPress={() => handleSend(p)}
-                  disabled={analyzing}
-                >
-                  <Ionicons name="flash-outline" size={12} color="#0284C7" />
-                  <Text style={styles.promptPillText}>{p}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
-
-          {/* INPUT BAR FIXO NO RODAPÉ ESTILO SCREEN 2 */}
-          <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-            keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
-          >
-            <View style={[styles.modernInputBar, { paddingBottom: Math.max(insets.bottom, 12) }]}>
-              {/* Botão de Foto / Comprovante na Esquerda */}
+            {/* PILULA DUPLA DE ANEXO: [ Anexar PDF | Anexar CSV ] */}
+            <View style={styles.dualAttachmentPill}>
               <TouchableOpacity
-                style={styles.mediaIconBtn}
-                onPress={handlePickReceipt}
-                disabled={analyzing}
-                activeOpacity={0.7}
+                style={styles.dualAttachmentHalf}
+                activeOpacity={0.75}
+                onPress={handlePickPdf}
               >
-                <Ionicons name="image-outline" size={24} color="#71717A" />
+                <Ionicons name="document-text-outline" size={19} color="#7C3AED" />
+                <Text style={styles.dualAttachmentText}>Anexar PDF</Text>
               </TouchableOpacity>
 
-              {/* Campo de Texto em Cápsula Arredondada */}
-              <View style={styles.textInputCapsule}>
-                <TextInput
-                  style={styles.modernTextInput}
-                  placeholder="Digite uma mensagem..."
-                  placeholderTextColor="#A1A1AA"
-                  value={inputText}
-                  onChangeText={setInputText}
-                  multiline
-                  editable={!analyzing}
-                />
-              </View>
+              <View style={styles.dualAttachmentDivider} />
 
-              {/* Botão de Enviar com Aviãozinho de Papel Roxo ou Microfone WhatsApp */}
-              {inputText.trim().length > 0 ? (
-                <TouchableOpacity
-                  style={[styles.modernSendBtn, analyzing && styles.sendBtnDisabled]}
-                  disabled={analyzing}
-                  onPress={() => handleSend()}
-                  activeOpacity={0.85}
-                >
-                  <Ionicons name="send" size={17} color="#FFFFFF" style={{ marginLeft: 2 }} />
-                </TouchableOpacity>
-              ) : (
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <TouchableOpacity
-                    style={styles.whatsappMicCircleBtn}
-                    onPress={startRecordingWhatsApp}
-                    disabled={analyzing}
-                    activeOpacity={0.85}
-                  >
-                    <Ionicons name="mic" size={20} color="#FFFFFF" />
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[styles.modernSendBtn, { opacity: 0.6 }]}
-                    onPress={() => handleSend('Me dê um insight rápido sobre minhas finanças.')}
-                    disabled={analyzing}
-                    activeOpacity={0.85}
-                  >
-                    <Ionicons name="send" size={17} color="#FFFFFF" style={{ marginLeft: 2 }} />
-                  </TouchableOpacity>
-                </View>
-              )}
-            </View>
-          </KeyboardAvoidingView>
-        </>
-      )}
-
-      {/* ========================================================================= */}
-      {/* MODAL FULL-SCREEN: CONVERSAÇÃO POR VOZ ESTILO GEMINI LIVE                 */}
-      {/* ========================================================================= */}
-      <Modal visible={liveModalVisible} animationType="slide" transparent={false}>
-        <View style={[styles.liveContainer, { paddingTop: insets.top, paddingBottom: insets.bottom + 20 }]}>
-          <StatusBar barStyle="light-content" backgroundColor="#070B14" />
-
-          {/* Topo da Chamada Live */}
-          <View style={styles.liveHeader}>
-            <View style={styles.liveHeaderLeft}>
-              <View style={styles.liveOnlineDot} />
-              <View>
-                <Text style={styles.liveTitle}>FINN Live</Text>
-                <Text style={styles.liveTimerText}>{formatTimer(liveDuration)}</Text>
-              </View>
-            </View>
-
-            <TouchableOpacity style={styles.liveCloseBtn} onPress={closeGeminiLive}>
-              <Ionicons name="close" size={24} color={COLORS.white} />
-            </TouchableOpacity>
-          </View>
-
-          {/* Centro: Esfera Interativa Animada (Estilo Gemini Live) */}
-          <View style={styles.liveCenter}>
-            <View style={styles.orbContainer}>
-              {/* Anel Externo Fluido */}
-              <Animated.View
-                style={[
-                  styles.outerHalo,
-                  {
-                    transform: [{ scale: orbScale }],
-                    opacity: orbGlow,
-                  },
-                ]}
-              />
-
-              {/* Esfera Principal Gradiente */}
-              <Animated.View
-                style={[
-                  styles.innerOrb,
-                  {
-                    transform: [{ scale: orbScale }],
-                  },
-                ]}
+              <TouchableOpacity
+                style={styles.dualAttachmentHalf}
+                activeOpacity={0.75}
+                onPress={handlePickCsv}
               >
-                <LinearGradient
-                  colors={
-                    liveState === 'recording'
-                      ? ['#EF4444', '#F97316']
-                      : liveState === 'thinking'
-                      ? ['#8B5CF6', '#3B82F6']
-                      : liveState === 'speaking'
-                      ? ['#06B6D4', '#10B981']
-                      : ['#0284C7', '#8B5CF6']
-                  }
-                  style={styles.orbGradient}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                >
-                  <Ionicons
-                    name={
-                      liveState === 'recording'
-                        ? 'mic'
-                        : liveState === 'thinking'
-                        ? 'sync'
-                        : liveState === 'speaking'
-                        ? 'volume-high'
-                        : 'sparkles'
-                    }
-                    size={46}
-                    color={COLORS.white}
-                  />
-                </LinearGradient>
-              </Animated.View>
+                <Ionicons name="grid-outline" size={19} color="#7C3AED" />
+                <Text style={styles.dualAttachmentText}>Anexar CSV</Text>
+              </TouchableOpacity>
             </View>
 
-            {/* Status Descritivo */}
-            <Text style={styles.liveStatusTitle}>
-              {liveState === 'recording'
-                ? 'Ouvindo você...'
-                : liveState === 'thinking'
-                ? 'FINN processando...'
-                : liveState === 'speaking'
-                ? 'FINN falando...'
-                : 'Pronto para conversar'}
-            </Text>
-            <Text style={styles.liveStatusSubtitle}>
-              {liveState === 'recording'
-                ? 'Fale o que gastou, recebeu ou tire dúvidas'
-                : liveState === 'thinking'
-                ? 'Conectando ao Google Gemini...'
-                : liveState === 'speaking'
-                ? 'Toque na tela se quiser interromper'
-                : 'Toque no microfone abaixo e fale naturalmente'}
-            </Text>
+            {/* 4 CARDS PRINCIPAIS COM SETA */}
+            <View style={styles.actionCardsList}>
+              {/* 1. Ver meu resumo financeiro */}
+              <TouchableOpacity
+                style={styles.actionCard}
+                activeOpacity={0.8}
+                onPress={() =>
+                  handleSend(
+                    'Gere um resumo financeiro inteligente do meu mês atual, com saldo total, despesas por categoria e sugestões.'
+                  )
+                }
+              >
+                <View style={[styles.actionCardIconBox, { backgroundColor: '#EDE9FE' }]}>
+                  <Ionicons name="bar-chart" size={18} color="#7C3AED" />
+                </View>
+                <Text style={styles.actionCardText}>Ver meu resumo financeiro</Text>
+                <Ionicons name="chevron-forward" size={18} color="#71717A" />
+              </TouchableOpacity>
+
+              {/* 2. Planejar o mês */}
+              <TouchableOpacity
+                style={styles.actionCard}
+                activeOpacity={0.8}
+                onPress={() =>
+                  handleSend(
+                    'Como devemos planejar nosso orçamento para este mês para bater as metas financeiras?'
+                  )
+                }
+              >
+                <View style={[styles.actionCardIconBox, { backgroundColor: '#F3EEFF' }]}>
+                  <Ionicons name="calendar-outline" size={18} color="#7C3AED" />
+                </View>
+                <Text style={styles.actionCardText}>Planejar o mês</Text>
+                <Ionicons name="chevron-forward" size={18} color="#71717A" />
+              </TouchableOpacity>
+
+              {/* 3. Sugestões para economizar */}
+              <TouchableOpacity
+                style={styles.actionCard}
+                activeOpacity={0.8}
+                onPress={() =>
+                  handleSend(
+                    'Analise nossos gastos recentes e me dê 3 sugestões práticas e personalizadas para economizarmos dinheiro.'
+                  )
+                }
+              >
+                <View style={[styles.actionCardIconBox, { backgroundColor: '#EDE9FE' }]}>
+                  <Ionicons name="disc-outline" size={18} color="#7C3AED" />
+                </View>
+                <Text style={styles.actionCardText}>Sugestões para economizar</Text>
+                <Ionicons name="chevron-forward" size={18} color="#71717A" />
+              </TouchableOpacity>
+
+              {/* 4. Registrar um gasto */}
+              <TouchableOpacity
+                style={styles.actionCard}
+                activeOpacity={0.8}
+                onPress={() => setAttachModalVisible(true)}
+              >
+                <View style={[styles.actionCardIconBox, { backgroundColor: '#F3EEFF' }]}>
+                  <Ionicons name="receipt-outline" size={18} color="#7C3AED" />
+                </View>
+                <Text style={styles.actionCardText}>Registrar um gasto</Text>
+                <Ionicons name="chevron-forward" size={18} color="#71717A" />
+              </TouchableOpacity>
+            </View>
+
+            {/* SEÇÃO "SUGESTÕES RÁPIDAS" COM BOTÃO "TROCAR" */}
+            <View style={styles.quickHeaderRow}>
+              <Text style={styles.quickHeaderTitle}>Sugestões rápidas</Text>
+              <TouchableOpacity
+                style={styles.quickTrocarBtn}
+                onPress={handleToggleQuickSet}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="sync-outline" size={15} color="#7C3AED" />
+                <Text style={styles.quickTrocarText}>Trocar</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* GRADE 2X2 DE SUGESTÕES RÁPIDAS */}
+            <View style={styles.quickGrid}>
+              {currentQuickSuggestions.map((item) => (
+                <TouchableOpacity
+                  key={item.id}
+                  style={styles.quickPill}
+                  activeOpacity={0.8}
+                  onPress={() => handleSend(item.prompt)}
+                >
+                  <Ionicons name={item.icon} size={16} color="#7C3AED" />
+                  <Text style={styles.quickPillText} numberOfLines={1}>
+                    {item.text}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
           </View>
 
-          {/* Legenda Flutuante com Transcrição do Diálogo */}
-          {(liveUserTranscript || liveAiTranscript) && (
-            <View style={styles.liveCaptionsBox}>
-              {liveUserTranscript ? (
-                <Text style={styles.captionUserText} numberOfLines={2}>
-                  🗣️ <Text style={{ color: '#93C5FD' }}>Você:</Text> "{liveUserTranscript}"
-                </Text>
-              ) : null}
-              {liveAiTranscript ? (
-                <Text style={styles.captionAiText} numberOfLines={3}>
-                  ✨ <Text style={{ color: '#6EE7B7' }}>FINN:</Text> {cleanTextForSpeech(liveAiTranscript)}
-                </Text>
-              ) : null}
+          {/* HISTÓRICO DE MENSAGENS COM O NOVO AVATAR DO FINN */}
+          {aiChat.length > 0 && (
+            <View style={styles.chatMessagesContainer}>
+              {aiChat.map((msg) => {
+                const isUser = msg.sender === 'user';
+                return (
+                  <View
+                    key={msg.id}
+                    style={[
+                      styles.messageBubbleWrap,
+                      isUser ? styles.userBubbleWrap : styles.aiBubbleWrap,
+                    ]}
+                  >
+                    {!isUser && (
+                      <Image
+                        source={finnAvatarSource}
+                        style={styles.aiBubbleAvatar}
+                        resizeMode="cover"
+                      />
+                    )}
+
+                    <View
+                      style={[
+                        styles.bubble,
+                        isUser ? styles.userBubble : styles.aiBubble,
+                      ]}
+                    >
+                      <FormattedMessage
+                        text={msg.text}
+                        isUser={isUser}
+                        navigation={navigation}
+                        onSpeak={() => handleSpeak(msg.id, msg.text)}
+                        isSpeaking={speakingMsgId === msg.id}
+                      />
+
+                      {/* Transações criadas automaticamente */}
+                      {((msg.transactions && msg.transactions.length > 0)
+                        ? msg.transactions
+                        : msg.transaction
+                        ? [msg.transaction]
+                        : []
+                      ).map((tx, txIdx) => (
+                        <View
+                          key={tx.id || `tx-${txIdx}`}
+                          style={styles.txCardInChat}
+                        >
+                          <View style={styles.txCardHeader}>
+                            <Ionicons
+                              name={
+                                tx.type === 'income'
+                                  ? 'arrow-up-circle'
+                                  : 'arrow-down-circle'
+                              }
+                              size={16}
+                              color={
+                                tx.type === 'income'
+                                  ? COLORS.income
+                                  : COLORS.expense
+                              }
+                            />
+                            <Text style={styles.txCardDesc}>{tx.description}</Text>
+                            <Text
+                              style={[
+                                styles.txCardAmount,
+                                {
+                                  color:
+                                    tx.type === 'income'
+                                      ? COLORS.income
+                                      : COLORS.expense,
+                                },
+                              ]}
+                            >
+                              R$ {(tx.amount || 0).toFixed(2).replace('.', ',')}
+                            </Text>
+                          </View>
+                          <Text style={styles.txCardSub}>
+                            Lançado para {tx.author || 'Casal'} • Extrato atualizado
+                          </Text>
+                        </View>
+                      ))}
+
+                      <Text
+                        style={[
+                          styles.timeText,
+                          isUser ? styles.userTimeText : styles.aiTimeText,
+                        ]}
+                      >
+                        {msg.time}
+                      </Text>
+                    </View>
+                  </View>
+                );
+              })}
             </View>
           )}
 
-          {/* Rodapé de Controles da Chamada */}
-          <View style={styles.liveControlsRow}>
-            {/* Silenciar/Parar fala */}
+          {/* INDICADOR DE CARREGAMENTO */}
+          {analyzing && (
+            <View style={styles.analyzingCard}>
+              <ActivityIndicator size="small" color="#7C3AED" />
+              <Text style={styles.analyzingText}>{analyzingStatus}</Text>
+            </View>
+          )}
+        </ScrollView>
+
+        {/* ========================================================================= */}
+        {/* BARRA INFERIOR DE ENTRADA FIEL AO PRINT 1                                 */}
+        {/* ========================================================================= */}
+        {isRecording ? (
+          <View
+            style={[
+              styles.whatsappRecordBar,
+              { paddingBottom: Math.max(insets.bottom, 14) },
+            ]}
+          >
             <TouchableOpacity
-              style={styles.liveSecondaryBtn}
+              style={styles.cancelRecordBtn}
+              onPress={cancelRecordingWhatsApp}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="trash-outline" size={22} color="#EF4444" />
+            </TouchableOpacity>
+
+            <View style={styles.recordingTimerWrap}>
+              <View style={styles.recRedDot} />
+              <Text style={styles.recordingTimerText}>
+                {formatTimer(recordingSeconds)}
+              </Text>
+              <Text style={styles.recordingHintText}>Gravando áudio...</Text>
+            </View>
+
+            <TouchableOpacity
+              style={styles.sendRecordBtn}
+              onPress={stopAndSendRecordingWhatsApp}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="arrow-up" size={22} color="#FFFFFF" />
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <View
+            style={[
+              styles.inputBarOuter,
+              { paddingBottom: Math.max(insets.bottom, 14) },
+            ]}
+          >
+            <View style={styles.inputBarPill}>
+              {/* Botão de Clipe / Anexos */}
+              <TouchableOpacity
+                style={styles.clipBtn}
+                activeOpacity={0.75}
+                onPress={() => setAttachModalVisible(true)}
+              >
+                <Ionicons name="attach" size={24} color="#7C3AED" />
+              </TouchableOpacity>
+
+              {/* Campo de Texto */}
+              <TextInput
+                style={styles.textInput}
+                placeholder="Digite uma mensagem..."
+                placeholderTextColor="#9CA3AF"
+                value={inputText}
+                onChangeText={setInputText}
+                onSubmitEditing={() => handleSend()}
+                returnKeyType="send"
+              />
+
+              {/* Botão de Gravação por Voz */}
+              <TouchableOpacity
+                style={styles.micBtn}
+                activeOpacity={0.75}
+                onPress={startRecordingWhatsApp}
+              >
+                <Ionicons name="mic-outline" size={22} color="#7C3AED" />
+              </TouchableOpacity>
+
+              {/* Botão Enviar com Aviãozinho Roxo */}
+              <TouchableOpacity
+                style={styles.sendBtn}
+                activeOpacity={0.85}
+                onPress={() => handleSend()}
+              >
+                <Ionicons name="send" size={17} color="#FFFFFF" />
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+      </KeyboardAvoidingView>
+
+      {/* ========================================================================= */}
+      {/* MODAL DE ANEXOS                                                           */}
+      {/* ========================================================================= */}
+      <Modal visible={attachModalVisible} transparent animationType="fade">
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setAttachModalVisible(false)}
+        >
+          <View style={styles.attachModalCard}>
+            <Text style={styles.attachModalTitle}>Anexar ao FINN AI</Text>
+
+            <TouchableOpacity
+              style={styles.attachOptionRow}
+              onPress={handleCameraReceipt}
+            >
+              <View style={[styles.attachOptionIcon, { backgroundColor: '#EDE9FE' }]}>
+                <Ionicons name="camera-outline" size={20} color="#7C3AED" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.attachOptionName}>Fotografar Comprovante</Text>
+                <Text style={styles.attachOptionSub}>Usar câmera para escanear recibo</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.attachOptionRow}
+              onPress={handlePickReceipt}
+            >
+              <View style={[styles.attachOptionIcon, { backgroundColor: '#F3EEFF' }]}>
+                <Ionicons name="image-outline" size={20} color="#7C3AED" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.attachOptionName}>Comprovante da Galeria</Text>
+                <Text style={styles.attachOptionSub}>Selecionar print ou foto já salva</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.attachOptionRow}
+              onPress={handlePickPdf}
+            >
+              <View style={[styles.attachOptionIcon, { backgroundColor: '#EDE9FE' }]}>
+                <Ionicons name="document-text-outline" size={20} color="#7C3AED" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.attachOptionName}>Boleto ou Fatura (PDF)</Text>
+                <Text style={styles.attachOptionSub}>Extrair dados completos do documento</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.attachOptionRow}
+              onPress={handlePickCsv}
+            >
+              <View style={[styles.attachOptionIcon, { backgroundColor: '#F3EEFF' }]}>
+                <Ionicons name="grid-outline" size={20} color="#7C3AED" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.attachOptionName}>Planilha de Extrato (CSV)</Text>
+                <Text style={styles.attachOptionSub}>Importar lista de lançamentos</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.attachModalCancelBtn}
+              onPress={() => setAttachModalVisible(false)}
+            >
+              <Text style={styles.attachModalCancelText}>Cancelar</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* ========================================================================= */}
+      {/* MODAL DE MAIS OPÇÕES (MENU TRÊS PONTOS ⋮)                                */}
+      {/* ========================================================================= */}
+      <Modal visible={menuModalVisible} transparent animationType="fade">
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setMenuModalVisible(false)}
+        >
+          <View style={styles.menuModalCard}>
+            <Text style={styles.attachModalTitle}>Opções do Assistente</Text>
+
+            <TouchableOpacity
+              style={styles.attachOptionRow}
+              onPress={openGeminiLive}
+            >
+              <View style={[styles.attachOptionIcon, { backgroundColor: '#E0F2FE' }]}>
+                <Ionicons name="mic" size={20} color="#0284C7" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.attachOptionName}>Gemini Live (Voz Contínua)</Text>
+                <Text style={styles.attachOptionSub}>Conversar ao vivo com o assistente</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.attachOptionRow}
               onPress={() => {
-                Speech.stop();
-                setLiveState('idle');
+                setMenuModalVisible(false);
+                navigation?.navigate?.('Settings');
               }}
             >
-              <Ionicons name="volume-mute-outline" size={24} color={COLORS.white} />
+              <View style={[styles.attachOptionIcon, { backgroundColor: '#EDE9FE' }]}>
+                <Ionicons name="settings-outline" size={20} color="#7C3AED" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.attachOptionName}>Configurações de IA</Text>
+                <Text style={styles.attachOptionSub}>Chave Gemini e seleção de modelo</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
             </TouchableOpacity>
 
-            {/* Microfone Central de Falar */}
+            <TouchableOpacity
+              style={styles.attachModalCancelBtn}
+              onPress={() => setMenuModalVisible(false)}
+            >
+              <Text style={styles.attachModalCancelText}>Fechar</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* ========================================================================= */}
+      {/* MODAL GEMINI LIVE                                                         */}
+      {/* ========================================================================= */}
+      <Modal visible={liveModalVisible} transparent animationType="slide">
+        <View style={styles.liveContainer}>
+          <View style={styles.liveHeader}>
+            <View style={styles.liveTitleRow}>
+              <Ionicons name="radio" size={18} color="#38BDF8" />
+              <Text style={styles.liveHeaderTitle}>GEMINI LIVE • FINN</Text>
+            </View>
+            <TouchableOpacity style={styles.liveCloseBtn} onPress={closeGeminiLive}>
+              <Ionicons name="close" size={24} color="#FFFFFF" />
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.liveBody}>
+            <Animated.View
+              style={[
+                styles.liveOrbWrap,
+                {
+                  transform: [{ scale: orbScale }],
+                  opacity: orbGlow,
+                },
+              ]}
+            >
+              <LinearGradient
+                colors={['#7C3AED', '#38BDF8', '#6366F1']}
+                style={styles.liveOrbGradient}
+              />
+            </Animated.View>
+
+            <Text style={styles.liveStatusText}>
+              {liveState === 'recording'
+                ? 'FINN ouvindo...'
+                : liveState === 'thinking'
+                ? 'Processando...'
+                : liveState === 'speaking'
+                ? 'FINN falando...'
+                : 'Toque para falar'}
+            </Text>
+            <Text style={styles.liveTimerText}>{formatTimer(liveDuration)}</Text>
+
+            {liveUserTranscript ? (
+              <View style={styles.liveTranscriptBox}>
+                <Text style={styles.liveTranscriptLabel}>Você:</Text>
+                <Text style={styles.liveTranscriptText}>{liveUserTranscript}</Text>
+              </View>
+            ) : null}
+
+            {liveAiTranscript ? (
+              <View style={[styles.liveTranscriptBox, styles.liveAiTranscriptBox]}>
+                <Text style={styles.liveTranscriptLabel}>FINN:</Text>
+                <Text style={styles.liveTranscriptText}>{liveAiTranscript}</Text>
+              </View>
+            ) : null}
+          </View>
+
+          <View style={styles.liveFooter}>
             <TouchableOpacity
               style={[
-                styles.liveMainMicBtn,
-                liveState === 'recording' && styles.liveMainMicBtnRecording,
+                styles.liveMicBtn,
+                liveState === 'recording' && styles.liveMicBtnActive,
               ]}
               onPress={handleLiveToggleRecording}
-              activeOpacity={0.85}
+              activeOpacity={0.8}
             >
               <Ionicons
-                name={liveState === 'recording' ? 'stop' : liveState === 'speaking' ? 'hand-right' : 'mic'}
+                name={
+                  liveState === 'recording'
+                    ? 'stop'
+                    : liveState === 'speaking'
+                    ? 'volume-mute'
+                    : 'mic'
+                }
                 size={34}
-                color={COLORS.white}
+                color="#FFFFFF"
               />
-            </TouchableOpacity>
-
-            {/* Encerrar Chamada */}
-            <TouchableOpacity style={styles.liveEndCallBtn} onPress={closeGeminiLive}>
-              <Ionicons name="call" size={24} color={COLORS.white} style={{ transform: [{ rotate: '135deg' }] }} />
             </TouchableOpacity>
           </View>
         </View>
@@ -1037,405 +1218,324 @@ export default function FinnAIScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.bg,
+    backgroundColor: '#F7F5FC',
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: COLORS.bg,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
   },
-  headerLeft: {
+  headerCircleBtn: {
     width: 40,
-    alignItems: 'flex-start',
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#EFEAF8',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#4C1D95',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 2,
   },
   headerCenter: {
     alignItems: 'center',
-    justifyContent: 'center',
   },
-  titleRow: {
+  headerTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 7,
+  },
+  headerAvatar: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
   },
   headerTitle: {
-    color: '#18181B',
     fontSize: 18,
-    fontWeight: '900',
-    letterSpacing: 0.2,
-  },
-  headerSubtitle: {
-    color: '#71717A',
-    fontSize: 12,
-    fontWeight: '500',
-    marginTop: 2,
-  },
-  headerRightGroup: {
-    width: 40,
-    alignItems: 'flex-end',
-  },
-  aiHeroContainer: {
-    alignItems: 'center',
-    paddingTop: 6,
-    paddingBottom: 16,
-    width: '100%',
-  },
-  mascotHaloWrap: {
-    width: 140,
-    height: 140,
-    alignItems: 'center',
-    justifyContent: 'center',
-    position: 'relative',
-    marginBottom: 8,
-  },
-  mascotHaloCircle: {
-    position: 'absolute',
-    width: 130,
-    height: 130,
-    borderRadius: 65,
-    backgroundColor: 'rgba(192, 132, 252, 0.25)',
-  },
-  mascot3DImage: {
-    width: 120,
-    height: 120,
-    zIndex: 2,
-  },
-  aiHeroTitle: {
-    fontSize: 22,
     fontWeight: '800',
     color: '#18181B',
-    letterSpacing: -0.4,
-    textAlign: 'center',
-    marginTop: 4,
+    letterSpacing: -0.2,
   },
-  aiHeroSub: {
-    fontSize: 13,
-    fontWeight: '500',
+  headerSubtitle: {
+    fontSize: 12,
     color: '#71717A',
-    textAlign: 'center',
-    lineHeight: 18,
-    marginTop: 6,
-    marginBottom: 18,
+    fontWeight: '500',
+    marginTop: 1,
+  },
+  scrollArea: {
+    flex: 1,
+  },
+  scrollContent: {
     paddingHorizontal: 20,
+    paddingTop: 8,
   },
-  aiActionList: {
+  heroSection: {
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  robotImageWrapper: {
     width: '100%',
-    gap: 10,
+    height: 195,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: -4,
+    marginBottom: 6,
   },
-  aiActionCard: {
+  robotHeroImage: {
+    width: '100%',
+    height: '100%',
+  },
+  heroTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#0F172A',
+    textAlign: 'center',
+    letterSpacing: -0.4,
+    marginBottom: 16,
+  },
+  dualAttachmentPill: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
     borderRadius: 18,
-    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: '#EFEAF8',
+    width: '100%',
     paddingVertical: 13,
+    marginBottom: 16,
+    shadowColor: '#4C1D95',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  dualAttachmentHalf: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  dualAttachmentDivider: {
+    width: 1,
+    height: 22,
+    backgroundColor: '#E5E7EB',
+  },
+  dualAttachmentText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#18181B',
+  },
+  actionCardsList: {
+    width: '100%',
+    gap: 10,
+    marginBottom: 20,
+  },
+  actionCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    paddingVertical: 13,
+    paddingHorizontal: 14,
     borderWidth: 1,
     borderColor: '#EFEAF8',
     shadowColor: '#4C1D95',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 6,
+    shadowOpacity: 0.03,
+    shadowRadius: 5,
     elevation: 2,
     gap: 12,
   },
-  aiActionIconWrap: {
+  actionCardIconBox: {
     width: 38,
     height: 38,
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  aiActionText: {
+  actionCardText: {
     flex: 1,
-    fontSize: 13.5,
+    fontSize: 15,
     fontWeight: '700',
     color: '#18181B',
   },
-  modernInputBar: {
+  quickHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingTop: 10,
-    backgroundColor: COLORS.bg,
-    gap: 10,
+    justifyContent: 'space-between',
+    width: '100%',
+    marginBottom: 10,
   },
-  mediaIconBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  textInputCapsule: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    paddingHorizontal: 16,
-    paddingVertical: Platform.OS === 'ios' ? 10 : 6,
-    borderWidth: 1,
-    borderColor: '#EFEAF8',
-    minHeight: 44,
-    justifyContent: 'center',
-  },
-  modernTextInput: {
-    fontSize: 14,
-    color: '#18181B',
-    maxHeight: 100,
-  },
-  modernSendBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#7C3AED',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#7C3AED',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.35,
-    shadowRadius: 6,
-    elevation: 4,
-  },
-  whatsappMicCircleBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#10B981',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#10B981',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.30,
-    shadowRadius: 6,
-    elevation: 4,
-  },
-  skinHeaderBadge: {
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    borderRadius: 8,
-  },
-  skinHeaderBadgeText: {
-    fontSize: 10,
-    fontWeight: '800',
-  },
-  skinsBar: {
-    backgroundColor: COLORS.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.surfaceBorder,
-    paddingVertical: 7,
-  },
-  skinsScrollContent: {
-    paddingHorizontal: 14,
-    gap: 8,
-    alignItems: 'center',
-  },
-  skinChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 20,
-    backgroundColor: COLORS.bg,
-    borderWidth: 1,
-    borderColor: COLORS.surfaceBorder,
-  },
-  skinChipEmoji: {
+  quickHeaderTitle: {
     fontSize: 13,
+    fontWeight: '700',
+    color: '#4B5563',
   },
-  skinChipText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: COLORS.textSecondary,
-  },
-  skinChipTextActive: {
-    color: COLORS.white,
-    fontWeight: '800',
-  },
-  onlineBadge: {
+  quickTrocarBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: 'rgba(16, 185, 129, 0.15)',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 8,
   },
-  onlineDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 2.5,
-    backgroundColor: COLORS.primary,
-  },
-  onlineText: {
-    color: COLORS.primary,
-    fontSize: 10,
+  quickTrocarText: {
+    fontSize: 12,
     fontWeight: '700',
+    color: '#7C3AED',
   },
-  headerSubtitle: {
-    color: COLORS.textSecondary,
-    fontSize: 11,
-    marginTop: 1,
-  },
-  headerRightGroup: {
+  quickGrid: {
     flexDirection: 'row',
-    alignItems: 'center',
+    flexWrap: 'wrap',
     gap: 8,
+    width: '100%',
   },
-  geminiLiveHeaderBtn: {
-    borderRadius: 14,
-    overflow: 'hidden',
-  },
-  liveGradientPill: {
+  quickPill: {
+    flexBasis: '48.5%',
+    flexGrow: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-  liveBtnText: {
-    color: COLORS.white,
-    fontSize: 11,
-    fontWeight: '800',
-  },
-  settingsMiniBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 10,
-    backgroundColor: COLORS.surfaceLight,
-    alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: COLORS.surfaceBorder,
+    borderColor: '#EFEAF8',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    gap: 7,
+    shadowColor: '#4C1D95',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 4,
+    elevation: 1,
   },
-  chatScroll: {
+  quickPillText: {
     flex: 1,
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#18181B',
   },
-  chatContent: {
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    gap: 12,
+  chatMessagesContainer: {
+    marginTop: 10,
+    marginBottom: 10,
   },
   messageBubbleWrap: {
     flexDirection: 'row',
-    marginVertical: 4,
-    maxWidth: '85%',
+    marginBottom: 14,
+    alignItems: 'flex-end',
   },
   userBubbleWrap: {
-    alignSelf: 'flex-end',
     justifyContent: 'flex-end',
   },
   aiBubbleWrap: {
-    alignSelf: 'flex-start',
-    gap: 8,
+    justifyContent: 'flex-start',
   },
-  aiAvatarSmall: {
-    width: 26,
-    height: 26,
-    borderRadius: 9,
-    backgroundColor: 'rgba(2, 132, 199, 0.15)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 4,
+  aiBubbleAvatar: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    marginRight: 8,
+    marginBottom: 4,
   },
   bubble: {
+    maxWidth: '82%',
+    borderRadius: 18,
     paddingHorizontal: 14,
     paddingVertical: 10,
-    borderRadius: 18,
   },
   userBubble: {
-    backgroundColor: '#0284C7',
+    backgroundColor: '#7C3AED',
     borderBottomRightRadius: 4,
   },
   aiBubble: {
-    backgroundColor: COLORS.surface,
+    backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: COLORS.surfaceBorder,
+    borderColor: '#EFEAF8',
     borderBottomLeftRadius: 4,
-  },
-  formattedWrap: {
-    gap: 4,
+    shadowColor: '#4C1D95',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 5,
+    elevation: 2,
   },
   bubbleText: {
     fontSize: 14,
     lineHeight: 20,
   },
   userBubbleText: {
-    color: COLORS.white,
+    color: '#FFFFFF',
     fontWeight: '500',
   },
   aiBubbleText: {
-    color: COLORS.text,
+    color: '#18181B',
+  },
+  formattedWrap: {
+    gap: 4,
   },
   boldAiText: {
     fontWeight: '800',
-    color: COLORS.navy,
+    color: '#0F172A',
   },
   bulletText: {
-    paddingLeft: 6,
+    paddingLeft: 4,
   },
-  keyWarningActionBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: 'rgba(2, 132, 199, 0.12)',
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    borderRadius: 10,
-    marginTop: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(2, 132, 199, 0.25)',
+  timeText: {
+    fontSize: 10,
+    marginTop: 4,
+    alignSelf: 'flex-end',
   },
-  keyWarningActionText: {
-    color: '#0284C7',
-    fontSize: 12,
-    fontWeight: '700',
+  userTimeText: {
+    color: 'rgba(255, 255, 255, 0.75)',
+  },
+  aiTimeText: {
+    color: '#9CA3AF',
   },
   listenBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
+    marginTop: 6,
     alignSelf: 'flex-start',
-    backgroundColor: COLORS.bg,
+    backgroundColor: '#F3EEFF',
     paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingVertical: 3,
     borderRadius: 8,
-    marginTop: 8,
-    borderWidth: 1,
-    borderColor: COLORS.surfaceBorder,
   },
   listenBtnActive: {
-    backgroundColor: 'rgba(2, 132, 199, 0.15)',
-    borderColor: '#0284C7',
+    backgroundColor: '#E0F2FE',
   },
   listenBtnText: {
-    color: COLORS.textSecondary,
     fontSize: 11,
-    fontWeight: '600',
+    color: '#7C3AED',
+    fontWeight: '700',
   },
   listenBtnTextActive: {
     color: '#0284C7',
-    fontWeight: '800',
   },
-  timeText: {
-    fontSize: 10,
+  keyWarningActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#EDE9FE',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
     marginTop: 6,
   },
-  userTimeText: {
-    color: 'rgba(255,255,255,0.7)',
-    textAlign: 'right',
-  },
-  aiTimeText: {
-    color: COLORS.textMuted,
+  keyWarningActionText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#7C3AED',
   },
   txCardInChat: {
-    backgroundColor: COLORS.bg,
+    backgroundColor: '#F9FAFB',
+    borderRadius: 10,
     padding: 10,
-    borderRadius: 12,
     marginTop: 8,
     borderWidth: 1,
-    borderColor: COLORS.surfaceBorder,
+    borderColor: '#E5E7EB',
   },
   txCardHeader: {
     flexDirection: 'row',
@@ -1444,327 +1544,302 @@ const styles = StyleSheet.create({
   },
   txCardDesc: {
     flex: 1,
-    color: COLORS.text,
     fontSize: 13,
     fontWeight: '700',
+    color: '#18181B',
   },
   txCardAmount: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '800',
   },
   txCardSub: {
-    color: COLORS.textSecondary,
-    fontSize: 10,
+    fontSize: 11,
+    color: '#6B7280',
     marginTop: 4,
   },
   analyzingCard: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    backgroundColor: COLORS.surface,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#EFEAF8',
+    borderRadius: 14,
     paddingHorizontal: 14,
     paddingVertical: 10,
-    borderRadius: 14,
     alignSelf: 'flex-start',
-    borderWidth: 1,
-    borderColor: COLORS.surfaceBorder,
-    marginTop: 4,
+    marginTop: 6,
   },
   analyzingText: {
-    color: COLORS.textSecondary,
-    fontSize: 12,
-  },
-  multimodalBar: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    backgroundColor: COLORS.surface,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.surfaceBorder,
-  },
-  multimodalBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: COLORS.bg,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: COLORS.surfaceBorder,
-  },
-  multimodalBtnText: {
-    color: COLORS.text,
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '600',
+    color: '#7C3AED',
   },
-  quickPromptsWrap: {
-    paddingVertical: 6,
-    backgroundColor: COLORS.surface,
-  },
-  quickPromptsList: {
+  inputBarOuter: {
     paddingHorizontal: 16,
-    gap: 8,
+    backgroundColor: '#F7F5FC',
   },
-  promptPill: {
+  inputBarPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    backgroundColor: COLORS.bg,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 26,
     borderWidth: 1,
-    borderColor: COLORS.surfaceBorder,
+    borderColor: '#EFEAF8',
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    shadowColor: '#4C1D95',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    elevation: 4,
+    gap: 6,
   },
-  promptPillText: {
-    color: COLORS.textSecondary,
-    fontSize: 12,
-  },
-  inputBar: {
-    flexDirection: 'row',
+  clipBtn: {
+    width: 36,
+    height: 36,
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    backgroundColor: COLORS.surface,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.surfaceBorder,
-    gap: 10,
+    justifyContent: 'center',
   },
   textInput: {
     flex: 1,
-    backgroundColor: COLORS.bg,
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    color: COLORS.text,
     fontSize: 14,
-    maxHeight: 100,
+    color: '#18181B',
+    paddingVertical: 6,
+    paddingHorizontal: 4,
+  },
+  micBtn: {
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   sendBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: '#0284C7',
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#7C3AED',
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  sendBtnDisabled: {
-    opacity: 0.4,
-  },
-  whatsappMicBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#10B981',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#10B981',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 6,
-    elevation: 4,
   },
   whatsappRecordBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    backgroundColor: '#111827',
-    borderTopWidth: 1,
-    borderTopColor: '#1F2937',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 26,
+    borderWidth: 1,
+    borderColor: '#FEE2E2',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginHorizontal: 16,
+    gap: 12,
   },
   cancelRecordBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#FEE2E2',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  recordTimerWrap: {
+  recordingTimerWrap: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    flex: 1,
-    paddingHorizontal: 12,
   },
-  blinkingRedDot: {
+  recRedDot: {
     width: 10,
     height: 10,
     borderRadius: 5,
     backgroundColor: '#EF4444',
   },
   recordingTimerText: {
-    color: COLORS.white,
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '800',
+    color: '#18181B',
   },
-  recordingWaveText: {
-    color: '#9CA3AF',
+  recordingHintText: {
     fontSize: 12,
+    color: '#6B7280',
   },
   sendRecordBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#10B981',
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#16A34A',
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#10B981',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-    elevation: 4,
   },
-
-  /* ESTILOS GEMINI LIVE FULL-SCREEN */
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.6)',
+    justifyContent: 'flex-end',
+  },
+  attachModalCard: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 36,
+    gap: 10,
+  },
+  menuModalCard: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 36,
+    gap: 10,
+  },
+  attachModalTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#18181B',
+    marginBottom: 6,
+  },
+  attachOptionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+    backgroundColor: '#F9FAFB',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    gap: 12,
+  },
+  attachOptionIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  attachOptionName: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#18181B',
+  },
+  attachOptionSub: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginTop: 2,
+  },
+  attachModalCancelBtn: {
+    marginTop: 8,
+    paddingVertical: 14,
+    alignItems: 'center',
+    borderRadius: 12,
+    backgroundColor: '#F3F4F6',
+  },
+  attachModalCancelText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#4B5563',
+  },
   liveContainer: {
     flex: 1,
-    backgroundColor: '#070B14',
-    justifyContent: 'space-between',
+    backgroundColor: '#0F172A',
     paddingHorizontal: 20,
+    justifyContent: 'space-between',
+    paddingVertical: 40,
   },
   liveHeader: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 10,
+    alignItems: 'center',
   },
-  liveHeaderLeft: {
+  liveTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 8,
   },
-  liveOnlineDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#10B981',
-  },
-  liveTitle: {
-    color: COLORS.white,
-    fontSize: 18,
+  liveHeaderTitle: {
+    color: '#38BDF8',
+    fontSize: 14,
     fontWeight: '800',
-    letterSpacing: 0.5,
-  },
-  liveTimerText: {
-    color: '#94A3B8',
-    fontSize: 12,
+    letterSpacing: 1,
   },
   liveCloseBtn: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    backgroundColor: '#1E293B',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  liveCenter: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 20,
-  },
-  orbContainer: {
-    width: 220,
-    height: 220,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 30,
-  },
-  outerHalo: {
-    position: 'absolute',
-    width: 220,
-    height: 220,
-    borderRadius: 110,
-    backgroundColor: 'rgba(6, 182, 212, 0.25)',
-  },
-  innerOrb: {
-    width: 150,
-    height: 150,
-    borderRadius: 75,
-    overflow: 'hidden',
-    shadowColor: '#06B6D4',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
-    shadowRadius: 25,
-    elevation: 12,
-  },
-  orbGradient: {
-    flex: 1,
+  liveBody: {
     alignItems: 'center',
     justifyContent: 'center',
   },
-  liveStatusTitle: {
-    color: COLORS.white,
-    fontSize: 22,
+  liveOrbWrap: {
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 24,
+  },
+  liveOrbGradient: {
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+  },
+  liveStatusText: {
+    color: '#FFFFFF',
+    fontSize: 20,
     fontWeight: '800',
-    textAlign: 'center',
+    marginBottom: 6,
   },
-  liveStatusSubtitle: {
+  liveTimerText: {
     color: '#94A3B8',
-    fontSize: 13,
-    textAlign: 'center',
-    marginTop: 6,
-    paddingHorizontal: 24,
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 20,
   },
-  liveCaptionsBox: {
-    backgroundColor: 'rgba(255, 255, 255, 0.06)',
-    borderRadius: 16,
+  liveTranscriptBox: {
+    backgroundColor: 'rgba(30, 41, 59, 0.8)',
+    borderRadius: 14,
     padding: 14,
+    width: '100%',
+    marginBottom: 10,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-    gap: 8,
+    borderColor: '#334155',
   },
-  captionUserText: {
-    color: COLORS.white,
-    fontSize: 13,
-    lineHeight: 18,
+  liveAiTranscriptBox: {
+    borderColor: '#38BDF8',
   },
-  captionAiText: {
-    color: COLORS.white,
-    fontSize: 13,
-    lineHeight: 18,
+  liveTranscriptLabel: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#38BDF8',
+    marginBottom: 4,
   },
-  liveControlsRow: {
-    flexDirection: 'row',
+  liveTranscriptText: {
+    fontSize: 14,
+    color: '#FFFFFF',
+    lineHeight: 20,
+  },
+  liveFooter: {
     alignItems: 'center',
-    justifyContent: 'space-around',
-    paddingVertical: 10,
   },
-  liveSecondaryBtn: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  liveMainMicBtn: {
+  liveMicBtn: {
     width: 76,
     height: 76,
     borderRadius: 38,
-    backgroundColor: '#0284C7',
+    backgroundColor: '#7C3AED',
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#0284C7',
+    shadowColor: '#7C3AED',
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.5,
-    shadowRadius: 12,
+    shadowRadius: 14,
     elevation: 8,
   },
-  liveMainMicBtnRecording: {
+  liveMicBtnActive: {
     backgroundColor: '#EF4444',
-    shadowColor: '#EF4444',
-  },
-  liveEndCallBtn: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: '#DC2626',
-    alignItems: 'center',
-    justifyContent: 'center',
   },
 });
