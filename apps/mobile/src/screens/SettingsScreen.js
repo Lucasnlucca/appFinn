@@ -9,6 +9,7 @@ import {
   Alert,
   StatusBar,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -16,7 +17,6 @@ import { COLORS } from '../theme/colors';
 import { useFinance } from '../context/FinanceContext';
 import {
   getAppwriteConfig,
-  saveAppwriteConfig,
   testAppwriteConnection,
 } from '../services/appwriteService';
 import {
@@ -26,6 +26,8 @@ import {
   setGeminiModel,
 } from '../services/geminiService';
 
+const finnLogoSource = require('../../assets/finn-logo.png');
+
 export default function SettingsScreen({ navigation }) {
   const insets = useSafeAreaInsets();
   const {
@@ -33,13 +35,18 @@ export default function SettingsScreen({ navigation }) {
     updateMembersNames,
     clearAllData,
     loadDemoData,
-    allTransactions,
     loggedInUser,
     logout,
+    activeMember,
+    switchActiveMember,
   } = useFinance();
 
-  const [user1, setUser1] = useState(members.user1);
-  const [user2, setUser2] = useState(members.user2);
+  // Estado dos accordions: inicialmente TODOS FECHADOS (null)
+  const [openSection, setOpenSection] = useState(null);
+
+  // Estados dos formulários internos
+  const [user1, setUser1] = useState(members?.user1 || 'Lucas');
+  const [user2, setUser2] = useState(members?.user2 || 'Veronica');
   const [savedNotice, setSavedNotice] = useState(false);
 
   // VPS Appwrite
@@ -58,18 +65,29 @@ export default function SettingsScreen({ navigation }) {
   }, []);
 
   const loadSettings = async () => {
-    const [cfg, key, model] = await Promise.all([
-      getAppwriteConfig(),
-      getGeminiApiKey(),
-      getGeminiModel(),
-    ]);
-    setAppwriteConfigState(cfg);
-    if (key) setGeminiKeyState(key);
-    if (model) setGeminiModelState(model);
+    try {
+      const [cfg, key, model] = await Promise.all([
+        getAppwriteConfig(),
+        getGeminiApiKey(),
+        getGeminiModel(),
+      ]);
+      setAppwriteConfigState(cfg);
+      if (key) setGeminiKeyState(key);
+      if (model) setGeminiModelState(model);
+    } catch (e) {
+      console.warn('Erro ao carregar configurações:', e);
+    }
+  };
+
+  const toggleSection = (sectionId) => {
+    setOpenSection((prev) => (prev === sectionId ? null : sectionId));
   };
 
   const handleSaveNames = () => {
-    updateMembersNames({ user1: user1.trim() || 'Lucas', user2: user2.trim() || 'Veronica' });
+    updateMembersNames({
+      user1: user1.trim() || 'Lucas',
+      user2: user2.trim() || 'Veronica',
+    });
     setSavedNotice(true);
     setTimeout(() => setSavedNotice(false), 2500);
   };
@@ -105,7 +123,10 @@ export default function SettingsScreen({ navigation }) {
           style: 'destructive',
           onPress: async () => {
             await clearAllData();
-            Alert.alert('Pronto!', 'O app agora está limpo para você e Veronica cadastrarem suas informações reais.');
+            Alert.alert(
+              'Pronto!',
+              'O app agora está limpo para você e Veronica cadastrarem suas informações reais.'
+            );
           },
         },
       ]
@@ -138,286 +159,602 @@ export default function SettingsScreen({ navigation }) {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      <StatusBar barStyle="light-content" backgroundColor={COLORS.bg} />
+      <StatusBar barStyle="dark-content" backgroundColor="#F7F5FC" />
 
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.headerTitle}>Configurações</Text>
-          <Text style={styles.headerSubtitle}>Casal, Banco VPS e Inteligência Artificial</Text>
+      {/* CABEÇALHO SUPERIOR COM LOGO FINN CENTRALIZADA */}
+      <View style={styles.topBar}>
+        <View style={styles.topLogoRow}>
+          <Image
+            source={finnLogoSource}
+            style={styles.topLogoIcon}
+            resizeMode="contain"
+          />
+          <Text style={styles.topLogoText}>FINN</Text>
         </View>
-        {loggedInUser && (
-          <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
-            <Ionicons name="log-out-outline" size={16} color={COLORS.expense} />
-            <Text style={styles.logoutBtnText}>Sair</Text>
-          </TouchableOpacity>
-        )}
       </View>
 
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 105 }]}
+        contentContainerStyle={[
+          styles.content,
+          { paddingBottom: insets.bottom + 105 },
+        ]}
       >
-        {/* CARD USUÁRIO LOGADO */}
-        {loggedInUser && (
-          <View style={styles.userBanner}>
-            <View style={styles.userAvatar}>
-              <Ionicons name="person" size={20} color={COLORS.primary} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.userNameText}>{loggedInUser.name} (Conectado)</Text>
-              <Text style={styles.userEmailText}>{loggedInUser.email}</Text>
-            </View>
-            <View style={styles.statusPill}>
-              <View style={styles.statusPillDot} />
-              <Text style={styles.statusPillText}>Ativo</Text>
-            </View>
-          </View>
-        )}
-
-        {/* MÓDULOS FINANCEIROS DO FINN */}
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <View style={[styles.iconCircle, { backgroundColor: 'rgba(124, 58, 237, 0.15)' }]}>
-              <Ionicons name="apps-outline" size={20} color="#7C3AED" />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.cardTitle}>Módulos Financeiros</Text>
-              <Text style={styles.cardSubtitle}>Faturas, Agenda do Mês e Open Finance</Text>
-            </View>
-          </View>
-
-          <View style={{ gap: 10, marginTop: 10 }}>
-            <TouchableOpacity
-              style={styles.moduleNavBtn}
-              activeOpacity={0.8}
-              onPress={() => navigation?.navigate?.('CardInvoices')}
-            >
-              <View style={[styles.moduleIconBox, { backgroundColor: '#EDE9FE' }]}>
-                <Ionicons name="card-outline" size={18} color="#7C3AED" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.moduleNavTitle}>Faturas dos Cartões</Text>
-                <Text style={styles.moduleNavSub}>A pagar e em aberto de Nubank, C6 e outros</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={16} color="#71717A" />
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.moduleNavBtn}
-              activeOpacity={0.8}
-              onPress={() => navigation?.navigate?.('MonthlyAgenda')}
-            >
-              <View style={[styles.moduleIconBox, { backgroundColor: '#DCFCE7' }]}>
-                <Ionicons name="calendar-outline" size={18} color="#16A34A" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.moduleNavTitle}>Agenda do Mês</Text>
-                <Text style={styles.moduleNavSub}>Mascote Feliz/Triste com contas pagas e a pagar</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={16} color="#71717A" />
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.moduleNavBtn}
-              activeOpacity={0.8}
-              onPress={() => navigation?.navigate?.('CardsAccounts')}
-            >
-              <View style={[styles.moduleIconBox, { backgroundColor: '#E0F2FE' }]}>
-                <Ionicons name="business-outline" size={18} color="#0284C7" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.moduleNavTitle}>Contas & Open Finance</Text>
-                <Text style={styles.moduleNavSub}>Ajuste manual de saldo e conexões bancárias</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={16} color="#71717A" />
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* 1. GOOGLE GEMINI AI CONFIG */}
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <View style={[styles.iconCircle, { backgroundColor: 'rgba(16, 185, 129, 0.15)' }]}>
-              <Ionicons name="sparkles" size={20} color={COLORS.primary} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.cardTitle}>Google Gemini AI (Multimodal)</Text>
-              <Text style={styles.cardSubtitle}>Leitura de Prints, Boletos PDF e Voz</Text>
-            </View>
-          </View>
-
-          <Text style={styles.label}>CHAVE DE API (GEMINI_API_KEY)</Text>
-          <View style={styles.inputWrap}>
-            <TextInput
-              style={styles.keyInput}
-              value={geminiKey}
-              onChangeText={setGeminiKeyState}
-              placeholder="Cole sua AI Studio API Key..."
-              placeholderTextColor={COLORS.textMuted}
-              secureTextEntry={!showGeminiKey}
-              autoCapitalize="none"
-            />
-            <TouchableOpacity onPress={() => setShowGeminiKey(!showGeminiKey)}>
-              <Ionicons
-                name={showGeminiKey ? 'eye-off-outline' : 'eye-outline'}
-                size={18}
-                color={COLORS.textMuted}
-              />
-            </TouchableOpacity>
-          </View>
-
-          <Text style={styles.label}>MODELO DO GEMINI</Text>
-          <View style={styles.modelRow}>
-            {['gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-3.8-flash'].map((m) => (
-              <TouchableOpacity
-                key={m}
-                style={[styles.modelBtn, geminiModel === m && styles.modelBtnActive]}
-                onPress={() => setGeminiModelState(m)}
-              >
-                <Text style={[styles.modelBtnText, geminiModel === m && styles.modelBtnTextActive]}>
-                  {m.replace('gemini-', '')}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          <TouchableOpacity style={styles.saveBtn} onPress={handleSaveGemini}>
-            <Text style={styles.saveBtnText}>
-              {geminiSavedNotice ? '✓ Chave Salva com Sucesso!' : 'Salvar Configuração Gemini'}
+        {/* TÍTULO DA PÁGINA "MAIS" E BOTÃO SAIR */}
+        <View style={styles.pageHeaderRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.pageTitle}>Mais</Text>
+            <Text style={styles.pageSubtitle}>
+              Configurações, integrações e preferências do FINN
             </Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* 2. APPWRITE VPS CLOUD */}
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <View style={[styles.iconCircle, { backgroundColor: 'rgba(59, 130, 246, 0.15)' }]}>
-              <Ionicons name="server" size={20} color={COLORS.info} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.cardTitle}>Appwrite VPS (Nuvem Privada)</Text>
-              <Text style={styles.cardSubtitle}>Sincronização em tempo real do casal</Text>
-            </View>
           </View>
 
-          <View style={styles.vpsInfoBox}>
-            <Text style={styles.vpsLabel}>ENDPOINT VPS:</Text>
-            <Text style={styles.vpsValue} numberOfLines={1}>
-              {appwriteConfig?.endpoint || 'https://bancosupa-appwrite.grtbdz.easypanel.host/v1'}
-            </Text>
-
-            <Text style={[styles.vpsLabel, { marginTop: 8 }]}>PROJECT ID:</Text>
-            <Text style={styles.vpsValue}>{appwriteConfig?.projectId || '6a6cac620021f4c64b3f'}</Text>
-          </View>
-
-          {/* STATUS DO PING */}
-          {vpsPingStatus && (
-            <View
-              style={[
-                styles.pingResultBox,
-                vpsPingStatus.success ? styles.pingSuccess : styles.pingError,
-              ]}
+          {loggedInUser && (
+            <TouchableOpacity
+              style={styles.logoutBtn}
+              onPress={handleLogout}
+              activeOpacity={0.75}
             >
-              <Ionicons
-                name={vpsPingStatus.success ? 'checkmark-circle' : 'alert-circle'}
-                size={18}
-                color={vpsPingStatus.success ? COLORS.primary : COLORS.expense}
-              />
-              <Text
-                style={[
-                  styles.pingResultText,
-                  { color: vpsPingStatus.success ? COLORS.primary : COLORS.expense },
-                ]}
-              >
-                {vpsPingStatus.success
-                  ? `VPS Conectada (${vpsPingStatus.latencyMs}ms) • ${vpsPingStatus.version}`
-                  : `Falha: ${vpsPingStatus.error}`}
-              </Text>
-            </View>
+              <Ionicons name="log-out-outline" size={17} color="#F43F5E" />
+              <Text style={styles.logoutBtnText}>Sair</Text>
+            </TouchableOpacity>
           )}
+        </View>
 
-          <TouchableOpacity
-            style={styles.vpsTestBtn}
-            onPress={handleTestVps}
-            disabled={testingVps}
-          >
-            {testingVps ? (
-              <ActivityIndicator size="small" color={COLORS.info} />
-            ) : (
-              <>
-                <Ionicons name="wifi-outline" size={16} color={COLORS.info} />
-                <Text style={styles.vpsTestBtnText}>Testar Conexão com VPS</Text>
-              </>
+        {/* LISTA DE ACCORDIONS (TODOS FECHADOS POR PADRÃO) */}
+        <View style={styles.accordionList}>
+          {/* ================================================================= */}
+          {/* 1. PERFIL E CONTA */}
+          {/* ================================================================= */}
+          <View style={styles.accordionCard}>
+            <TouchableOpacity
+              style={[
+                styles.accordionHeader,
+                openSection === 'perfil' && styles.accordionHeaderOpen,
+              ]}
+              activeOpacity={0.8}
+              onPress={() => toggleSection('perfil')}
+            >
+              <View style={[styles.accordionIconBox, { backgroundColor: '#EDE9FE' }]}>
+                <Ionicons name="people" size={20} color="#7C3AED" />
+              </View>
+              <View style={styles.accordionHeaderInfo}>
+                <Text style={styles.accordionTitle}>Perfil e Conta</Text>
+                <Text style={styles.accordionSubtitle}>
+                  Minha conta, nomes do casal e identificações
+                </Text>
+              </View>
+              <Ionicons
+                name={openSection === 'perfil' ? 'chevron-up' : 'chevron-down'}
+                size={20}
+                color={openSection === 'perfil' ? '#7C3AED' : '#71717A'}
+              />
+            </TouchableOpacity>
+
+            {openSection === 'perfil' && (
+              <View style={styles.accordionBody}>
+                {/* Banner do Usuário */}
+                {loggedInUser && (
+                  <View style={styles.userBanner}>
+                    <View style={styles.userAvatar}>
+                      <Ionicons name="person" size={20} color="#7C3AED" />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.userNameText}>
+                        {loggedInUser.name} (Conectado)
+                      </Text>
+                      <Text style={styles.userEmailText}>{loggedInUser.email}</Text>
+                    </View>
+                    <View style={styles.statusPill}>
+                      <View style={styles.statusPillDot} />
+                      <Text style={styles.statusPillText}>Ativo</Text>
+                    </View>
+                  </View>
+                )}
+
+                {/* Alternador de Membro Ativo */}
+                <Text style={styles.inputLabel}>VISUALIZAÇÃO ATIVA NO APP</Text>
+                <View style={styles.memberPillsRow}>
+                  {['Casal', members?.user1 || 'Lucas', members?.user2 || 'Veronica'].map(
+                    (m) => {
+                      const isActive = activeMember === m;
+                      return (
+                        <TouchableOpacity
+                          key={m}
+                          style={[
+                            styles.memberPill,
+                            isActive && styles.memberPillActive,
+                          ]}
+                          onPress={() => switchActiveMember?.(m)}
+                        >
+                          <Text
+                            style={[
+                              styles.memberPillText,
+                              isActive && styles.memberPillTextActive,
+                            ]}
+                          >
+                            {m}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    }
+                  )}
+                </View>
+
+                {/* Edição de Nomes do Casal */}
+                <Text style={styles.inputLabel}>NOMES DO CASAL</Text>
+                <TextInput
+                  style={styles.input}
+                  value={user1}
+                  onChangeText={setUser1}
+                  placeholder="Nome do usuário 1"
+                  placeholderTextColor="#9CA3AF"
+                />
+                <TextInput
+                  style={styles.input}
+                  value={user2}
+                  onChangeText={setUser2}
+                  placeholder="Nome da esposa/parceira"
+                  placeholderTextColor="#9CA3AF"
+                />
+
+                <TouchableOpacity
+                  style={styles.primaryBtn}
+                  onPress={handleSaveNames}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.primaryBtnText}>
+                    {savedNotice ? '✓ Salvo com sucesso!' : 'Salvar Nomes'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
             )}
-          </TouchableOpacity>
-        </View>
-
-        {/* 3. NOMES DO CASAL */}
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <View style={styles.iconCircle}>
-              <Ionicons name="people" size={20} color={COLORS.primary} />
-            </View>
-            <View>
-              <Text style={styles.cardTitle}>Nomes do Casal</Text>
-              <Text style={styles.cardSubtitle}>Identificação nas movimentações</Text>
-            </View>
           </View>
 
-          <Text style={styles.label}>Você</Text>
-          <TextInput
-            style={styles.input}
-            value={user1}
-            onChangeText={setUser1}
-            placeholder="Nome (Ex: Henrique)"
-            placeholderTextColor={COLORS.textMuted}
-          />
+          {/* ================================================================= */}
+          {/* 2. MÓDULOS FINANCEIROS */}
+          {/* ================================================================= */}
+          <View style={styles.accordionCard}>
+            <TouchableOpacity
+              style={[
+                styles.accordionHeader,
+                openSection === 'modulos' && styles.accordionHeaderOpen,
+              ]}
+              activeOpacity={0.8}
+              onPress={() => toggleSection('modulos')}
+            >
+              <View style={[styles.accordionIconBox, { backgroundColor: '#EDE9FE' }]}>
+                <Ionicons name="layers" size={20} color="#7C3AED" />
+              </View>
+              <View style={styles.accordionHeaderInfo}>
+                <Text style={styles.accordionTitle}>Módulos Financeiros</Text>
+                <Text style={styles.accordionSubtitle}>
+                  Cartões, agenda do mês e contas bancárias
+                </Text>
+              </View>
+              <Ionicons
+                name={openSection === 'modulos' ? 'chevron-up' : 'chevron-down'}
+                size={20}
+                color={openSection === 'modulos' ? '#7C3AED' : '#71717A'}
+              />
+            </TouchableOpacity>
 
-          <Text style={styles.label}>Sua Esposa</Text>
-          <TextInput
-            style={styles.input}
-            value={user2}
-            onChangeText={setUser2}
-            placeholder="Nome (Ex: Veronica)"
-            placeholderTextColor={COLORS.textMuted}
-          />
+            {openSection === 'modulos' && (
+              <View style={styles.accordionBody}>
+                {/* SUBMENU 1: FATURAS DOS CARTÕES */}
+                <TouchableOpacity
+                  style={styles.submenuItem}
+                  activeOpacity={0.75}
+                  onPress={() => navigation?.navigate?.('CardInvoices')}
+                >
+                  <View
+                    style={[
+                      styles.submenuIconBox,
+                      { backgroundColor: '#EDE9FE' },
+                    ]}
+                  >
+                    <Ionicons name="card-outline" size={18} color="#7C3AED" />
+                  </View>
+                  <View style={styles.submenuInfo}>
+                    <Text style={styles.submenuTitle}>Faturas dos Cartões</Text>
+                    <Text style={styles.submenuSub}>
+                      A pagar e em aberto de Nubank, C6 e outros
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
+                </TouchableOpacity>
 
-          <TouchableOpacity style={styles.saveBtn} onPress={handleSaveNames}>
-            <Text style={styles.saveBtnText}>
-              {savedNotice ? '✓ Salvo com sucesso!' : 'Atualizar Nomes'}
-            </Text>
-          </TouchableOpacity>
-        </View>
+                {/* SUBMENU 2: AGENDA DO MÊS */}
+                <TouchableOpacity
+                  style={styles.submenuItem}
+                  activeOpacity={0.75}
+                  onPress={() => navigation?.navigate?.('MonthlyAgenda')}
+                >
+                  <View
+                    style={[
+                      styles.submenuIconBox,
+                      { backgroundColor: '#DCFCE7' },
+                    ]}
+                  >
+                    <Ionicons name="calendar-outline" size={18} color="#16A34A" />
+                  </View>
+                  <View style={styles.submenuInfo}>
+                    <Text style={styles.submenuTitle}>Agenda do Mês</Text>
+                    <Text style={styles.submenuSub}>
+                      Mascote Feliz/Triste com contas pagas e a pagar
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
+                </TouchableOpacity>
 
-        {/* 4. DADOS & INICIALIZAÇÃO REAL */}
-        <View style={[styles.card, { borderColor: 'rgba(244, 63, 94, 0.3)' }]}>
-          <View style={styles.cardHeader}>
-            <View style={[styles.iconCircle, { backgroundColor: 'rgba(244, 63, 94, 0.15)' }]}>
-              <Ionicons name="trash-bin-outline" size={20} color={COLORS.expense} />
-            </View>
-            <View>
-              <Text style={[styles.cardTitle, { color: COLORS.expense }]}>Dados & Informações Reais</Text>
-              <Text style={styles.cardSubtitle}>Remova dados de teste ou recarregue exemplos</Text>
-            </View>
+                {/* SUBMENU 3: CONTAS & OPEN FINANCE */}
+                <TouchableOpacity
+                  style={styles.submenuItem}
+                  activeOpacity={0.75}
+                  onPress={() => navigation?.navigate?.('CardsAccounts')}
+                >
+                  <View
+                    style={[
+                      styles.submenuIconBox,
+                      { backgroundColor: '#E0F2FE' },
+                    ]}
+                  >
+                    <Ionicons name="business-outline" size={18} color="#0284C7" />
+                  </View>
+                  <View style={styles.submenuInfo}>
+                    <Text style={styles.submenuTitle}>Contas & Open Finance</Text>
+                    <Text style={styles.submenuSub}>
+                      Ajuste manual de saldo e conexões bancárias
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
 
-          <TouchableOpacity style={styles.dangerBtn} onPress={handleReset}>
-            <Ionicons name="trash-outline" size={18} color={COLORS.expense} />
-            <Text style={styles.dangerBtnText}>Limpar Tudo (Usar Dados Reais)</Text>
-          </TouchableOpacity>
+          {/* ================================================================= */}
+          {/* 3. INTELIGÊNCIA ARTIFICIAL */}
+          {/* ================================================================= */}
+          <View style={styles.accordionCard}>
+            <TouchableOpacity
+              style={[
+                styles.accordionHeader,
+                openSection === 'ia' && styles.accordionHeaderOpen,
+              ]}
+              activeOpacity={0.8}
+              onPress={() => toggleSection('ia')}
+            >
+              <View style={[styles.accordionIconBox, { backgroundColor: '#EDE9FE' }]}>
+                <Ionicons name="sparkles" size={20} color="#7C3AED" />
+              </View>
+              <View style={styles.accordionHeaderInfo}>
+                <Text style={styles.accordionTitle}>Inteligência Artificial</Text>
+                <Text style={styles.accordionSubtitle}>
+                  Google Gemini AI (Multimodal) e leitura de documentos
+                </Text>
+              </View>
+              <Ionicons
+                name={openSection === 'ia' ? 'chevron-up' : 'chevron-down'}
+                size={20}
+                color={openSection === 'ia' ? '#7C3AED' : '#71717A'}
+              />
+            </TouchableOpacity>
 
-          <TouchableOpacity
-            style={[styles.dangerBtn, { backgroundColor: COLORS.surfaceLight, borderColor: COLORS.surfaceBorder, marginTop: 10 }]}
-            onPress={handleLoadDemo}
-          >
-            <Ionicons name="flask-outline" size={18} color={COLORS.navy} />
-            <Text style={[styles.dangerBtnText, { color: COLORS.navy }]}>Carregar Dados de Exemplo (Preview)</Text>
-          </TouchableOpacity>
+            {openSection === 'ia' && (
+              <View style={styles.accordionBody}>
+                {/* Link para abrir o Chat com a IA */}
+                <TouchableOpacity
+                  style={[styles.submenuItem, { marginBottom: 14 }]}
+                  activeOpacity={0.75}
+                  onPress={() => navigation?.navigate?.('FinnAI')}
+                >
+                  <View
+                    style={[
+                      styles.submenuIconBox,
+                      { backgroundColor: '#EDE9FE' },
+                    ]}
+                  >
+                    <Ionicons
+                      name="chatbubble-ellipses-outline"
+                      size={18}
+                      color="#7C3AED"
+                    />
+                  </View>
+                  <View style={styles.submenuInfo}>
+                    <Text style={styles.submenuTitle}>Abrir FINN AI</Text>
+                    <Text style={styles.submenuSub}>
+                      Conversar com o assistente, enviar áudios e comprovantes
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
+                </TouchableOpacity>
+
+                {/* Configuração da Chave */}
+                <Text style={styles.inputLabel}>CHAVE DE API (GEMINI_API_KEY)</Text>
+                <View style={styles.keyInputWrap}>
+                  <TextInput
+                    style={styles.keyInput}
+                    value={geminiKey}
+                    onChangeText={setGeminiKeyState}
+                    placeholder="Cole sua AI Studio API Key..."
+                    placeholderTextColor="#9CA3AF"
+                    secureTextEntry={!showGeminiKey}
+                    autoCapitalize="none"
+                  />
+                  <TouchableOpacity
+                    onPress={() => setShowGeminiKey(!showGeminiKey)}
+                  >
+                    <Ionicons
+                      name={showGeminiKey ? 'eye-off-outline' : 'eye-outline'}
+                      size={18}
+                      color="#9CA3AF"
+                    />
+                  </TouchableOpacity>
+                </View>
+
+                {/* Seleção do Modelo */}
+                <Text style={styles.inputLabel}>MODELO DO GEMINI</Text>
+                <View style={styles.modelRow}>
+                  {[
+                    'gemini-3.5-flash',
+                    'gemini-3.5-flash-lite',
+                    'gemini-3.8-flash',
+                  ].map((m) => (
+                    <TouchableOpacity
+                      key={m}
+                      style={[
+                        styles.modelBtn,
+                        geminiModel === m && styles.modelBtnActive,
+                      ]}
+                      onPress={() => setGeminiModelState(m)}
+                    >
+                      <Text
+                        style={[
+                          styles.modelBtnText,
+                          geminiModel === m && styles.modelBtnTextActive,
+                        ]}
+                      >
+                        {m.replace('gemini-', '')}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                <TouchableOpacity
+                  style={styles.primaryBtn}
+                  onPress={handleSaveGemini}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.primaryBtnText}>
+                    {geminiSavedNotice
+                      ? '✓ Chave Salva com Sucesso!'
+                      : 'Salvar Configuração Gemini'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+
+          {/* ================================================================= */}
+          {/* 4. INTEGRAÇÕES E INFRAESTRUTURA */}
+          {/* ================================================================= */}
+          <View style={styles.accordionCard}>
+            <TouchableOpacity
+              style={[
+                styles.accordionHeader,
+                openSection === 'infra' && styles.accordionHeaderOpen,
+              ]}
+              activeOpacity={0.8}
+              onPress={() => toggleSection('infra')}
+            >
+              <View style={[styles.accordionIconBox, { backgroundColor: '#E0F2FE' }]}>
+                <Ionicons name="server" size={20} color="#0284C7" />
+              </View>
+              <View style={styles.accordionHeaderInfo}>
+                <Text style={styles.accordionTitle}>
+                  Integrações e Infraestrutura
+                </Text>
+                <Text style={styles.accordionSubtitle}>
+                  Appwrite VPS (Nuvem Privada) e sincronização
+                </Text>
+              </View>
+              <Ionicons
+                name={openSection === 'infra' ? 'chevron-up' : 'chevron-down'}
+                size={20}
+                color={openSection === 'infra' ? '#7C3AED' : '#71717A'}
+              />
+            </TouchableOpacity>
+
+            {openSection === 'infra' && (
+              <View style={styles.accordionBody}>
+                <View style={styles.vpsInfoBox}>
+                  <Text style={styles.vpsLabel}>ENDPOINT VPS:</Text>
+                  <Text style={styles.vpsValue} numberOfLines={1}>
+                    {appwriteConfig?.endpoint ||
+                      'https://bancosupa-appwrite.grtbdz.easypanel.host/v1'}
+                  </Text>
+
+                  <Text style={[styles.vpsLabel, { marginTop: 8 }]}>
+                    PROJECT ID:
+                  </Text>
+                  <Text style={styles.vpsValue}>
+                    {appwriteConfig?.projectId || '6a6cac620021f4c64b3f'}
+                  </Text>
+                </View>
+
+                {/* Status do Ping */}
+                {vpsPingStatus && (
+                  <View
+                    style={[
+                      styles.pingResultBox,
+                      vpsPingStatus.success
+                        ? styles.pingSuccess
+                        : styles.pingError,
+                    ]}
+                  >
+                    <Ionicons
+                      name={
+                        vpsPingStatus.success
+                          ? 'checkmark-circle'
+                          : 'alert-circle'
+                      }
+                      size={18}
+                      color={vpsPingStatus.success ? '#16A34A' : '#EF4444'}
+                    />
+                    <Text
+                      style={[
+                        styles.pingResultText,
+                        {
+                          color: vpsPingStatus.success ? '#16A34A' : '#EF4444',
+                        },
+                      ]}
+                    >
+                      {vpsPingStatus.success
+                        ? `VPS Conectada (${vpsPingStatus.latencyMs}ms) • ${vpsPingStatus.version}`
+                        : `Falha: ${vpsPingStatus.error}`}
+                    </Text>
+                  </View>
+                )}
+
+                <TouchableOpacity
+                  style={styles.vpsTestBtn}
+                  onPress={handleTestVps}
+                  disabled={testingVps}
+                  activeOpacity={0.8}
+                >
+                  {testingVps ? (
+                    <ActivityIndicator size="small" color="#0284C7" />
+                  ) : (
+                    <>
+                      <Ionicons
+                        name="wifi-outline"
+                        size={16}
+                        color="#0284C7"
+                      />
+                      <Text style={styles.vpsTestBtnText}>
+                        Testar Conexão com VPS
+                      </Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+
+          {/* ================================================================= */}
+          {/* 5. DADOS E MANUTENÇÃO */}
+          {/* ================================================================= */}
+          <View style={styles.accordionCard}>
+            <TouchableOpacity
+              style={[
+                styles.accordionHeader,
+                openSection === 'dados' && styles.accordionHeaderOpen,
+              ]}
+              activeOpacity={0.8}
+              onPress={() => toggleSection('dados')}
+            >
+              <View style={[styles.accordionIconBox, { backgroundColor: '#EDE9FE' }]}>
+                <Ionicons name="shield-outline" size={20} color="#7C3AED" />
+              </View>
+              <View style={styles.accordionHeaderInfo}>
+                <Text style={styles.accordionTitle}>Dados e Manutenção</Text>
+                <Text style={styles.accordionSubtitle}>
+                  Limpeza, carga de exemplos e testes de dados
+                </Text>
+              </View>
+              <Ionicons
+                name={openSection === 'dados' ? 'chevron-up' : 'chevron-down'}
+                size={20}
+                color={openSection === 'dados' ? '#7C3AED' : '#71717A'}
+              />
+            </TouchableOpacity>
+
+            {openSection === 'dados' && (
+              <View style={styles.accordionBody}>
+                <TouchableOpacity
+                  style={styles.dangerBtn}
+                  onPress={handleReset}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="trash-outline" size={18} color="#EF4444" />
+                  <Text style={styles.dangerBtnText}>
+                    Limpar Tudo (Usar Dados Reais)
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.demoBtn}
+                  onPress={handleLoadDemo}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="flask-outline" size={18} color="#7C3AED" />
+                  <Text style={styles.demoBtnText}>
+                    Carregar Dados de Exemplo (Preview)
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+
+          {/* ================================================================= */}
+          {/* 6. SOBRE O FINN */}
+          {/* ================================================================= */}
+          <View style={styles.accordionCard}>
+            <TouchableOpacity
+              style={[
+                styles.accordionHeader,
+                openSection === 'sobre' && styles.accordionHeaderOpen,
+              ]}
+              activeOpacity={0.8}
+              onPress={() => toggleSection('sobre')}
+            >
+              <View style={[styles.accordionIconBox, { backgroundColor: '#EDE9FE' }]}>
+                <Ionicons
+                  name="information-circle-outline"
+                  size={20}
+                  color="#7C3AED"
+                />
+              </View>
+              <View style={styles.accordionHeaderInfo}>
+                <Text style={styles.accordionTitle}>Sobre o FINN</Text>
+                <Text style={styles.accordionSubtitle}>
+                  Versão, informações e créditos
+                </Text>
+              </View>
+              <Ionicons
+                name={openSection === 'sobre' ? 'chevron-up' : 'chevron-down'}
+                size={20}
+                color={openSection === 'sobre' ? '#7C3AED' : '#71717A'}
+              />
+            </TouchableOpacity>
+
+            {openSection === 'sobre' && (
+              <View style={styles.accordionBody}>
+                <View style={styles.aboutBox}>
+                  <Text style={styles.aboutTitle}>
+                    FINN AI • Gestor Financeiro Inteligente
+                  </Text>
+                  <Text style={styles.aboutText}>
+                    Desenvolvido com tecnologia de ponta para acompanhamento e
+                    sincronização de finanças do casal.
+                  </Text>
+                  <View style={styles.aboutTagRow}>
+                    <View style={styles.aboutTag}>
+                      <Text style={styles.aboutTagText}>Expo SDK 58</Text>
+                    </View>
+                    <View style={styles.aboutTag}>
+                      <Text style={styles.aboutTagText}>Appwrite Cloud VPS</Text>
+                    </View>
+                    <View style={styles.aboutTag}>
+                      <Text style={styles.aboutTagText}>Gemini AI 3.5</Text>
+                    </View>
+                  </View>
+                </View>
+              </View>
+            )}
+          </View>
         </View>
-
-        <Text style={styles.versionText}>
-          FINN AI • Desenvolvido para Lucas & Veronica • Expo Go SDK 58
-        </Text>
       </ScrollView>
     </View>
   );
@@ -426,81 +763,188 @@ export default function SettingsScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.bg,
+    backgroundColor: '#F7F5FC',
   },
-  header: {
+  topBar: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+  },
+  topLogoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+  },
+  topLogoIcon: {
+    width: 26,
+    height: 26,
+  },
+  topLogoText: {
+    fontFamily: 'Audiowide',
+    fontSize: 20,
+    color: '#18181B',
+    letterSpacing: 1.2,
+  },
+  content: {
+    paddingHorizontal: 20,
+    paddingTop: 4,
+  },
+  pageHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.surfaceBorder,
-    backgroundColor: COLORS.surface,
+    alignItems: 'flex-start',
+    marginBottom: 20,
   },
-  headerTitle: {
-    color: COLORS.text,
-    fontSize: 18,
+  pageTitle: {
+    fontSize: 26,
     fontWeight: '800',
+    color: '#18181B',
+    letterSpacing: -0.3,
   },
-  headerSubtitle: {
-    color: COLORS.textSecondary,
-    fontSize: 11,
-    marginTop: 2,
+  pageSubtitle: {
+    fontSize: 13,
+    color: '#71717A',
+    marginTop: 3,
+    lineHeight: 18,
   },
   logoutBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    backgroundColor: 'rgba(244, 63, 94, 0.12)',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
+    gap: 5,
+    backgroundColor: 'rgba(244, 63, 94, 0.08)',
     borderWidth: 1,
     borderColor: 'rgba(244, 63, 94, 0.25)',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 10,
+    marginTop: 2,
   },
   logoutBtnText: {
-    color: COLORS.expense,
-    fontSize: 12,
+    color: '#F43F5E',
+    fontSize: 13,
     fontWeight: '700',
   },
-  content: {
+  accordionList: {
+    gap: 12,
+  },
+  accordionCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#EFEAF8',
+    overflow: 'hidden',
+    shadowColor: '#4C1D95',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  accordionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: 16,
-    paddingTop: 16,
-    gap: 16,
+    paddingVertical: 16,
+    backgroundColor: '#FFFFFF',
+    gap: 14,
+  },
+  accordionHeaderOpen: {
+    backgroundColor: '#EDE7FA',
+  },
+  accordionIconBox: {
+    width: 42,
+    height: 42,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  accordionHeaderInfo: {
+    flex: 1,
+  },
+  accordionTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#18181B',
+    marginBottom: 2,
+  },
+  accordionSubtitle: {
+    fontSize: 12,
+    color: '#71717A',
+    fontWeight: '500',
+    lineHeight: 16,
+  },
+  accordionBody: {
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#EFEAF8',
+    backgroundColor: '#FFFFFF',
+  },
+  submenuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#EFEAF8',
+    marginBottom: 8,
+    gap: 12,
+  },
+  submenuIconBox: {
+    width: 38,
+    height: 38,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  submenuInfo: {
+    flex: 1,
+  },
+  submenuTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#18181B',
+  },
+  submenuSub: {
+    fontSize: 11,
+    color: '#71717A',
+    marginTop: 2,
   },
   userBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.surface,
-    padding: 14,
-    borderRadius: 16,
+    backgroundColor: '#F9FAFB',
+    padding: 12,
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: COLORS.surfaceBorder,
+    borderColor: '#E5E7EB',
     gap: 12,
+    marginBottom: 14,
   },
   userAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 14,
-    backgroundColor: COLORS.primaryLight,
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: '#EDE9FE',
     alignItems: 'center',
     justifyContent: 'center',
   },
   userNameText: {
-    color: COLORS.text,
+    color: '#18181B',
     fontSize: 14,
     fontWeight: '700',
   },
   userEmailText: {
-    color: COLORS.textSecondary,
+    color: '#71717A',
     fontSize: 12,
   },
   statusPill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    backgroundColor: '#DCFCE7',
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 8,
@@ -509,77 +953,69 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: COLORS.primary,
+    backgroundColor: '#16A34A',
   },
   statusPillText: {
-    color: COLORS.primary,
-    fontSize: 10,
+    color: '#16A34A',
+    fontSize: 11,
     fontWeight: '700',
   },
-  card: {
-    backgroundColor: COLORS.surface,
-    borderRadius: 20,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: COLORS.surfaceBorder,
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginBottom: 16,
-  },
-  iconCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 14,
-    backgroundColor: COLORS.primaryLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  cardTitle: {
-    color: COLORS.text,
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  cardSubtitle: {
-    color: COLORS.textMuted,
-    fontSize: 12,
-    marginTop: 2,
-  },
-  label: {
-    color: COLORS.textMuted,
+  inputLabel: {
+    color: '#4B5563',
     fontSize: 11,
     fontWeight: '800',
-    letterSpacing: 0.8,
+    letterSpacing: 0.6,
     marginBottom: 6,
     marginTop: 8,
   },
+  memberPillsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 12,
+  },
+  memberPill: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 10,
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+  },
+  memberPillActive: {
+    backgroundColor: '#7C3AED',
+  },
+  memberPillText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#4B5563',
+  },
+  memberPillTextActive: {
+    color: '#FFFFFF',
+  },
   input: {
-    backgroundColor: COLORS.surfaceLight,
+    backgroundColor: '#F9FAFB',
     borderRadius: 12,
     paddingHorizontal: 14,
-    paddingVertical: 12,
-    color: COLORS.text,
+    paddingVertical: 11,
+    color: '#18181B',
     fontSize: 14,
     borderWidth: 1,
-    borderColor: COLORS.surfaceBorder,
+    borderColor: '#E5E7EB',
     marginBottom: 10,
   },
-  inputWrap: {
+  keyInputWrap: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.surfaceLight,
+    backgroundColor: '#F9FAFB',
     borderRadius: 12,
     paddingHorizontal: 14,
-    height: 48,
+    height: 46,
     borderWidth: 1,
-    borderColor: COLORS.surfaceBorder,
-    marginBottom: 10,
+    borderColor: '#E5E7EB',
+    marginBottom: 12,
   },
   keyInput: {
     flex: 1,
-    color: COLORS.text,
+    color: '#18181B',
     fontSize: 14,
   },
   modelRow: {
@@ -589,54 +1025,54 @@ const styles = StyleSheet.create({
   },
   modelBtn: {
     flex: 1,
-    paddingVertical: 10,
+    paddingVertical: 9,
     alignItems: 'center',
     borderRadius: 10,
-    backgroundColor: COLORS.surfaceLight,
+    backgroundColor: '#F9FAFB',
     borderWidth: 1,
-    borderColor: COLORS.surfaceBorder,
+    borderColor: '#E5E7EB',
   },
   modelBtnActive: {
-    backgroundColor: COLORS.primaryLight,
-    borderColor: COLORS.primary,
+    backgroundColor: '#EDE9FE',
+    borderColor: '#7C3AED',
   },
   modelBtnText: {
-    color: COLORS.textSecondary,
-    fontSize: 12,
+    color: '#4B5563',
+    fontSize: 11,
     fontWeight: '600',
   },
   modelBtnTextActive: {
-    color: COLORS.primary,
-    fontWeight: '700',
+    color: '#7C3AED',
+    fontWeight: '800',
   },
-  saveBtn: {
-    backgroundColor: COLORS.primary,
+  primaryBtn: {
+    backgroundColor: '#7C3AED',
     borderRadius: 12,
     paddingVertical: 12,
     alignItems: 'center',
-    marginTop: 6,
+    marginTop: 4,
   },
-  saveBtnText: {
-    color: COLORS.white,
+  primaryBtnText: {
+    color: '#FFFFFF',
     fontWeight: '700',
     fontSize: 14,
   },
   vpsInfoBox: {
-    backgroundColor: COLORS.surfaceLight,
+    backgroundColor: '#F9FAFB',
     padding: 12,
     borderRadius: 12,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: COLORS.surfaceBorder,
+    borderColor: '#E5E7EB',
   },
   vpsLabel: {
-    color: COLORS.textMuted,
+    color: '#6B7280',
     fontSize: 10,
     fontWeight: '800',
     letterSpacing: 0.5,
   },
   vpsValue: {
-    color: COLORS.text,
+    color: '#18181B',
     fontSize: 12,
     fontWeight: '600',
     marginTop: 2,
@@ -651,12 +1087,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   pingSuccess: {
-    backgroundColor: 'rgba(16, 185, 129, 0.1)',
-    borderColor: 'rgba(16, 185, 129, 0.3)',
+    backgroundColor: '#F0FDF4',
+    borderColor: '#BBF7D0',
   },
   pingError: {
-    backgroundColor: 'rgba(244, 63, 94, 0.1)',
-    borderColor: 'rgba(244, 63, 94, 0.3)',
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FECACA',
   },
   pingResultText: {
     fontSize: 12,
@@ -668,14 +1104,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    backgroundColor: 'rgba(59, 130, 246, 0.12)',
+    backgroundColor: '#E0F2FE',
     borderRadius: 12,
     paddingVertical: 12,
     borderWidth: 1,
-    borderColor: 'rgba(59, 130, 246, 0.3)',
+    borderColor: '#BAE6FD',
   },
   vpsTestBtnText: {
-    color: COLORS.info,
+    color: '#0284C7',
     fontWeight: '700',
     fontSize: 13,
   },
@@ -684,49 +1120,67 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    backgroundColor: 'rgba(244, 63, 94, 0.12)',
+    backgroundColor: '#FEF2F2',
     borderWidth: 1,
-    borderColor: 'rgba(244, 63, 94, 0.3)',
+    borderColor: '#FECACA',
+    borderRadius: 12,
+    paddingVertical: 12,
+    marginBottom: 10,
+  },
+  dangerBtnText: {
+    color: '#EF4444',
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  demoBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#EDE9FE',
+    borderWidth: 1,
+    borderColor: '#DDD6FE',
     borderRadius: 12,
     paddingVertical: 12,
   },
-  dangerBtnText: {
-    color: COLORS.expense,
+  demoBtnText: {
+    color: '#7C3AED',
     fontWeight: '700',
     fontSize: 14,
   },
-  moduleNavBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.surfaceLight,
-    padding: 12,
-    borderRadius: 14,
+  aboutBox: {
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+    padding: 14,
     borderWidth: 1,
-    borderColor: COLORS.surfaceBorder,
-    gap: 12,
+    borderColor: '#E5E7EB',
   },
-  moduleIconBox: {
-    width: 38,
-    height: 38,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  moduleNavTitle: {
+  aboutTitle: {
     fontSize: 14,
+    fontWeight: '800',
+    color: '#18181B',
+    marginBottom: 4,
+  },
+  aboutText: {
+    fontSize: 12,
+    color: '#6B7280',
+    lineHeight: 18,
+    marginBottom: 10,
+  },
+  aboutTagRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  aboutTag: {
+    backgroundColor: '#EDE9FE',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  aboutTagText: {
+    fontSize: 11,
     fontWeight: '700',
-    color: COLORS.text,
-  },
-  moduleNavSub: {
-    fontSize: 11,
-    color: COLORS.textMuted,
-    marginTop: 2,
-  },
-  versionText: {
-    textAlign: 'center',
-    color: COLORS.textMuted,
-    fontSize: 11,
-    marginTop: 8,
-    marginBottom: 16,
+    color: '#7C3AED',
   },
 });

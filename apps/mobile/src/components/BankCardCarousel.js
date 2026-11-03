@@ -167,3 +167,4 @@ const styles = StyleSheet.create({
     backgroundColor: '#7C3AED',
   },
 });
+

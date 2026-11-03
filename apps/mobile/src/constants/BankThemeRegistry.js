@@ -338,3 +338,4 @@ export const ALL_BANK_THEMES = [
   BANK_THEMES.sicredi,
   BANK_THEMES.safra,
 ];
+
