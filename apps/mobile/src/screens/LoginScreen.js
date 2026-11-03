@@ -13,7 +13,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../theme/colors';
-import { loginWithEmail } from '../services/appwriteService';
+import { loginUser, registerUser } from '../services/apiService';
 import { useFinance } from '../context/FinanceContext';
 
 export default function LoginScreen({ onLoginSuccess }) {
@@ -24,14 +24,14 @@ export default function LoginScreen({ onLoginSuccess }) {
   const user2Name = members?.user2 || 'Veronica';
 
   const [selectedProfile, setSelectedProfile] = useState(user1Name);
-  const [email, setEmail] = useState(`${user1Name.toLowerCase()}@finn.local`);
-  const [password, setPassword] = useState('12345678');
+  const [email, setEmail] = useState(`${user1Name.toLowerCase()}@finn.app`);
+  const [password, setPassword] = useState('Password123!');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const handleProfileSelect = (name) => {
     setSelectedProfile(name);
-    setEmail(`${name.toLowerCase()}@finn.local`);
+    setEmail(`${name.toLowerCase()}@finn.app`);
   };
 
   const handleLogin = async () => {
@@ -42,12 +42,27 @@ export default function LoginScreen({ onLoginSuccess }) {
 
     setLoading(true);
     try {
-      const res = await loginWithEmail(email, password, selectedProfile);
-      if (res.success) {
+      let res;
+      try {
+        res = await loginUser(email.trim().toLowerCase(), password);
+      } catch (loginErr) {
+        // Se a conta ainda não existir no PostgreSQL da VPS, cria automaticamente
+        if (loginErr.status === 401 || loginErr.status === 404 || loginErr.message?.toLowerCase().includes('inválid')) {
+          res = await registerUser(
+            email.trim().toLowerCase(),
+            password,
+            selectedProfile
+          );
+        } else {
+          throw loginErr;
+        }
+      }
+
+      if (res?.user) {
         setLoggedInUser(res.user);
         if (onLoginSuccess) onLoginSuccess(res.user);
       } else {
-        Alert.alert('Erro ao entrar', res.error || 'Credenciais inválidas.');
+        Alert.alert('Erro ao entrar', 'Não foi possível validar suas credenciais.');
       }
     } catch (err) {
       Alert.alert('Falha na autenticação', err.message || 'Erro inesperado.');
@@ -71,7 +86,7 @@ export default function LoginScreen({ onLoginSuccess }) {
           <Text style={styles.appSubtitle}>Finanças Inteligentes para o Casal</Text>
           <View style={styles.vpsBadge}>
             <View style={styles.vpsDot} />
-            <Text style={styles.vpsBadgeText}>Appwrite VPS • Nuvem Privada</Text>
+            <Text style={styles.vpsBadgeText}>PostgreSQL 17 VPS • Nuvem Privada</Text>
           </View>
         </View>
 

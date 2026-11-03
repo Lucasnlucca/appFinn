@@ -12,6 +12,15 @@ import {
   setStoredSession,
   syncTransactionToAppwrite,
 } from '../services/appwriteService';
+import {
+  testPostgresConnection,
+  syncDatabaseWithPostgres,
+  createTransaction as apiCreateTransaction,
+  createCreditCard as apiCreateCreditCard,
+  createAccount as apiCreateAccount,
+  logoutUser,
+  getStoredUser,
+} from '../services/apiService';
 import { getBankTheme } from '../constants/BankThemeRegistry';
 
 const FinanceContext = createContext(null);
@@ -210,7 +219,14 @@ export function FinanceProvider({ children }) {
   const [selectedMonth, setSelectedMonth] = useState('Outubro 2026');
   const [hideBalances, setHideBalances] = useState(false);
   const [aiSkin, setAiSkin] = useState('estrategista'); // 'estrategista' | 'direto' | 'poupador' | 'investidor' | 'casal'
-  const [loggedInUser, setLoggedInUser] = useState({ id: 'user-lucas', name: 'Lucas', email: 'lucas@finn.local' });
+  const [loggedInUser, setLoggedInUser] = useState({ id: 'user-lucas', name: 'Lucas', email: 'lucas@finn.app' });
+  const [postgresStatus, setPostgresStatus] = useState({
+    isOnline: false,
+    latencyMs: null,
+    lastSync: null,
+    error: null,
+  });
+  const [isSyncingPostgres, setIsSyncingPostgres] = useState(false);
   
   const [aiChat, setAiChat] = useState([
     {
@@ -285,6 +301,124 @@ export function FinanceProvider({ children }) {
     }
     loadStored();
   }, []);
+
+  // Sincronização bi-direcional com PostgreSQL da VPS
+  const syncWithPostgres = async () => {
+    if (isSyncingPostgres) return;
+    setIsSyncingPostgres(true);
+    try {
+      const res = await syncDatabaseWithPostgres({
+        localCards: cards,
+        localAccounts: accounts,
+        localTransactions: transactions,
+      });
+
+      if (res.success) {
+        // 1. Atualizar cartões se retornados do PostgreSQL
+        if (res.remoteCards && res.remoteCards.length > 0) {
+          const mappedCards = res.remoteCards.map((rc) => {
+            const theme = getBankTheme(rc.name);
+            const limit = parseFloat(rc.creditLimit) || 0;
+            const currentBill = rc.currentBill ? parseFloat(rc.currentBill.totalAmount) || 0 : 0;
+            const usedPercent = limit > 0 ? Math.round((currentBill / limit) * 100) : 0;
+            return {
+              id: rc.id,
+              name: rc.name,
+              bank: rc.name,
+              bankId: theme.bankId,
+              holderName: 'LUCAS SILVA',
+              lastFourDigits: '4568',
+              expiryMonth: '10',
+              expiryYear: '26',
+              limit,
+              currentInvoice: currentBill,
+              closingDay: rc.closingDay || 3,
+              dueDay: rc.dueDay || 10,
+              dueDateText: `Vence dia ${rc.dueDay || 10}`,
+              status: 'Em aberto',
+              usedPercent,
+              color: rc.colorHex || theme.gradientColors[0],
+              logoType: theme.bankId,
+              owner: 'Casal',
+            };
+          });
+          setCards(mappedCards);
+          AsyncStorage.setItem(STORAGE_KEYS.CARDS, JSON.stringify(mappedCards));
+        }
+
+        // 2. Atualizar contas se retornadas do PostgreSQL
+        if (res.remoteAccounts && res.remoteAccounts.length > 0) {
+          const mappedAccs = res.remoteAccounts.map((ra) => ({
+            id: ra.id,
+            name: ra.name,
+            bank: ra.name,
+            balance: parseFloat(ra.currentBalance) || 0,
+            owner: ra.isShared ? 'Casal' : 'Lucas',
+            icon: 'wallet-outline',
+            color: ra.colorHex || '#820AD1',
+          }));
+          setAccounts(mappedAccs);
+          AsyncStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(mappedAccs));
+        }
+
+        // 3. Atualizar transações se retornadas do PostgreSQL
+        if (res.remoteTransactions && res.remoteTransactions.length > 0) {
+          const mappedTxs = res.remoteTransactions.map((rt) => ({
+            id: rt.id,
+            description: rt.description,
+            amount: parseFloat(rt.amount) || 0,
+            type: (rt.type || 'EXPENSE').toLowerCase() === 'income' ? 'income' : 'expense',
+            category: rt.category?.name || 'outros',
+            author: rt.isHouseholdShared ? 'Casal' : 'Lucas',
+            date: rt.date ? rt.date.split('T')[0] : new Date().toISOString().split('T')[0],
+            createdAt: rt.createdAt || new Date().toISOString(),
+            accountId: rt.accountId,
+            creditCardId: rt.creditCardId,
+            notes: rt.notes || '',
+          }));
+
+          setTransactions((prev) => {
+            const existingIds = new Set(prev.map((t) => t.id));
+            const fresh = mappedTxs.filter((t) => !existingIds.has(t.id));
+            const merged = [...fresh, ...prev];
+            AsyncStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(merged));
+            return merged;
+          });
+        }
+
+        setPostgresStatus({
+          isOnline: true,
+          latencyMs: res.latencyMs,
+          lastSync: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          error: null,
+        });
+        return res;
+      } else {
+        setPostgresStatus((prev) => ({
+          ...prev,
+          isOnline: false,
+          error: res.reason || 'Erro na sincronização',
+        }));
+        return res;
+      }
+    } catch (err) {
+      setPostgresStatus((prev) => ({
+        ...prev,
+        isOnline: false,
+        error: err.message,
+      }));
+      return { success: false, error: err.message };
+    } finally {
+      setIsSyncingPostgres(false);
+    }
+  };
+
+  // Disparo silencioso de sincronização com PostgreSQL na inicialização
+  useEffect(() => {
+    if (loaded) {
+      syncWithPostgres();
+    }
+  }, [loaded]);
 
   const toggleHideBalances = async () => {
     const nextVal = !hideBalances;
@@ -454,6 +588,7 @@ export function FinanceProvider({ children }) {
 
     for (const tx of newTxs) {
       syncTransactionToAppwrite(tx).catch(() => {});
+      apiCreateTransaction(tx).catch((e) => console.log('Offline queue for Postgres tx:', e.message));
     }
 
     return newTxs;
@@ -538,6 +673,7 @@ export function FinanceProvider({ children }) {
     const nextAccs = [...accounts, newAcc];
     setAccounts(nextAccs);
     await AsyncStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(nextAccs));
+    apiCreateAccount(newAcc).catch((e) => console.log('Offline queue for Postgres acc:', e.message));
     return newAcc;
   };
 
@@ -588,6 +724,7 @@ export function FinanceProvider({ children }) {
     const nextCards = [...cards, newCard];
     setCards(nextCards);
     await AsyncStorage.setItem(STORAGE_KEYS.CARDS, JSON.stringify(nextCards));
+    apiCreateCreditCard(newCard).catch((e) => console.log('Offline queue for Postgres card:', e.message));
     return newCard;
   };
 
@@ -660,6 +797,7 @@ export function FinanceProvider({ children }) {
   const logout = async () => {
     setLoggedInUser(null);
     await setStoredSession(null);
+    await logoutUser().catch(() => {});
   };
 
   // Cálculos financeiros consolidados
@@ -1081,6 +1219,10 @@ Responda de forma clara, motivadora e estruturada em tópicos!`;
         processReceiptMedia,
         processPdfInvoice,
         processAudioMessage,
+        postgresStatus,
+        isSyncingPostgres,
+        syncWithPostgres,
+        testPostgresConnection,
       }}
     >
       {children}

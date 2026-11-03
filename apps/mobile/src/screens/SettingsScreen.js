@@ -20,6 +20,10 @@ import {
   testAppwriteConnection,
 } from '../services/appwriteService';
 import {
+  testPostgresConnection,
+  DEFAULT_API_URL,
+} from '../services/apiService';
+import {
   getGeminiApiKey,
   setGeminiApiKey,
   getGeminiModel,
@@ -40,6 +44,9 @@ export default function SettingsScreen({ navigation }) {
     logout,
     activeMember,
     switchActiveMember,
+    postgresStatus,
+    isSyncingPostgres,
+    syncWithPostgres,
   } = useFinance();
 
   // Estado dos accordions: inicialmente TODOS FECHADOS (null)
@@ -93,11 +100,11 @@ export default function SettingsScreen({ navigation }) {
     setTimeout(() => setSavedNotice(false), 2500);
   };
 
-  const handleTestVps = async () => {
+  const handleTestPostgres = async () => {
     setTestingVps(true);
     setVpsPingStatus(null);
     try {
-      const res = await testAppwriteConnection();
+      const res = await testPostgresConnection();
       setVpsPingStatus(res);
     } catch (e) {
       setVpsPingStatus({ success: false, error: e.message });
@@ -105,6 +112,24 @@ export default function SettingsScreen({ navigation }) {
       setTestingVps(false);
     }
   };
+
+  const handleManualSync = async () => {
+    try {
+      const res = await syncWithPostgres();
+      if (res?.success) {
+        Alert.alert(
+          'Sincronização Concluída',
+          `Dados sincronizados com sucesso no PostgreSQL 17!\n• Latência: ${res.latencyMs || 0}ms\n• Cartões e Contas atualizados.`
+        );
+      } else {
+        Alert.alert('Aviso de Sincronização', res?.reason || 'Não foi possível contatar o servidor.');
+      }
+    } catch (e) {
+      Alert.alert('Erro ao sincronizar', e.message);
+    }
+  };
+
+  const handleTestVps = handleTestPostgres;
 
   const handleSaveGemini = async () => {
     await setGeminiApiKey(geminiKey);
@@ -542,7 +567,7 @@ export default function SettingsScreen({ navigation }) {
           </View>
 
           {/* ================================================================= */}
-          {/* 4. INTEGRAÇÕES E INFRAESTRUTURA */}
+          {/* 4. BANCO DE DADOS & INFRAESTRUTURA VPS */}
           {/* ================================================================= */}
           <View style={styles.accordionCard}>
             <TouchableOpacity
@@ -558,10 +583,10 @@ export default function SettingsScreen({ navigation }) {
               </View>
               <View style={styles.accordionHeaderInfo}>
                 <Text style={styles.accordionTitle}>
-                  Integrações e Infraestrutura
+                  Banco de Dados & API VPS
                 </Text>
                 <Text style={styles.accordionSubtitle}>
-                  Appwrite VPS (Nuvem Privada) e sincronização
+                  PostgreSQL 17 • NestJS • Sincronização em Nuvem
                 </Text>
               </View>
               <Ionicons
@@ -574,18 +599,36 @@ export default function SettingsScreen({ navigation }) {
             {openSection === 'infra' && (
               <View style={styles.accordionBody}>
                 <View style={styles.vpsInfoBox}>
-                  <Text style={styles.vpsLabel}>ENDPOINT VPS:</Text>
-                  <Text style={styles.vpsValue} numberOfLines={1}>
-                    {appwriteConfig?.endpoint ||
-                      'https://bancosupa-appwrite.grtbdz.easypanel.host/v1'}
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Text style={styles.vpsLabel}>MOTOR DE BANCO:</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                      <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: postgresStatus?.isOnline ? '#16A34A' : '#EAB308' }} />
+                      <Text style={{ fontSize: 11, fontWeight: '700', color: postgresStatus?.isOnline ? '#16A34A' : '#CA8A04' }}>
+                        {postgresStatus?.isOnline ? 'PostgreSQL 17 Conectado' : 'Aguardando Sinc'}
+                      </Text>
+                    </View>
+                  </View>
+                  <Text style={styles.vpsValue}>
+                    PostgreSQL 17 (Prisma ORM • Easypanel VPS)
                   </Text>
 
-                  <Text style={[styles.vpsLabel, { marginTop: 8 }]}>
-                    PROJECT ID:
+                  <Text style={[styles.vpsLabel, { marginTop: 10 }]}>
+                    ENDPOINT DA API NESTJS:
                   </Text>
-                  <Text style={styles.vpsValue}>
-                    {appwriteConfig?.projectId || '6a6cac620021f4c64b3f'}
+                  <Text style={styles.vpsValue} numberOfLines={1}>
+                    {DEFAULT_API_URL}
                   </Text>
+
+                  {postgresStatus?.lastSync && (
+                    <>
+                      <Text style={[styles.vpsLabel, { marginTop: 10 }]}>
+                        ÚLTIMA SINCRONIZAÇÃO:
+                      </Text>
+                      <Text style={styles.vpsValue}>
+                        Hoje às {postgresStatus.lastSync} {postgresStatus.latencyMs ? `(${postgresStatus.latencyMs}ms)` : ''}
+                      </Text>
+                    </>
+                  )}
                 </View>
 
                 {/* Status do Ping */}
@@ -616,33 +659,57 @@ export default function SettingsScreen({ navigation }) {
                       ]}
                     >
                       {vpsPingStatus.success
-                        ? `VPS Conectada (${vpsPingStatus.latencyMs}ms) • ${vpsPingStatus.version}`
+                        ? `PostgreSQL 17 Conectado (${vpsPingStatus.latencyMs}ms) • Status: ${vpsPingStatus.database || 'ok'}`
                         : `Falha: ${vpsPingStatus.error}`}
                     </Text>
                   </View>
                 )}
 
-                <TouchableOpacity
-                  style={styles.vpsTestBtn}
-                  onPress={handleTestVps}
-                  disabled={testingVps}
-                  activeOpacity={0.8}
-                >
-                  {testingVps ? (
-                    <ActivityIndicator size="small" color="#0284C7" />
-                  ) : (
-                    <>
-                      <Ionicons
-                        name="wifi-outline"
-                        size={16}
-                        color="#0284C7"
-                      />
-                      <Text style={styles.vpsTestBtnText}>
-                        Testar Conexão com VPS
-                      </Text>
-                    </>
-                  )}
-                </TouchableOpacity>
+                <View style={{ gap: 8 }}>
+                  <TouchableOpacity
+                    style={styles.vpsTestBtn}
+                    onPress={handleTestPostgres}
+                    disabled={testingVps}
+                    activeOpacity={0.8}
+                  >
+                    {testingVps ? (
+                      <ActivityIndicator size="small" color="#0284C7" />
+                    ) : (
+                      <>
+                        <Ionicons
+                          name="wifi-outline"
+                          size={16}
+                          color="#0284C7"
+                        />
+                        <Text style={styles.vpsTestBtnText}>
+                          Testar Conexão com PostgreSQL
+                        </Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.vpsTestBtn, { backgroundColor: '#EDE9FE', borderColor: '#DDD6FE' }]}
+                    onPress={handleManualSync}
+                    disabled={isSyncingPostgres}
+                    activeOpacity={0.8}
+                  >
+                    {isSyncingPostgres ? (
+                      <ActivityIndicator size="small" color="#7C3AED" />
+                    ) : (
+                      <>
+                        <Ionicons
+                          name="sync-outline"
+                          size={16}
+                          color="#7C3AED"
+                        />
+                        <Text style={[styles.vpsTestBtnText, { color: '#7C3AED' }]}>
+                          Sincronizar Dados Agora (Nuvem ↔ Local)
+                        </Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                </View>
               </View>
             )}
           </View>
@@ -749,7 +816,10 @@ export default function SettingsScreen({ navigation }) {
                       <Text style={styles.aboutTagText}>Expo SDK 58</Text>
                     </View>
                     <View style={styles.aboutTag}>
-                      <Text style={styles.aboutTagText}>Appwrite Cloud VPS</Text>
+                      <Text style={styles.aboutTagText}>PostgreSQL 17 VPS</Text>
+                    </View>
+                    <View style={styles.aboutTag}>
+                      <Text style={styles.aboutTagText}>NestJS REST API</Text>
                     </View>
                     <View style={styles.aboutTag}>
                       <Text style={styles.aboutTagText}>Gemini AI 3.5</Text>
