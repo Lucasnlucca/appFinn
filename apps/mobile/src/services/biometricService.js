@@ -161,3 +161,4 @@ export async function performBiometricLogin() {
 
   return { success: true, user: storedUser, token };
 }
+

@@ -155,7 +155,7 @@ export default function HomeScreen({ navigation }) {
     );
   };
 
-  const currentUserName = members.user1 || 'Lucas';
+  const currentUserName = loggedInUser?.name?.split(' ')[0] || members?.user1 || 'Você';
 
   // Cálculos dinâmicos reais de progresso do mês e orçamento
   const now = new Date();
@@ -635,43 +635,60 @@ export default function HomeScreen({ navigation }) {
         </View>
 
         <View style={styles.accountsCard}>
-          {accounts.map((acc, index) => (
+          {accounts.length === 0 ? (
             <TouchableOpacity
-              key={acc.id}
-              style={[
-                styles.accountRow,
-                index > 0 && styles.accountRowBorder,
-              ]}
-              onPress={() => {
-                setEditingAcc(acc);
-                setAccBalanceInput(String(acc.balance || 0));
-              }}
+              style={styles.emptyAccountRow}
+              onPress={() => setModalNewAcc(true)}
               activeOpacity={0.7}
             >
-              <View style={styles.accountLeft}>
-                <View
-                  style={[
-                    styles.bankIconCircle,
-                    { backgroundColor: `${acc.color || COLORS.primary}15` },
-                  ]}
-                >
-                  <Ionicons
-                    name={acc.icon || 'business-outline'}
-                    size={18}
-                    color={acc.color || COLORS.primary}
-                  />
-                </View>
-                <View>
-                  <Text style={styles.accountName}>{acc.name}</Text>
-                  <Text style={styles.accountBank}>{acc.bank} • Toque para ajustar</Text>
-                </View>
+              <View style={[styles.bankIconCircle, { backgroundColor: '#F3F4F6' }]}>
+                <Ionicons name="add-circle-outline" size={22} color={COLORS.navy} />
               </View>
-
-              <Text style={styles.accountBalanceText}>
-                {formatMoney(acc.balance)}
-              </Text>
+              <View style={{ flex: 1, marginLeft: 12 }}>
+                <Text style={styles.emptyAccountTitle}>Nenhuma conta cadastrada</Text>
+                <Text style={styles.emptyAccountSubtitle}>Toque para adicionar sua conta corrente ou poupança</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
             </TouchableOpacity>
-          ))}
+          ) : (
+            accounts.map((acc, index) => (
+              <TouchableOpacity
+                key={acc.id}
+                style={[
+                  styles.accountRow,
+                  index > 0 && styles.accountRowBorder,
+                ]}
+                onPress={() => {
+                  setEditingAcc(acc);
+                  setAccBalanceInput(String(acc.balance || 0));
+                }}
+                activeOpacity={0.7}
+              >
+                <View style={styles.accountLeft}>
+                  <View
+                    style={[
+                      styles.bankIconCircle,
+                      { backgroundColor: `${acc.color || COLORS.primary}15` },
+                    ]}
+                  >
+                    <Ionicons
+                      name={acc.icon || 'business-outline'}
+                      size={18}
+                      color={acc.color || COLORS.primary}
+                    />
+                  </View>
+                  <View>
+                    <Text style={styles.accountName}>{acc.name}</Text>
+                    <Text style={styles.accountBank}>{acc.bank} • Toque para ajustar</Text>
+                  </View>
+                </View>
+
+                <Text style={styles.accountBalanceText}>
+                  {formatMoney(acc.balance)}
+                </Text>
+              </TouchableOpacity>
+            ))
+          )}
         </View>
 
         {/* SEÇÃO ÚLTIMAS MOVIMENTAÇÕES COM DATA */}
@@ -1831,5 +1848,21 @@ const styles = StyleSheet.create({
     color: COLORS.white,
     fontSize: 13,
     fontWeight: '800',
+  },
+  emptyAccountRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+  },
+  emptyAccountTitle: {
+    color: COLORS.text,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  emptyAccountSubtitle: {
+    color: COLORS.textSecondary,
+    fontSize: 12,
+    marginTop: 2,
   },
 });

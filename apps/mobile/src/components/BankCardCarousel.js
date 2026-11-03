@@ -35,17 +35,7 @@ export default function BankCardCarousel({
   }, [activeCardId, cards]);
 
   if (!cards || cards.length === 0) {
-    return (
-      <View style={styles.carouselContainer}>
-        <BankCard
-          bankId="nubank"
-          holderName={userName}
-          lastFourDigits=""
-          expiryMonth="10"
-          expiryYear="26"
-        />
-      </View>
-    );
+    return null;
   }
 
   // Se houver apenas 1 cartão, exibe centralizado sem scroll

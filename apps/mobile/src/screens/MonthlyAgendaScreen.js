@@ -44,6 +44,7 @@ export default function MonthlyAgendaScreen({ navigation }) {
   const insets = useSafeAreaInsets();
   const {
     bills,
+    transactions,
     toggleBillPaid,
     addBill,
     updateBill,
@@ -57,6 +58,10 @@ export default function MonthlyAgendaScreen({ navigation }) {
     selectedMonth,
     setSelectedMonth,
   } = useFinance();
+
+  const incomeTransactions = useMemo(() => {
+    return (transactions || []).filter((t) => t.type === 'income');
+  }, [transactions]);
 
   // Abas: 'pagar' (A pagar) | 'receber' (A receber)
   const [activeTab, setActiveTab] = useState('pagar');
@@ -397,6 +402,16 @@ export default function MonthlyAgendaScreen({ navigation }) {
             </View>
 
             {/* SEÇÃO: CONTAS PENDENTES (SE HOUVER) */}
+            {pendentesBills.length === 0 && pagasBills.length === 0 && (
+              <View style={styles.emptyBillsState}>
+                <Ionicons name="receipt-outline" size={40} color="#D1D5DB" />
+                <Text style={styles.emptyBillsTitle}>Nenhuma conta agendada</Text>
+                <Text style={styles.emptyBillsSub}>
+                  Cadastre suas contas fixas e boletos para acompanhar os vencimentos deste mês.
+                </Text>
+              </View>
+            )}
+
             {pendentesBills.length > 0 && (
               <View style={styles.accordionSection}>
                 <TouchableOpacity
@@ -575,80 +590,58 @@ export default function MonthlyAgendaScreen({ navigation }) {
           /* ============================================================== */
           <View style={styles.receberContainer}>
             <View style={styles.receberSummaryCard}>
-              <Text style={styles.receberSummaryLabel}>Receitas Previstas</Text>
+              <Text style={styles.receberSummaryLabel}>Receitas Registradas</Text>
               <Text style={styles.receberSummaryValue}>
-                {formatMoney(totalIncome > 0 ? totalIncome : 13800.00)}
+                {formatMoney(totalIncome)}
               </Text>
               <Text style={styles.receberSummarySub}>
-                Entradas programadas para {selectedMonth || 'Outubro 2026'}
+                Entradas registradas para {selectedMonth || 'Novembro 2026'}
               </Text>
             </View>
 
             <View style={styles.billsList}>
-              {[
-                {
-                  id: 'rec-1',
-                  title: 'Salário Lucas',
-                  amount: 8500.00,
-                  subtext: 'Recebido · 5 out',
-                  received: true,
-                  icon: 'cash-outline',
-                  color: '#10B981',
-                },
-                {
-                  id: 'rec-2',
-                  title: 'Salário Veronica',
-                  amount: 4200.00,
-                  subtext: 'Recebido · 5 out',
-                  received: true,
-                  icon: 'cash-outline',
-                  color: '#10B981',
-                },
-                {
-                  id: 'rec-3',
-                  title: 'Freelance Design',
-                  amount: 1100.00,
-                  subtext: 'Previsto · 28 out',
-                  received: false,
-                  icon: 'laptop-outline',
-                  color: '#06B6D4',
-                },
-              ].map((rec) => (
-                <View key={rec.id} style={styles.billCardItem}>
-                  <View
-                    style={[
-                      styles.billIconSquare,
-                      { backgroundColor: `${rec.color}18` },
-                    ]}
-                  >
-                    <Ionicons name={rec.icon} size={20} color={rec.color} />
-                  </View>
+              {incomeTransactions.length === 0 ? (
+                <View style={styles.emptyBillsState}>
+                  <Ionicons name="cash-outline" size={40} color="#D1D5DB" />
+                  <Text style={styles.emptyBillsTitle}>Nenhuma receita registrada</Text>
+                  <Text style={styles.emptyBillsSub}>
+                    Adicione seus rendimentos reais através do botão central (+) no menu inferior.
+                  </Text>
+                </View>
+              ) : (
+                incomeTransactions.map((rec) => (
+                  <View key={rec.id} style={styles.billCardItem}>
+                    <View
+                      style={[
+                        styles.billIconSquare,
+                        { backgroundColor: '#10B98118' },
+                      ]}
+                    >
+                      <Ionicons name="cash-outline" size={20} color="#10B981" />
+                    </View>
 
-                  <View style={styles.billInfo}>
-                    <Text style={styles.billTitleText}>{rec.title}</Text>
-                    <View style={styles.billStatusRow}>
-                      <Ionicons
-                        name={rec.received ? 'checkmark' : 'time-outline'}
-                        size={13}
-                        color={rec.received ? '#22C55E' : '#06B6D4'}
-                      />
-                      <Text
-                        style={
-                          rec.received ? styles.billPaidText : styles.billPendingText
-                        }
-                      >
-                        {rec.subtext}
+                    <View style={styles.billInfo}>
+                      <Text style={styles.billTitleText}>{rec.description || 'Receita'}</Text>
+                      <View style={styles.billStatusRow}>
+                        <Ionicons
+                          name="checkmark"
+                          size={13}
+                          color="#22C55E"
+                        />
+                        <Text style={styles.billPaidText}>
+                          Recebido · {rec.date ? rec.date.split('-').reverse().slice(0, 2).join('/') : ''}
+                        </Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.billRight}>
+                      <Text style={[styles.billAmountText, { color: '#059669' }]}>
+                        + {formatMoney(rec.amount)}
                       </Text>
                     </View>
                   </View>
-
-                  <View style={styles.billRight}>
-                    <Text style={[styles.billAmountText, { color: '#059669' }]}>
-                      + {formatMoney(rec.amount)}
-                    </Text>
-                  </View>
-                </View>
-              ))}
+                ))
+              )}
             </View>
           </View>
         )}
@@ -1668,6 +1661,29 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#6D28D9',
     fontWeight: '500',
+  },
+  emptyBillsState: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 32,
+    paddingHorizontal: 20,
+    marginTop: 12,
+  },
+  emptyBillsTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#27272A',
+    marginTop: 10,
+  },
+  emptyBillsSub: {
+    fontSize: 12,
+    color: '#71717A',
+    textAlign: 'center',
+    marginTop: 4,
   },
 });
 

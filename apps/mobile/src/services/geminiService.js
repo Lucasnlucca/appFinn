@@ -171,7 +171,7 @@ export async function sendTextMessageToGemini({
   message,
   chatHistory = [],
   financialContext,
-  members = { user1: 'Lucas', user2: 'Veronica' },
+  members = { user1: 'Titular', user2: 'Parceiro(a)' },
   aiSkinId = 'estrategista',
 }) {
   const activeUser = financialContext?.activeMember || members.user1;
@@ -251,7 +251,7 @@ export async function analyzeReceiptImage({
   base64Image,
   mimeType = 'image/jpeg',
   financialContext,
-  members = { user1: 'Lucas', user2: 'Veronica' },
+  members = { user1: 'Titular', user2: 'Parceiro(a)' },
 }) {
   const activeUser = financialContext?.activeMember || members.user1;
   const prompt = `Analise atentamente esta foto/print de comprovante bancário, recibo ou cupom fiscal.
@@ -281,7 +281,7 @@ Se não conseguir ler nenhum valor no comprovante, responda educadamente pedindo
 export async function analyzeInvoicePdf({
   base64Pdf,
   financialContext,
-  members = { user1: 'Lucas', user2: 'Veronica' },
+  members = { user1: 'Titular', user2: 'Parceiro(a)' },
 }) {
   const activeUser = financialContext?.activeMember || members.user1;
   const prompt = `Analise este documento PDF financeiro (boleto bancário ou fatura de serviços).
@@ -309,7 +309,7 @@ export async function analyzeVoiceAudio({
   base64Audio,
   mimeType = 'audio/m4a',
   financialContext,
-  members = { user1: 'Lucas', user2: 'Veronica' },
+  members = { user1: 'Titular', user2: 'Parceiro(a)' },
   aiSkinId = 'estrategista',
 }) {
   const activeUser = financialContext?.activeMember || members.user1;

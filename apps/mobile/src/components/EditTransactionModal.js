@@ -20,7 +20,7 @@ export default function EditTransactionModal({ visible, transaction, onClose, on
   const [amount, setAmount] = useState('');
   const [type, setType] = useState('expense');
   const [category, setCategory] = useState('outros');
-  const [author, setAuthor] = useState('Lucas');
+  const [author, setAuthor] = useState(members?.user1 || 'Titular');
   const [date, setDate] = useState('');
 
   useEffect(() => {

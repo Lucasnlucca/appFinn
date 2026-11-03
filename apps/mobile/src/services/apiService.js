@@ -235,25 +235,14 @@ export async function logoutUser() {
 }
 
 /**
- * Garantir autenticação ativa (usa token salvo ou credenciais padrão do casal)
+ * Garantir autenticação ativa do usuário logado
  */
 export async function ensureAuthenticated() {
-  let token = await getStoredToken();
-  if (token) return token;
-
-  // Auto-login com conta padrão do casal no PostgreSQL
-  try {
-    const loginRes = await loginUser('lucas@finn.app', 'Password123!');
-    return loginRes.token;
-  } catch (err) {
-    // Se o usuário ainda não existir na VPS, registra automaticamente
-    try {
-      const regRes = await registerUser('lucas@finn.app', 'Password123!', 'Lucas Silva');
-      return regRes.token;
-    } catch {
-      return null;
-    }
+  const token = await getStoredToken();
+  if (!token) {
+    throw new Error('Sessão não autenticada. Faça login no aplicativo.');
   }
+  return token;
 }
 
 // ==========================================
@@ -389,36 +378,14 @@ export async function syncDatabaseWithPostgres({ localCards = [], localAccounts 
   }
 
   try {
-    // 1. Sincronizar Contas Bancárias
-    let remoteAccounts = await fetchAccounts('HOUSEHOLD').catch(() => []);
-    if (remoteAccounts.length === 0 && localAccounts.length > 0) {
-      // Faz seed inicial das contas locais no PostgreSQL
-      for (const acc of localAccounts) {
-        try {
-          const created = await createAccount(acc);
-          remoteAccounts.push(created);
-        } catch (e) {
-          console.warn('Erro ao enviar conta para o PostgreSQL:', e.message);
-        }
-      }
-    }
+    // 1. Sincronizar Contas Bancárias Reais do Titular
+    const remoteAccounts = await fetchAccounts('PERSONAL').catch(() => []);
 
-    // 2. Sincronizar Cartões de Crédito
-    let remoteCards = await fetchCreditCards('HOUSEHOLD').catch(() => []);
-    if (remoteCards.length === 0 && localCards.length > 0) {
-      // Faz seed dos cartões locais no PostgreSQL
-      for (const card of localCards) {
-        try {
-          const created = await createCreditCard(card);
-          remoteCards.push(created);
-        } catch (e) {
-          console.warn('Erro ao enviar cartão para o PostgreSQL:', e.message);
-        }
-      }
-    }
+    // 2. Sincronizar Cartões de Crédito Reais do Titular
+    const remoteCards = await fetchCreditCards('PERSONAL').catch(() => []);
 
-    // 3. Sincronizar Transações Recentes
-    const remoteTransactions = await fetchTransactions({ limit: 100 }).catch(() => []);
+    // 3. Sincronizar Transações Recentes do Titular
+    const remoteTransactions = await fetchTransactions({ limit: 100, scope: 'PERSONAL' }).catch(() => []);
 
     const now = new Date().toISOString();
     await AsyncStorage.setItem(STORAGE_KEYS.SYNC_TIMESTAMP, now);

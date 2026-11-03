@@ -77,11 +77,11 @@ export default function LoginScreen({ onLoginSuccess }) {
     async function initAuth() {
       // 1. Carrega credenciais salvas de "Lembrar de mim"
       const remembered = await getRememberedCredentials();
-      if (remembered.email) {
+      if (remembered?.email) {
         setLoginEmail(remembered.email);
-        setRememberMe(remembered.rememberMe);
+        setRememberMe(remembered.rememberMe !== false);
       } else {
-        setLoginEmail('lucas@finn.app');
+        setLoginEmail('');
       }
 
       // 2. Verifica suporte a biometria no aparelho

@@ -42,7 +42,7 @@ export default function CardInvoicesScreen({ navigation }) {
   } = useFinance();
 
   const defaultUserName =
-    loggedInUser?.name || members?.user1 || 'LUCAS SILVA';
+    loggedInUser?.name || members?.user1 || 'SEU NOME';
 
   const [selectedBankFilter, setSelectedBankFilter] = useState('Todos');
   const [focusedCardId, setFocusedCardId] = useState(cards[0]?.id || null);
@@ -56,8 +56,8 @@ export default function CardInvoicesScreen({ navigation }) {
   const [newCardBankId, setNewCardBankId] = useState('nubank');
   const [newCardName, setNewCardName] = useState('Nubank');
   const [newCardHolderName, setNewCardHolderName] = useState(defaultUserName);
-  const [newCardLastFourDigits, setNewCardLastFourDigits] = useState('4568');
-  const [newCardExpiry, setNewCardExpiry] = useState('10/26');
+  const [newCardLastFourDigits, setNewCardLastFourDigits] = useState('');
+  const [newCardExpiry, setNewCardExpiry] = useState('12/28');
   const [newCardLimit, setNewCardLimit] = useState('');
   const [newCardInvoice, setNewCardInvoice] = useState('');
   const [newCardDueDay, setNewCardDueDay] = useState('10');
@@ -133,8 +133,8 @@ export default function CardInvoicesScreen({ navigation }) {
     setNewCardBankId('nubank');
     setNewCardName('Nubank');
     setNewCardHolderName(defaultUserName);
-    setNewCardLastFourDigits('4568');
-    setNewCardExpiry('10/26');
+    setNewCardLastFourDigits('');
+    setNewCardExpiry('12/28');
     setNewCardLimit('');
     setNewCardInvoice('');
     setNewCardDueDay('10');
@@ -152,20 +152,20 @@ export default function CardInvoicesScreen({ navigation }) {
     const used =
       limitNum > 0 ? Math.min(Math.round((invNum / limitNum) * 100), 100) : 0;
 
-    const [expMonth, expYear] = (newCardExpiry || '10/26').split('/');
+    const [expMonth, expYear] = (newCardExpiry || '12/28').split('/');
 
     const newCreated = await addCard({
       name: cardTitle,
       bank: theme.name,
       bankId: theme.bankId,
       holderName: (newCardHolderName.trim() || defaultUserName).toUpperCase(),
-      lastFourDigits: (newCardLastFourDigits.trim() || '4568').slice(-4),
-      expiryMonth: expMonth || '10',
-      expiryYear: expYear || '26',
+      lastFourDigits: newCardLastFourDigits.trim().slice(-4),
+      expiryMonth: expMonth || '12',
+      expiryYear: expYear || '28',
       limit: limitNum,
       currentInvoice: invNum,
       dueDay: dueDayNum,
-      dueDateText: `Vence em ${dueDayNum}/11/2026`,
+      dueDateText: `Vence dia ${dueDayNum}`,
       status: 'Em aberto',
       usedPercent: used,
       color: theme.gradientColors[0],
@@ -188,8 +188,8 @@ export default function CardInvoicesScreen({ navigation }) {
     setEditCardBankId(theme.bankId);
     setEditCardName(card.name || theme.name);
     setEditCardHolderName(card.holderName || defaultUserName);
-    setEditCardLastFourDigits(card.lastFourDigits || '4568');
-    setEditCardExpiry(`${card.expiryMonth || '10'}/${card.expiryYear || '26'}`);
+    setEditCardLastFourDigits(card.lastFourDigits || '');
+    setEditCardExpiry(`${card.expiryMonth || '12'}/${card.expiryYear || '28'}`);
     setEditCardLimit(card.limit ? String(card.limit) : '');
     setEditCardInvoice(card.currentInvoice ? String(card.currentInvoice) : '');
     setEditCardDueDay(card.dueDay ? String(card.dueDay) : '10');
@@ -206,20 +206,20 @@ export default function CardInvoicesScreen({ navigation }) {
     const dueDayNum = parseInt(editCardDueDay, 10) || 10;
     const used =
       limitNum > 0 ? Math.min(Math.round((invNum / limitNum) * 100), 100) : 0;
-    const [expMonth, expYear] = (editCardExpiry || '10/26').split('/');
+    const [expMonth, expYear] = (editCardExpiry || '12/28').split('/');
 
     await updateCard(editingCardId, {
       name: cardTitle,
       bank: theme.name,
       bankId: theme.bankId,
       holderName: (editCardHolderName.trim() || defaultUserName).toUpperCase(),
-      lastFourDigits: (editCardLastFourDigits.trim() || '4568').slice(-4),
-      expiryMonth: expMonth || '10',
-      expiryYear: expYear || '26',
+      lastFourDigits: editCardLastFourDigits.trim().slice(-4),
+      expiryMonth: expMonth || '12',
+      expiryYear: expYear || '28',
       limit: limitNum,
       currentInvoice: invNum,
       dueDay: dueDayNum,
-      dueDateText: `Vence em ${dueDayNum}/11/2026`,
+      dueDateText: `Vence dia ${dueDayNum}`,
       status: 'Em aberto',
       usedPercent: used,
       color: theme.gradientColors[0],
@@ -345,7 +345,21 @@ export default function CardInvoicesScreen({ navigation }) {
 
         {/* CARTÃO VISUAL PRINCIPAL: CARTEIRA DE COURO EM 'TODOS', OU CARROSSEL NO BANCO ESPECÍFICO */}
         <View style={styles.cardHeroContainer}>
-          {selectedBankFilter === 'Todos' ? (
+          {cards.length === 0 ? (
+            <TouchableOpacity
+              style={styles.emptyCardHeroBox}
+              activeOpacity={0.8}
+              onPress={handleOpenAddModal}
+            >
+              <View style={styles.emptyHeroIconCircle}>
+                <Ionicons name="card-outline" size={32} color="#7C3AED" />
+              </View>
+              <Text style={styles.emptyHeroTitle}>Nenhum cartão cadastrado</Text>
+              <Text style={styles.emptyHeroSubtitle}>
+                Toque aqui para adicionar seu cartão de crédito real
+              </Text>
+            </TouchableOpacity>
+          ) : selectedBankFilter === 'Todos' ? (
             <WalletCardHolder
               cards={cards}
               activeCardId={focusedCardId || cards[0]?.id}
@@ -384,12 +398,12 @@ export default function CardInvoicesScreen({ navigation }) {
             </View>
             <Text style={styles.summaryLabel}>Em aberto</Text>
             <Text style={styles.summaryValue}>
-              {formatMoney(totalOpenInvoices > 0 ? totalOpenInvoices : 601.5)}
+              {formatMoney(totalOpenInvoices)}
             </Text>
             <Text style={styles.summarySub}>
               {totalCardsCount > 0
                 ? `${totalCardsCount} faturas em aberto`
-                : '3 faturas em aberto'}
+                : 'Nenhuma fatura em aberto'}
             </Text>
           </View>
         </View>
@@ -409,7 +423,16 @@ export default function CardInvoicesScreen({ navigation }) {
 
         {/* LISTA DE CARTÕES */}
         <View style={styles.cardsList}>
-          {filteredCards.map((card) => {
+          {filteredCards.length === 0 ? (
+            <View style={styles.emptyCardsListBox}>
+              <Ionicons name="card-outline" size={36} color="#9CA3AF" />
+              <Text style={styles.emptyCardsListTitle}>Nenhum cartão encontrado</Text>
+              <Text style={styles.emptyCardsListSub}>
+                Toque no botão (+) no topo para adicionar seu primeiro cartão.
+              </Text>
+            </View>
+          ) : (
+            filteredCards.map((card) => {
             const theme = getBankTheme(card.bankId || card.bank || card.name);
             const limit = card.limit || 5000;
             const invoice = card.currentInvoice || 0;
@@ -507,7 +530,7 @@ export default function CardInvoicesScreen({ navigation }) {
                 </View>
               </TouchableOpacity>
             );
-          })}
+          }))}
         </View>
 
         {/* BOTÃO PARA ADICIONAR NOVO CARTÃO */}
@@ -550,9 +573,9 @@ export default function CardInvoicesScreen({ navigation }) {
                 <BankCard
                   bankId={newCardBankId}
                   holderName={newCardHolderName || 'NOME SOBRENOME'}
-                  lastFourDigits={newCardLastFourDigits || '4568'}
-                  expiryMonth={newCardExpiry.split('/')[0] || '10'}
-                  expiryYear={newCardExpiry.split('/')[1] || '26'}
+                  lastFourDigits={newCardLastFourDigits || ''}
+                  expiryMonth={newCardExpiry.split('/')[0] || '12'}
+                  expiryYear={newCardExpiry.split('/')[1] || '28'}
                 />
               </View>
 
@@ -630,7 +653,7 @@ export default function CardInvoicesScreen({ navigation }) {
               <Text style={styles.inputLabel}>Nome do Titular no Cartão</Text>
               <TextInput
                 style={styles.input}
-                placeholder="Ex: LUCAS SILVA"
+                placeholder="Ex: NOME COMPLETO"
                 placeholderTextColor="#9CA3AF"
                 value={newCardHolderName}
                 onChangeText={(t) => setNewCardHolderName(t.toUpperCase())}
@@ -651,7 +674,7 @@ export default function CardInvoicesScreen({ navigation }) {
                   <Text style={styles.inputLabel}>Últimos 4 Dígitos</Text>
                   <TextInput
                     style={styles.input}
-                    placeholder="4568"
+                    placeholder="1234"
                     keyboardType="number-pad"
                     maxLength={4}
                     placeholderTextColor="#9CA3AF"
@@ -663,7 +686,7 @@ export default function CardInvoicesScreen({ navigation }) {
                   <Text style={styles.inputLabel}>Validade (MM/AA)</Text>
                   <TextInput
                     style={styles.input}
-                    placeholder="10/26"
+                    placeholder="12/28"
                     maxLength={5}
                     placeholderTextColor="#9CA3AF"
                     value={newCardExpiry}
@@ -745,9 +768,9 @@ export default function CardInvoicesScreen({ navigation }) {
                 <BankCard
                   bankId={editCardBankId}
                   holderName={editCardHolderName || 'NOME SOBRENOME'}
-                  lastFourDigits={editCardLastFourDigits || '4568'}
-                  expiryMonth={editCardExpiry.split('/')[0] || '10'}
-                  expiryYear={editCardExpiry.split('/')[1] || '26'}
+                  lastFourDigits={editCardLastFourDigits || ''}
+                  expiryMonth={editCardExpiry.split('/')[0] || '12'}
+                  expiryYear={editCardExpiry.split('/')[1] || '28'}
                 />
               </View>
 
@@ -1344,5 +1367,60 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#6D28D9',
     fontWeight: '600',
+  },
+  emptyCardHeroBox: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    borderColor: '#D8B4FE',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 36,
+    paddingHorizontal: 20,
+    marginHorizontal: 16,
+  },
+  emptyHeroIconCircle: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#F3EEFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  emptyHeroTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#18181B',
+  },
+  emptyHeroSubtitle: {
+    fontSize: 13,
+    color: '#71717A',
+    textAlign: 'center',
+    marginTop: 4,
+  },
+  emptyCardsListBox: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 32,
+    paddingHorizontal: 20,
+    marginTop: 8,
+  },
+  emptyCardsListTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#27272A',
+    marginTop: 10,
+  },
+  emptyCardsListSub: {
+    fontSize: 12,
+    color: '#71717A',
+    textAlign: 'center',
+    marginTop: 4,
   },
 });

@@ -443,7 +443,7 @@ export default function AddTransactionModal({ visible, onClose }) {
               ))}
             </View>
 
-            {/* RESPONSÁVEL (LUCAS OU VERÔNICA) */}
+            {/* RESPONSÁVEL */}
             <Text style={styles.fieldLabel}>Quem realizou?</Text>
             <View style={styles.authorRow}>
               {[members.user1, members.user2].map((name) => (

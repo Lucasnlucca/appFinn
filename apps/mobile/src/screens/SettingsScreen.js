@@ -58,8 +58,8 @@ export default function SettingsScreen({ navigation }) {
   const [openSection, setOpenSection] = useState(null);
 
   // Estados dos formulários internos
-  const [user1, setUser1] = useState(members?.user1 || 'Lucas');
-  const [user2, setUser2] = useState(members?.user2 || 'Veronica');
+  const [user1, setUser1] = useState(members?.user1 || loggedInUser?.name || 'Titular');
+  const [user2, setUser2] = useState(members?.user2 || 'Parceiro(a)');
   const [savedNotice, setSavedNotice] = useState(false);
 
   // VPS Appwrite
@@ -178,7 +178,7 @@ export default function SettingsScreen({ navigation }) {
             await clearAllData();
             Alert.alert(
               'Pronto!',
-              'O app agora está limpo para você e Veronica cadastrarem suas informações reais.'
+              'O app agora está 100% limpo para você cadastrar suas informações reais.'
             );
           },
         },
@@ -186,25 +186,8 @@ export default function SettingsScreen({ navigation }) {
     );
   };
 
-  const handleLoadDemo = () => {
-    Alert.alert(
-      'Carregar Dados de Exemplo',
-      'Deseja carregar dados fictícios para visualizar como o app se comporta preenchido?',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Carregar Exemplo',
-          onPress: async () => {
-            await loadDemoData();
-            Alert.alert('Exemplo Carregado', 'Os dados de teste foram carregados.');
-          },
-        },
-      ]
-    );
-  };
-
   const handleLogout = () => {
-    Alert.alert('Sair da Conta', 'Deseja desconectar a sessão do casal?', [
+    Alert.alert('Sair da Conta', 'Deseja desconectar sua conta?', [
       { text: 'Cancelar', style: 'cancel' },
       { text: 'Sair', style: 'destructive', onPress: logout },
     ]);
@@ -813,17 +796,6 @@ export default function SettingsScreen({ navigation }) {
                   <Ionicons name="trash-outline" size={18} color="#EF4444" />
                   <Text style={styles.dangerBtnText}>
                     Limpar Tudo (Usar Dados Reais)
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.demoBtn}
-                  onPress={handleLoadDemo}
-                  activeOpacity={0.8}
-                >
-                  <Ionicons name="flask-outline" size={18} color="#7C3AED" />
-                  <Text style={styles.demoBtnText}>
-                    Carregar Dados de Exemplo (Preview)
                   </Text>
                 </TouchableOpacity>
               </View>
