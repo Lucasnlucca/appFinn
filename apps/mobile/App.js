@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, Platform, ActivityIndicator, Text, TouchableOpacity } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -7,6 +7,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
 import { useFonts } from 'expo-font';
+import { Asset } from 'expo-asset';
 
 import { COLORS } from './src/theme/colors';
 import { FinanceProvider, useFinance } from './src/context/FinanceContext';
@@ -91,10 +92,10 @@ function MainTabs({ navigation }) {
   );
 }
 
-function MainAppContent() {
+function MainAppContent({ assetsLoaded, isFontsReady }) {
   const { loggedInUser, loaded } = useFinance();
 
-  if (!loaded) {
+  if (!loaded || !assetsLoaded || !isFontsReady) {
     return (
       <View style={styles.splashContainer}>
         <View style={styles.splashBadge}>
@@ -131,15 +132,35 @@ function MainAppContent() {
 }
 
 export default function App() {
-  const [fontsLoaded] = useFonts({
+  const [fontsLoaded, fontError] = useFonts({
     Audiowide: require('./assets/fonts/Audiowide-Regular.ttf'),
   });
+  const [assetsLoaded, setAssetsLoaded] = useState(false);
+
+  useEffect(() => {
+    async function preloadAssets() {
+      try {
+        await Asset.loadAsync([
+          require('./assets/finn-hero-poster.jpg'),
+          require('./assets/hero-robot-bg.jpg'),
+          require('./assets/finn-logo.png'),
+        ]);
+      } catch (e) {
+        console.warn('Aviso no pré-carregamento de assets locais:', e);
+      } finally {
+        setAssetsLoaded(true);
+      }
+    }
+    preloadAssets();
+  }, []);
+
+  const isFontsReady = Boolean(fontsLoaded || fontError);
 
   return (
     <SafeAreaProvider>
       <FinanceProvider>
         <StatusBar style="dark" backgroundColor={COLORS.bg} />
-        <MainAppContent />
+        <MainAppContent assetsLoaded={assetsLoaded} isFontsReady={isFontsReady} />
       </FinanceProvider>
     </SafeAreaProvider>
   );

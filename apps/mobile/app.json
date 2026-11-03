@@ -30,7 +30,8 @@
     "plugins": [
       "expo-audio",
       "expo-video",
-      "expo-font"
+      "expo-font",
+      "expo-asset"
     ]
   }
 }

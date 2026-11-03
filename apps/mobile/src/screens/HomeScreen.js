@@ -26,6 +26,7 @@ import { useVideoPlayer, VideoView } from 'expo-video';
 
 const heroVideoSource = require('../../assets/hero-robot.mp4');
 const heroBgSource = require('../../assets/hero-robot-bg.jpg');
+const heroPosterSource = require('../../assets/finn-hero-poster.jpg');
 const finnLogoSource = require('../../assets/finn-logo.png');
 
 const { width } = Dimensions.get('window');
@@ -75,6 +76,8 @@ export default function HomeScreen({ navigation }) {
 
   // Vídeo nativo do robô FINN com expo-video (executa 1x ao entrar, sem som, sem controles)
   const [showStaticOverlay, setShowStaticOverlay] = useState(false);
+  const [isFirstFrameRendered, setIsFirstFrameRendered] = useState(false);
+  const [videoError, setVideoError] = useState(false);
 
   const player = useVideoPlayer(heroVideoSource, (p) => {
     p.loop = false;
@@ -82,14 +85,21 @@ export default function HomeScreen({ navigation }) {
     p.play();
   });
 
-  // Ao finalizar o vídeo, ativa o quadro estático perfeitamente alinhado
+  // Gerencia eventos do player de vídeo (conclusão e erros)
   useEffect(() => {
     if (!player) return;
-    const sub = player.addListener('playToEnd', () => {
+    const playToEndSub = player.addListener('playToEnd', () => {
       setShowStaticOverlay(true);
     });
+    const statusSub = player.addListener('statusChange', (payload) => {
+      if (payload?.status === 'error') {
+        console.warn('Hero Video Player Error:', payload?.error);
+        setVideoError(true);
+      }
+    });
     return () => {
-      sub?.remove();
+      playToEndSub?.remove();
+      statusSub?.remove();
     };
   }, [player]);
 
@@ -233,27 +243,35 @@ export default function HomeScreen({ navigation }) {
 
         {/* CARD HERO ROBÔ COM VÍDEO NATIVO E SALDO */}
         <View style={styles.heroCardContainer}>
-          {/* Vídeo nativo expo-video (sem som, sem controles, não intercepta toques) */}
+          {/* Camada 1: Vídeo nativo expo-video (sempre montado em background, não intercepta toques) */}
           <VideoView
             style={styles.heroMedia}
             player={player}
             contentFit="contain"
             nativeControls={false}
             surfaceType="textureView"
+            onFirstFrameRender={() => setIsFirstFrameRendered(true)}
             pointerEvents="none"
           />
 
-          {/* Quadro final estático perfeitamente alinhado (evita qualquer piscar ao terminar) */}
-          {showStaticOverlay && (
+          {/* Camada 2: Imagem de cobertura perfeitamente alinhada para eliminar flash ou exibir quadro final */}
+          {(!isFirstFrameRendered || videoError) ? (
+            <Image
+              source={heroPosterSource}
+              style={styles.heroMedia}
+              resizeMode="contain"
+              pointerEvents="none"
+            />
+          ) : showStaticOverlay ? (
             <Image
               source={heroBgSource}
               style={styles.heroMedia}
               resizeMode="contain"
               pointerEvents="none"
             />
-          )}
+          ) : null}
 
-          {/* Overlay clicável (tocar no card repete a animação suave do mascote) */}
+          {/* Camada 3: Overlay clicável (tocar no card repete a animação suave do mascote) */}
           <TouchableOpacity
             style={styles.heroOverlayTouch}
             activeOpacity={0.92}
