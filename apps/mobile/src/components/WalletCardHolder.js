@@ -14,42 +14,42 @@ import { Ionicons } from '@expo/vector-icons';
 import { getBankTheme } from '../constants/BankThemeRegistry';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const WALLET_WIDTH = Math.min(SCREEN_WIDTH - 36, 420);
+const WALLET_WIDTH = Math.min(SCREEN_WIDTH - 40, 360);
 const CARDS_PER_PAGE = 4;
-const ELEVATION_PX = -48;
+const ELEVATION_PX = -18; // Elevação sutil e realista (sem voar para fora da carteira)
 
-// Símbolo Contactless
-function ContactlessIcon({ color = '#FFFFFF', size = 15 }) {
+// Ícone Contactless minimalista
+function ContactlessIcon({ color = '#FFFFFF', size = 13 }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
       <Path
         d="M6.5 16C7.8 13.5 7.8 10.5 6.5 8"
         stroke={color}
-        strokeWidth="2"
+        strokeWidth="2.2"
         strokeLinecap="round"
       />
       <Path
         d="M10.5 18.5C12.8 14.5 12.8 9.5 10.5 5.5"
         stroke={color}
-        strokeWidth="2"
+        strokeWidth="2.2"
         strokeLinecap="round"
       />
       <Path
         d="M14.5 21C17.8 15.5 17.8 8.5 14.5 3"
         stroke={color}
-        strokeWidth="2"
+        strokeWidth="2.2"
         strokeLinecap="round"
       />
     </Svg>
   );
 }
 
-// Chip EMV pequeno para o cartão na carteira
+// Mini Chip EMV metálico
 function MiniEmvChip({ variant = 'gold' }) {
   const isGold = variant === 'gold';
   const baseGrad = isGold
-    ? ['#FFF1B8', '#F5C026', '#D48806']
-    : ['#FFFFFF', '#D1D5DB', '#9CA3AF'];
+    ? ['#FFE89E', '#E6B022', '#B87A04']
+    : ['#FFFFFF', '#D1D5DB', '#858E9B'];
   return (
     <LinearGradient
       colors={baseGrad}
@@ -62,7 +62,7 @@ function MiniEmvChip({ variant = 'gold' }) {
   );
 }
 
-// Logo simplificado do banco no topo do cartão
+// Identificador do banco no topo do cartão (estilo print carteira)
 function WalletCardBrand({ theme }) {
   const bankId = theme.bankId;
   switch (bankId) {
@@ -106,51 +106,48 @@ function WalletCardBrand({ theme }) {
 }
 
 /**
- * Retorna as dimensões dinâmicas dos slots e da carteira conforme a quantidade de cartões.
+ * Dimensões dos slots e da carteira proporcional ao print do usuário
  */
 function getWalletLayout(cardCount) {
   const count = Math.max(1, Math.min(4, cardCount));
   switch (count) {
     case 1:
       return {
-        slotTops: [20],
-        walletHeight: 220,
-        frontPocketTop: 110,
-        cardHeight: 140,
+        slotTops: [16],
+        walletHeight: 180,
+        frontPocketTop: 75,
+        cardHeight: 110,
       };
     case 2:
       return {
-        slotTops: [16, 68],
-        walletHeight: 235,
-        frontPocketTop: 135,
-        cardHeight: 140,
+        slotTops: [14, 52],
+        walletHeight: 195,
+        frontPocketTop: 96,
+        cardHeight: 110,
       };
     case 3:
       return {
-        slotTops: [14, 58, 102],
-        walletHeight: 250,
-        frontPocketTop: 155,
-        cardHeight: 140,
+        slotTops: [12, 46, 80],
+        walletHeight: 215,
+        frontPocketTop: 116,
+        cardHeight: 110,
       };
     case 4:
     default:
       return {
-        slotTops: [12, 54, 96, 138],
-        walletHeight: 265,
-        frontPocketTop: 178,
-        cardHeight: 140,
+        slotTops: [10, 40, 70, 100],
+        walletHeight: 228,
+        frontPocketTop: 134,
+        cardHeight: 110,
       };
   }
 }
 
-/**
- * Calcula dinamicamente o índice do slot correspondente à coordenada relativa Y.
- */
 function getSlotIndexFromRelativeY(relY, slotTops) {
   const count = slotTops.length;
   if (count <= 1) return 0;
   for (let i = 0; i < count - 1; i++) {
-    const threshold = (slotTops[i] + slotTops[i + 1]) / 2 + 10;
+    const threshold = (slotTops[i] + slotTops[i + 1]) / 2 + 6;
     if (relY < threshold) {
       return i;
     }
@@ -159,10 +156,7 @@ function getSlotIndexFromRelativeY(relY, slotTops) {
 }
 
 /**
- * Componente Carteira Masculina Interativa (FINN Wallet)
- * 
- * Permite deslizar o dedo verticalmente sobre os cartões para elevá-los fluidamente.
- * Um toque em cartão não selecionado eleva-o; um toque no cartão já selecionado abre detalhes.
+ * Carteira Masculina Porta-Cartões de Couro (Estilo Print Faturas)
  */
 export default function WalletCardHolder({
   cards = [],
@@ -173,7 +167,6 @@ export default function WalletCardHolder({
   const totalPages = Math.ceil(totalCards / CARDS_PER_PAGE);
   const [currentPage, setCurrentPage] = useState(0);
 
-  // Cartões visíveis na página atual (máximo 4 por harmonia visual de carteira física)
   const pageCards = useMemo(() => {
     if (totalCards <= CARDS_PER_PAGE) return cards;
     const start = currentPage * CARDS_PER_PAGE;
@@ -182,12 +175,10 @@ export default function WalletCardHolder({
 
   const layout = useMemo(() => getWalletLayout(pageCards.length), [pageCards.length]);
 
-  // ID do cartão atualmente selecionado/elevado
   const initialCardId = activeCardId || pageCards[0]?.id || cards[0]?.id;
   const [selectedCardId, setSelectedCardId] = useState(initialCardId);
   const selectedCardIdRef = useRef(initialCardId);
 
-  // Refs de estado para evitar stale closures em callbacks e no PanResponder
   const pageCardsRef = useRef(pageCards);
   pageCardsRef.current = pageCards;
 
@@ -197,10 +188,9 @@ export default function WalletCardHolder({
   const cardsRef = useRef(cards);
   cardsRef.current = cards;
 
-  // Dicionário de Animated.Value mapeado por card.id (persistente mesmo com reordenamento)
+  // Dicionário de animação por card.id
   const animElevationsRef = useRef({});
 
-  // Garante que cada cartão tenha seu Animated.Value correspondente
   pageCards.forEach((c) => {
     if (!animElevationsRef.current[c.id]) {
       animElevationsRef.current[c.id] = new Animated.Value(
@@ -209,24 +199,19 @@ export default function WalletCardHolder({
     }
   });
 
-  // Eleva o cartão especificado com animação fluida (spring native driver)
   const elevateCard = useCallback((targetCardId) => {
     if (!targetCardId) return;
-    if (targetCardId === selectedCardIdRef.current) {
-      return; // Já está selecionado — evita reiniciar animação a cada pixel
-    }
+    if (targetCardId === selectedCardIdRef.current) return;
 
     selectedCardIdRef.current = targetCardId;
     setSelectedCardId(targetCardId);
 
-    // Anima todos os cartões da página atual
     pageCardsRef.current.forEach((card) => {
       let anim = animElevationsRef.current[card.id];
       if (!anim) {
         anim = new Animated.Value(0);
         animElevationsRef.current[card.id] = anim;
       }
-
       const toValue = card.id === targetCardId ? ELEVATION_PX : 0;
       Animated.spring(anim, {
         toValue,
@@ -237,7 +222,7 @@ export default function WalletCardHolder({
     });
   }, []);
 
-  // Sincroniza se activeCardId mudar externamente (ex: filtro bancário alterado)
+  // Sincroniza seleção externa
   useEffect(() => {
     if (!cards || cards.length === 0) return;
     if (activeCardId) {
@@ -252,19 +237,18 @@ export default function WalletCardHolder({
     }
   }, [activeCardId, cards, currentPage, elevateCard]);
 
-  // Se a página mudar e o cartão selecionado não estiver nela, seleciona o primeiro da nova página
+  // Se a página mudar e o selecionado não estiver nela, seleciona o primeiro
   useEffect(() => {
     if (pageCards.length === 0) return;
     const isSelectedInPage = pageCards.some((c) => c.id === selectedCardIdRef.current);
     if (!isSelectedInPage) {
-      const firstCardId = pageCards[0].id;
-      elevateCard(firstCardId);
+      elevateCard(pageCards[0].id);
     }
   }, [currentPage, pageCards, elevateCard]);
 
-  // Medição confiável de coordenadas da carteira na janela
+  // Coordenadas normalizadas
   const walletContainerRef = useRef(null);
-  const walletLayoutRef = useRef({ pageX: 0, pageY: 0, width: WALLET_WIDTH, height: 265 });
+  const walletLayoutRef = useRef({ pageX: 0, pageY: 0, width: WALLET_WIDTH, height: 215 });
 
   const measureWallet = useCallback(() => {
     if (walletContainerRef.current?.measureInWindow) {
@@ -276,7 +260,6 @@ export default function WalletCardHolder({
     }
   }, []);
 
-  // Calcula a coordenada Y relativa ao topo da carteira
   const getRelativeY = useCallback((evt, gestureState) => {
     const touchPageY = evt?.nativeEvent?.pageY ?? gestureState?.moveY ?? 0;
     if (walletLayoutRef.current.pageY > 0) {
@@ -285,7 +268,6 @@ export default function WalletCardHolder({
     return evt?.nativeEvent?.locationY ?? 0;
   }, []);
 
-  // Handler de processamento do gesto de arrasto
   const handlePanInput = useCallback((evt, gestureState) => {
     const relY = getRelativeY(evt, gestureState);
     const targetIdx = getSlotIndexFromRelativeY(relY, layoutRef.current.slotTops);
@@ -295,24 +277,17 @@ export default function WalletCardHolder({
     }
   }, [getRelativeY, elevateCard]);
 
-  // PanResponder configurado para não roubar cliques simples (pass-through para TouchableOpacity)
-  // e capturar somente movimentação deliberada vertical pela carteira (> 7px)
+  // PanResponder não rouba toques simples e captura arrasto vertical
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => false,
       onStartShouldSetPanResponderCapture: () => false,
 
       onMoveShouldSetPanResponder: (_, gestureState) => {
-        const isVertical =
-          Math.abs(gestureState.dy) > 7 &&
-          Math.abs(gestureState.dy) > Math.abs(gestureState.dx) * 1.2;
-        return isVertical;
+        return Math.abs(gestureState.dy) > 7 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx) * 1.2;
       },
       onMoveShouldSetPanResponderCapture: (_, gestureState) => {
-        const isVertical =
-          Math.abs(gestureState.dy) > 7 &&
-          Math.abs(gestureState.dy) > Math.abs(gestureState.dx) * 1.2;
-        return isVertical;
+        return Math.abs(gestureState.dy) > 7 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx) * 1.2;
       },
 
       onPanResponderGrant: (evt, gestureState) => {
@@ -324,33 +299,23 @@ export default function WalletCardHolder({
         handlePanInput(evt, gestureState);
       },
 
-      onPanResponderRelease: () => {
-        // Ao soltar o dedo, o cartão atual permanece elevado. Não retorna ao primeiro e não abre detalhes.
-      },
-      onPanResponderTerminate: () => {
-        // Cartão atual permanece elevado.
-      },
+      onPanResponderRelease: () => {},
+      onPanResponderTerminate: () => {},
     })
   ).current;
 
-  // Ao tocar diretamente em um cartão:
-  // Se já estiver elevado -> abre detalhes
-  // Se não estiver elevado -> apenas eleva
   const handleCardPress = (card) => {
     if (selectedCardIdRef.current === card.id) {
+      // Já elevado -> abre os detalhes do cartão
       onSelectCard?.(card);
     } else {
+      // Eleva o cartão tocado
       elevateCard(card.id);
     }
   };
 
   if (!cards || cards.length === 0) {
-    return (
-      <View style={styles.emptyWalletBox}>
-        <Ionicons name="card-outline" size={32} color="#6B7280" />
-        <Text style={styles.emptyWalletText}>Nenhum cartão cadastrado</Text>
-      </View>
-    );
+    return null;
   }
 
   const selectedIdx = pageCards.findIndex((c) => c.id === selectedCardId);
@@ -369,18 +334,10 @@ export default function WalletCardHolder({
               <TouchableOpacity
                 key={`page-${pIdx}`}
                 onPress={() => setCurrentPage(pIdx)}
-                style={[
-                  styles.pagePill,
-                  isCurPage && styles.pagePillActive,
-                ]}
+                style={[styles.pagePill, isCurPage && styles.pagePillActive]}
                 activeOpacity={0.7}
               >
-                <Text
-                  style={[
-                    styles.pagePillText,
-                    isCurPage && styles.pagePillTextActive,
-                  ]}
-                >
+                <Text style={[styles.pagePillText, isCurPage && styles.pagePillTextActive]}>
                   Cartões {startNum}-{endNum}
                 </Text>
               </TouchableOpacity>
@@ -399,29 +356,24 @@ export default function WalletCardHolder({
         {/* Costura perimétrica da carteira estilo couro clássico */}
         <View style={styles.outerStitchingBorder} pointerEvents="none" />
 
-        {/* CARTÕES INSERIDOS NOS SLOTS (STACK ORDENADO DINAMICAMENTE) */}
+        {/* CARTÕES INSERIDOS NOS SLOTS */}
         {pageCards.map((card, i) => {
           const theme = getBankTheme(card.bankId || card.bank || card.name);
-          const topOffset = layout.slotTops[i] ?? 12;
+          const topOffset = layout.slotTops[i] ?? 10;
           const isElevated = selectedCardId === card.id;
 
-          // Layering consistente no Android e iOS:
-          // Em repouso: cartões inferiores ficam à frente dos superiores (i * 2 + 1)
-          // Em elevação: cartão elevado vai para o topo absoluto (zIndex: 50, elevation: 20)
           const restingZ = (i + 1) * 2;
-          const itemZIndex = isElevated ? 50 : restingZ;
-          const itemElevation = isElevated ? 20 : restingZ;
+          const itemZIndex = isElevated ? 40 : restingZ;
+          const itemElevation = isElevated ? 16 : restingZ;
 
-          // Recupera ou cria Animated.Value do cartão
           let anim = animElevationsRef.current[card.id];
           if (!anim) {
             anim = new Animated.Value(isElevated ? ELEVATION_PX : 0);
             animElevationsRef.current[card.id] = anim;
           }
 
-          // Formatação neutra de dados (sem números fictícios)
           const digits = card.lastFourDigits ? String(card.lastFourDigits).slice(-4) : '';
-          const digitsDisplay = digits ? `•••• ${digits}` : '•••• ••••';
+          const digitsDisplay = digits ? `•••• ${digits}` : 'VISA';
 
           const holderDisplay = card.holderName
             ? String(card.holderName).toUpperCase().trim()
@@ -429,8 +381,8 @@ export default function WalletCardHolder({
 
           const invoiceText =
             card.currentInvoice !== undefined
-              ? `Fatura: R$ ${Number(card.currentInvoice).toFixed(2).replace('.', ',')}`
-              : `Vence dia ${card.dueDay || 10}`;
+              ? `R$ ${Number(card.currentInvoice).toFixed(2).replace('.', ',')}`
+              : `Vence ${card.dueDay || 10}`;
 
           return (
             <Animated.View
@@ -463,45 +415,36 @@ export default function WalletCardHolder({
                   {/* Borda superior sutilmente iluminada */}
                   <View style={styles.cardTopHighlight} />
 
-                  {/* Linha superior visível da borda do cartão na carteira */}
+                  {/* Linha visível do cartão no slot da carteira */}
                   <View style={styles.cardHeaderRow}>
                     <WalletCardBrand theme={theme} />
 
                     <View style={styles.cardHeaderRight}>
                       <Text
                         style={[
-                          styles.cardDigitsMini,
-                          { color: theme.secondaryTextColor || 'rgba(255,255,255,0.85)' },
+                          styles.cardBrandBadgeText,
+                          { color: theme.secondaryTextColor || '#FFFFFF' },
                         ]}
                       >
                         {digitsDisplay}
                       </Text>
                       <ContactlessIcon
                         color={theme.secondaryTextColor || 'rgba(255,255,255,0.85)'}
-                        size={15}
+                        size={13}
                       />
                     </View>
                   </View>
 
-                  {/* Corpo do cartão revelado quando elevado */}
+                  {/* Detalhes que surgem ao elevar levemente */}
                   <View style={styles.cardRevealedBody}>
                     <View style={styles.revealedRow}>
                       <MiniEmvChip variant={theme.chipVariant} />
-                      <Text
-                        style={[
-                          styles.revealedInvoice,
-                          { color: theme.textColor },
-                        ]}
-                      >
+                      <Text style={[styles.revealedInvoice, { color: theme.textColor }]}>
                         {invoiceText}
                       </Text>
                     </View>
-
                     <Text
-                      style={[
-                        styles.revealedHolder,
-                        { color: theme.textColor },
-                      ]}
+                      style={[styles.revealedHolder, { color: theme.textColor }]}
                       numberOfLines={1}
                     >
                       {holderDisplay}
@@ -513,11 +456,11 @@ export default function WalletCardHolder({
           );
         })}
 
-        {/* DIVISÓRIAS DE COURO COM COSTURA DUPLA REALISTA (ENTRE OS SLOTS) */}
+        {/* DIVISÓRIAS DE COURO COM COSTURA TRACEJADA ENTRE OS SLOTS */}
         {pageCards.map((_, i) => {
           if (i === 0) return null;
-          const lipTop = (layout.slotTops[i] ?? 56) + 4;
-          const lipZIndex = (i + 1) * 2 - 1; // Fica entre o cartão anterior e o próximo
+          const lipTop = (layout.slotTops[i] ?? 40) - 2;
+          const lipZIndex = (i + 1) * 2 - 1;
 
           return (
             <View
@@ -533,36 +476,35 @@ export default function WalletCardHolder({
               ]}
             >
               <LinearGradient
-                colors={['#243044', '#17202E']}
+                colors={['#27374D', '#1B2636']}
                 style={styles.slotLipGradient}
               >
-                {/* Linha de costura clara tracejada no couro */}
                 <View style={styles.stitchDashedLine} />
               </LinearGradient>
             </View>
           );
         })}
 
-        {/* BOLSO FRONTAL DE COURO (COBRE A BASE DOS CARTÕES COMO CARTEIRA REAL) */}
+        {/* BOLSO FRONTAL DE COURO DA CARTEIRA */}
         <View
           pointerEvents="none"
           style={[
             styles.walletFrontPocket,
             {
               top: layout.frontPocketTop,
-              zIndex: 40,
-              elevation: 10,
+              zIndex: 35,
+              elevation: 8,
             },
           ]}
         >
           <LinearGradient
-            colors={['#263347', '#17202F', '#101722']}
+            colors={['#28384F', '#1B2636', '#121A26']}
             style={styles.frontPocketGradient}
           >
-            {/* Costura dupla superior da borda do bolso */}
+            {/* Costura superior do bolso */}
             <View style={styles.stitchDashedLine} />
 
-            {/* Emblema em relevo da Carteira FINN */}
+            {/* Emblema FINN WALLET gravado no couro */}
             <View style={styles.walletEmbossedRow}>
               <View style={styles.embossedLine} />
               <Text style={styles.walletEmbossedText}>FINN WALLET</Text>
@@ -572,15 +514,15 @@ export default function WalletCardHolder({
         </View>
       </View>
 
-      {/* RÓTULO INTERATIVO INFERIOR */}
+      {/* RÓTULO INTERATIVO DISCRETO */}
       <View style={styles.interactiveHintRow}>
-        <Ionicons name="finger-print-outline" size={15} color="#7C3AED" />
+        <Ionicons name="finger-print-outline" size={14} color="#7C3AED" />
         <Text style={styles.interactiveHintText}>
-          Deslize o dedo para subir os cartões • Toque para ver detalhes
+          Deslize para ver os cartões • Toque para selecionar
         </Text>
       </View>
 
-      {/* BOTÃO PARA DETALHAR O CARTÃO ELEVADO */}
+      {/* BOTÃO PARA SELECIONAR E DETALHAR O CARTÃO ELEVADO */}
       {selectedCard && (
         <TouchableOpacity
           style={styles.detailButton}
@@ -590,7 +532,7 @@ export default function WalletCardHolder({
           <Text style={styles.detailButtonText}>
             Ver detalhes do {selectedCard.name || selectedCard.bank || 'Cartão'}
           </Text>
-          <Ionicons name="arrow-forward" size={15} color="#7C3AED" />
+          <Ionicons name="arrow-forward" size={14} color="#7C3AED" />
         </TouchableOpacity>
       )}
     </View>
@@ -601,72 +543,72 @@ const styles = StyleSheet.create({
   walletWrapper: {
     width: '100%',
     alignItems: 'center',
-    paddingTop: 52, // RESERVA DE ESPAÇO NO TOPO: evita qualquer recorte do cartão elevado
-    marginBottom: 8,
+    paddingTop: 18, // Espaço exato para o cartão elevar sem voar para fora
+    marginBottom: 6,
   },
   walletBody: {
     width: WALLET_WIDTH,
-    backgroundColor: '#151C28',
-    borderRadius: 22,
-    borderWidth: 2,
-    borderColor: '#263449',
-    overflow: 'visible', // Permite que o cartão elevado suba acima da boca da carteira
+    backgroundColor: '#182333',
+    borderRadius: 18,
+    borderWidth: 1.5,
+    borderColor: '#2D3E54',
+    overflow: 'hidden', // Mantém o visual compacto e fechado da carteira
     position: 'relative',
     shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.35,
-    shadowRadius: 14,
-    elevation: 8,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.32,
+    shadowRadius: 10,
+    elevation: 6,
   },
   outerStitchingBorder: {
     ...StyleSheet.absoluteFillObject,
-    borderRadius: 20,
+    borderRadius: 15,
     borderWidth: 1.5,
-    borderColor: 'rgba(255, 255, 255, 0.16)',
+    borderColor: 'rgba(235, 240, 255, 0.25)',
     borderStyle: 'dashed',
     margin: 4,
-    zIndex: 45,
+    zIndex: 42,
   },
   cardSlotItem: {
     position: 'absolute',
-    left: 12,
-    right: 12,
-    borderRadius: 16,
+    left: 10,
+    right: 10,
+    borderRadius: 12,
   },
   cardTouchArea: {
     flex: 1,
   },
   cardGradientSurface: {
     flex: 1,
-    borderRadius: 16,
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 12,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingTop: 8,
+    paddingBottom: 8,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.22)',
     shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-    elevation: 4,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 3,
   },
   cardGradientElevated: {
     borderColor: '#FFFFFF',
     shadowColor: '#7C3AED',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.5,
-    shadowRadius: 14,
-    elevation: 16,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.45,
+    shadowRadius: 10,
+    elevation: 10,
   },
   cardTopHighlight: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
-    height: 2,
-    backgroundColor: 'rgba(255, 255, 255, 0.35)',
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
+    height: 1.5,
+    backgroundColor: 'rgba(255, 255, 255, 0.4)',
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12,
   },
   cardHeaderRow: {
     flexDirection: 'row',
@@ -676,52 +618,53 @@ const styles = StyleSheet.create({
   cardHeaderRight: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 5,
   },
   brandNuText: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: '900',
-    letterSpacing: -1,
+    letterSpacing: -0.8,
   },
   brandC6Text: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '800',
   },
   miniItauBox: {
     backgroundColor: '#002D62',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+    paddingHorizontal: 5,
+    paddingVertical: 1.5,
     borderRadius: 4,
   },
   miniItauText: {
     color: '#EC7000',
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '800',
   },
   miniBbBox: {
     backgroundColor: '#003882',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+    paddingHorizontal: 5,
+    paddingVertical: 1.5,
     borderRadius: 4,
   },
   miniBbText: {
     color: '#F8D210',
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '800',
   },
   brandTextSmall: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '800',
     letterSpacing: 0.3,
   },
-  cardDigitsMini: {
-    fontSize: 12,
-    fontWeight: '700',
-    letterSpacing: 1,
+  cardBrandBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+    fontStyle: 'italic',
   },
   cardRevealedBody: {
-    marginTop: 10,
-    gap: 6,
+    marginTop: 6,
+    gap: 4,
   },
   revealedRow: {
     flexDirection: 'row',
@@ -729,47 +672,47 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   miniChipBox: {
-    width: 28,
-    height: 20,
-    borderRadius: 4,
+    width: 24,
+    height: 17,
+    borderRadius: 3.5,
     justifyContent: 'center',
-    paddingHorizontal: 4,
+    paddingHorizontal: 3,
   },
   miniChipLine: {
     height: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.25)',
   },
   revealedInvoice: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '700',
     letterSpacing: 0.2,
   },
   revealedHolder: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '800',
-    letterSpacing: 1.2,
-    opacity: 0.9,
+    letterSpacing: 1,
+    opacity: 0.85,
   },
   leatherSlotLip: {
     position: 'absolute',
     left: 4,
     right: 4,
-    height: 26,
-    borderTopLeftRadius: 10,
-    borderTopRightRadius: 10,
+    height: 22,
+    borderTopLeftRadius: 8,
+    borderTopRightRadius: 8,
     overflow: 'hidden',
   },
   slotLipGradient: {
     flex: 1,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.15)',
-    paddingTop: 4,
-    paddingHorizontal: 12,
+    borderTopColor: 'rgba(255, 255, 255, 0.12)',
+    paddingTop: 3,
+    paddingHorizontal: 8,
   },
   stitchDashedLine: {
     height: 2,
     borderBottomWidth: 1.5,
-    borderBottomColor: 'rgba(240, 240, 240, 0.38)',
+    borderBottomColor: 'rgba(235, 240, 255, 0.32)',
     borderStyle: 'dashed',
   },
   walletFrontPocket: {
@@ -777,61 +720,61 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    borderTopLeftRadius: 18,
-    borderTopRightRadius: 18,
-    borderBottomLeftRadius: 20,
-    borderBottomRightRadius: 20,
+    borderTopLeftRadius: 14,
+    borderTopRightRadius: 14,
+    borderBottomLeftRadius: 18,
+    borderBottomRightRadius: 18,
     overflow: 'hidden',
     shadowColor: '#000000',
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-    elevation: 8,
+    shadowOffset: { width: 0, height: -3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 5,
+    elevation: 6,
   },
   frontPocketGradient: {
     flex: 1,
-    paddingTop: 8,
-    paddingHorizontal: 16,
+    paddingTop: 7,
+    paddingHorizontal: 14,
     justifyContent: 'space-between',
-    paddingBottom: 16,
+    paddingBottom: 14,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.25)',
+    borderTopColor: 'rgba(255, 255, 255, 0.2)',
   },
   walletEmbossedRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    marginTop: 8,
+    marginTop: 6,
   },
   embossedLine: {
-    width: 30,
+    width: 25,
     height: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.18)',
+    backgroundColor: 'rgba(255, 255, 255, 0.16)',
   },
   walletEmbossedText: {
-    color: 'rgba(255, 255, 255, 0.35)',
-    fontSize: 11,
+    color: 'rgba(255, 255, 255, 0.32)',
+    fontSize: 10.5,
     fontWeight: '800',
-    letterSpacing: 2.2,
+    letterSpacing: 2,
   },
   paginationPillsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    marginBottom: 10,
+    gap: 6,
+    marginBottom: 8,
   },
   pagePill: {
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 10,
     backgroundColor: '#F3EEFF',
   },
   pagePillActive: {
     backgroundColor: '#7C3AED',
   },
   pagePillText: {
-    fontSize: 11.5,
+    fontSize: 11,
     fontWeight: '700',
     color: '#7C3AED',
   },
@@ -841,12 +784,12 @@ const styles = StyleSheet.create({
   interactiveHintRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    marginTop: 10,
+    gap: 5,
+    marginTop: 8,
     marginBottom: 4,
   },
   interactiveHintText: {
-    fontSize: 11.5,
+    fontSize: 11,
     color: '#6B7280',
     fontWeight: '600',
   },
@@ -856,24 +799,13 @@ const styles = StyleSheet.create({
     gap: 5,
     backgroundColor: '#F3EEFF',
     paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 20,
-    marginTop: 6,
+    paddingVertical: 6,
+    borderRadius: 18,
+    marginTop: 4,
   },
   detailButtonText: {
-    fontSize: 12.5,
+    fontSize: 12,
     color: '#7C3AED',
     fontWeight: '700',
-  },
-  emptyWalletBox: {
-    padding: 30,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  emptyWalletText: {
-    marginTop: 8,
-    fontSize: 14,
-    color: '#6B7280',
-    fontWeight: '600',
   },
 });

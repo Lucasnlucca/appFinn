@@ -21,6 +21,7 @@ import { useFinance } from '../context/FinanceContext';
 import BankLogo, { getBankInfo } from '../components/BankLogo';
 import BankCard from '../components/BankCard';
 import BankCardCarousel from '../components/BankCardCarousel';
+import WalletCardHolder from '../components/WalletCardHolder';
 import {
   ALL_BANK_THEMES,
   getBankTheme,
@@ -342,14 +343,26 @@ export default function CardInvoicesScreen({ navigation }) {
           })}
         </ScrollView>
 
-        {/* CARTÃO VISUAL PRINCIPAL / CARROSSEL */}
+        {/* CARTÃO VISUAL PRINCIPAL: CARTEIRA DE COURO EM 'TODOS', OU CARROSSEL NO BANCO ESPECÍFICO */}
         <View style={styles.cardHeroContainer}>
-          <BankCardCarousel
-            cards={filteredCards.length > 0 ? filteredCards : cards}
-            activeCardId={focusedCardId || filteredCards[0]?.id || cards[0]?.id}
-            onSelectCard={(c) => setFocusedCardId(c.id)}
-            userName={defaultUserName}
-          />
+          {selectedBankFilter === 'Todos' ? (
+            <WalletCardHolder
+              cards={cards}
+              activeCardId={focusedCardId || cards[0]?.id}
+              onSelectCard={(c) => {
+                const theme = getBankTheme(c.bankId || c.bank || c.name);
+                setSelectedBankFilter(theme.name);
+                setFocusedCardId(c.id);
+              }}
+            />
+          ) : (
+            <BankCardCarousel
+              cards={filteredCards.length > 0 ? filteredCards : cards}
+              activeCardId={focusedCardId || filteredCards[0]?.id || cards[0]?.id}
+              onSelectCard={(c) => setFocusedCardId(c.id)}
+              userName={defaultUserName}
+            />
+          )}
         </View>
 
         {/* DOIS CARDS DE RESUMO SUPERIOR */}
