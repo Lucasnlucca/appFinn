@@ -19,11 +19,26 @@ import { COLORS } from '../theme/colors';
 import { useFinance } from '../context/FinanceContext';
 import BankLogo, { getBankInfo } from '../components/BankLogo';
 
-const happyRobotBg = require('../../assets/agenda-robot-happy.jpg');
-const sadRobotBg = require('../../assets/agenda-robot-sad.jpg');
+const happyRobotBg = require('../../assets/agenda-robot-happy.png');
+const sadRobotBg = require('../../assets/agenda-robot-sad.png');
 const finnLogoSource = require('../../assets/finn-logo.png');
 
 const { width } = Dimensions.get('window');
+
+const ALL_CALENDAR_MONTHS = [
+  { num: 1, short: 'Jan', full: 'Janeiro' },
+  { num: 2, short: 'Fev', full: 'Fevereiro' },
+  { num: 3, short: 'Mar', full: 'Março' },
+  { num: 4, short: 'Abr', full: 'Abril' },
+  { num: 5, short: 'Mai', full: 'Maio' },
+  { num: 6, short: 'Jun', full: 'Junho' },
+  { num: 7, short: 'Jul', full: 'Julho' },
+  { num: 8, short: 'Ago', full: 'Agosto' },
+  { num: 9, short: 'Set', full: 'Setembro' },
+  { num: 10, short: 'Out', full: 'Outubro' },
+  { num: 11, short: 'Nov', full: 'Novembro' },
+  { num: 12, short: 'Dez', full: 'Dezembro' },
+];
 
 export default function MonthlyAgendaScreen({ navigation }) {
   const insets = useSafeAreaInsets();
@@ -31,6 +46,8 @@ export default function MonthlyAgendaScreen({ navigation }) {
     bills,
     toggleBillPaid,
     addBill,
+    updateBill,
+    deleteBill,
     totalBillsAmount,
     paidBillsAmount,
     pendingBillsAmount,
@@ -51,6 +68,19 @@ export default function MonthlyAgendaScreen({ navigation }) {
   // Modais
   const [modalNewBill, setModalNewBill] = useState(false);
   const [modalMonthPicker, setModalMonthPicker] = useState(false);
+  const [modalEditBill, setModalEditBill] = useState(false);
+
+  // Estado para edição de conta
+  const [editingBill, setEditingBill] = useState(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editAmount, setEditAmount] = useState('');
+  const [editDay, setEditDay] = useState('10');
+  const [editCategory, setEditCategory] = useState('moradia');
+  const [editIsRecurring, setEditIsRecurring] = useState(true);
+  const [editIsPaid, setEditIsPaid] = useState(false);
+
+  // Ano para o seletor de data moderno
+  const [pickerYear, setPickerYear] = useState(2026);
 
   // Form nova conta
   const [billTitle, setBillTitle] = useState('');
@@ -113,6 +143,66 @@ export default function MonthlyAgendaScreen({ navigation }) {
     setModalNewBill(false);
   };
 
+  // Abrir modal de edição para qualquer conta
+  const handleOpenEditBill = (bill) => {
+    setEditingBill(bill);
+    setEditTitle(bill.title || '');
+    setEditAmount(String(bill.amount !== undefined ? bill.amount : ''));
+    setEditDay(String(bill.dueDay || '10'));
+    setEditCategory(bill.category || 'moradia');
+    setEditIsRecurring(bill.isRecurring !== undefined ? bill.isRecurring : true);
+    setEditIsPaid(!!bill.paid);
+    setModalEditBill(true);
+  };
+
+  // Salvar alterações de valor e detalhes da conta
+  const handleSaveEditBill = async () => {
+    if (!editingBill) return;
+    if (!editTitle.trim()) {
+      Alert.alert('Atenção', 'Informe o nome da conta.');
+      return;
+    }
+    const num = parseFloat(String(editAmount).replace(',', '.')) || 0;
+    if (num < 0) {
+      Alert.alert('Atenção', 'Informe um valor válido.');
+      return;
+    }
+    const day = parseInt(editDay, 10) || 10;
+
+    await updateBill(editingBill.id, {
+      title: editTitle.trim(),
+      amount: num,
+      dueDay: day,
+      category: editCategory,
+      isRecurring: editIsRecurring,
+      paid: editIsPaid,
+    });
+
+    setModalEditBill(false);
+    setEditingBill(null);
+  };
+
+  // Excluir conta com confirmação
+  const handleDeleteBill = () => {
+    if (!editingBill) return;
+    Alert.alert(
+      'Excluir Conta',
+      `Deseja realmente excluir "${editingBill.title}" da sua agenda?`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Excluir',
+          style: 'destructive',
+          onPress: async () => {
+            await deleteBill(editingBill.id);
+            setModalEditBill(false);
+            setEditingBill(null);
+          },
+        },
+      ]
+    );
+  };
+
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <StatusBar barStyle="dark-content" backgroundColor="#F7F5FC" />
@@ -147,7 +237,7 @@ export default function MonthlyAgendaScreen({ navigation }) {
           { paddingBottom: insets.bottom + 40 },
         ]}
       >
-        {/* SUBTÍTULO E LINHA DO MÊS */}
+        {/* SUBTÍTULO E LINHA DO MÊS COM DESIGN ELEGANTE */}
         <Text style={styles.agendaSub}>Agenda do mês</Text>
         <View style={styles.monthHeaderRow}>
           <TouchableOpacity
@@ -158,16 +248,18 @@ export default function MonthlyAgendaScreen({ navigation }) {
             <Text style={styles.monthSelectTitle}>
               {selectedMonth || 'Outubro 2026'}
             </Text>
-            <Ionicons name="chevron-down" size={18} color="#18181B" />
+            <View style={styles.chevronBox}>
+              <Ionicons name="chevron-down" size={16} color="#7C3AED" />
+            </View>
           </TouchableOpacity>
 
           <View style={styles.monthHeaderActions}>
             <TouchableOpacity
               style={styles.monthActionBtn}
               activeOpacity={0.7}
-              onPress={() => setModalNewBill(true)}
+              onPress={() => setModalMonthPicker(true)}
             >
-              <Ionicons name="calendar-outline" size={20} color="#18181B" />
+              <Ionicons name="calendar-outline" size={20} color="#7C3AED" />
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -176,11 +268,11 @@ export default function MonthlyAgendaScreen({ navigation }) {
               onPress={() =>
                 Alert.alert(
                   'Agenda Financeira',
-                  'Acompanhe todas as contas a pagar e receitas previstas do mês. Toque em qualquer conta para alternar entre paga e pendente.'
+                  'Acompanhe todas as contas a pagar e faturas do mês.\n\n• Toque em qualquer conta para editar o valor ou excluir.\n• Toque no botão "Pagar" para alternar o status.'
                 )
               }
             >
-              <Ionicons name="help-circle-outline" size={22} color="#71717A" />
+              <Ionicons name="help-circle-outline" size={20} color="#71717A" />
             </TouchableOpacity>
           </View>
         </View>
@@ -231,7 +323,7 @@ export default function MonthlyAgendaScreen({ navigation }) {
           <>
             {/* HERO CARD COM ROBÔ FELIZ OU TRISTE CONFORME STATUS */}
             <View style={styles.heroCardContainer}>
-              {/* IMAGEM DE FUNDO DO CARD (FELIZ OU TRISTE) */}
+              {/* IMAGEM DE FUNDO DO CARD (FELIZ OU TRISTE - 100% LIMPA SEM BORDAS PRETAS) */}
               <Image
                 source={isEverythingPaid ? happyRobotBg : sadRobotBg}
                 style={styles.heroMedia}
@@ -333,16 +425,16 @@ export default function MonthlyAgendaScreen({ navigation }) {
                       <TouchableOpacity
                         key={bill.id}
                         style={styles.billCardItem}
-                        activeOpacity={0.85}
-                        onPress={() => toggleBillPaid(bill.id)}
+                        activeOpacity={0.75}
+                        onPress={() => handleOpenEditBill(bill)}
                       >
-                        {/* ÍCONE DA CONTA */}
+                        {/* ÍCONE / LOGO DO BANCO */}
                         {renderBillIcon(bill)}
 
                         {/* DETALHES */}
                         <View style={styles.billInfo}>
                           <View style={styles.billTitleRow}>
-                            <Text style={styles.billTitleText}>{bill.title}</Text>
+                            <Text style={styles.billTitleText} numberOfLines={1}>{bill.title}</Text>
                             {bill.isRecurring && (
                               <Ionicons
                                 name="repeat"
@@ -352,10 +444,10 @@ export default function MonthlyAgendaScreen({ navigation }) {
                               />
                             )}
                           </View>
-                          <View style={styles.billStatusRow}>
-                            <Ionicons name="time-outline" size={13} color="#EF4444" />
-                            <Text style={styles.billPendingText}>
-                              {bill.subtext || `Vence em ${bill.dueDay || 10} out`}
+                          <View style={[styles.billDateBadge, styles.billDateBadgePending]}>
+                            <Ionicons name="time-outline" size={12} color="#DC2626" />
+                            <Text style={styles.billDateTextPending}>
+                              {bill.subtext || `Vence dia ${bill.dueDay || 10}`}
                             </Text>
                           </View>
                         </View>
@@ -365,9 +457,16 @@ export default function MonthlyAgendaScreen({ navigation }) {
                           <Text style={styles.billAmountText}>
                             {formatMoney(bill.amount)}
                           </Text>
-                          <View style={styles.payActionPill}>
+                          <TouchableOpacity
+                            style={styles.payActionPill}
+                            activeOpacity={0.7}
+                            onPress={(e) => {
+                              e.stopPropagation();
+                              toggleBillPaid(bill.id);
+                            }}
+                          >
                             <Text style={styles.payActionText}>Pagar</Text>
-                          </View>
+                          </TouchableOpacity>
                         </View>
                       </TouchableOpacity>
                     ))}
@@ -406,16 +505,16 @@ export default function MonthlyAgendaScreen({ navigation }) {
                     <TouchableOpacity
                       key={bill.id}
                       style={styles.billCardItem}
-                      activeOpacity={0.85}
-                      onPress={() => toggleBillPaid(bill.id)}
+                      activeOpacity={0.75}
+                      onPress={() => handleOpenEditBill(bill)}
                     >
-                      {/* ÍCONE DA CONTA */}
+                      {/* ÍCONE / LOGO DO BANCO */}
                       {renderBillIcon(bill)}
 
                       {/* DETALHES */}
                       <View style={styles.billInfo}>
                         <View style={styles.billTitleRow}>
-                          <Text style={styles.billTitleText}>{bill.title}</Text>
+                          <Text style={styles.billTitleText} numberOfLines={1}>{bill.title}</Text>
                           {bill.isRecurring && (
                             <Ionicons
                               name="repeat"
@@ -425,23 +524,34 @@ export default function MonthlyAgendaScreen({ navigation }) {
                             />
                           )}
                         </View>
-                        <View style={styles.billStatusRow}>
+                        <View style={[styles.billDateBadge, styles.billDateBadgePaid]}>
                           <Ionicons
-                            name="checkmark"
-                            size={13}
-                            color="#22C55E"
+                            name="checkmark-circle"
+                            size={12}
+                            color="#16A34A"
                           />
-                          <Text style={styles.billPaidText}>
+                          <Text style={styles.billDateTextPaid}>
                             {bill.subtext || `Pago · ${bill.dueDay || 10} out`}
                           </Text>
                         </View>
                       </View>
 
-                      {/* VALOR */}
+                      {/* VALOR E STATUS PAGO */}
                       <View style={styles.billRight}>
                         <Text style={styles.billAmountText}>
                           {formatMoney(bill.amount)}
                         </Text>
+                        <TouchableOpacity
+                          style={styles.paidActionPill}
+                          activeOpacity={0.7}
+                          onPress={(e) => {
+                            e.stopPropagation();
+                            toggleBillPaid(bill.id);
+                          }}
+                        >
+                          <Ionicons name="checkmark" size={11} color="#16A34A" />
+                          <Text style={styles.paidActionText}>Pago</Text>
+                        </TouchableOpacity>
                       </View>
                     </TouchableOpacity>
                   ))}
@@ -629,50 +739,248 @@ export default function MonthlyAgendaScreen({ navigation }) {
         </View>
       </Modal>
 
-      {/* MODAL SELETOR DE MÊS */}
-      <Modal visible={modalMonthPicker} transparent animationType="fade">
+      {/* MODAL EDITAR CONTA (EDITAR VALORES MENSAIS E EXCLUIR) */}
+      <Modal visible={modalEditBill} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalBox}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Selecionar Mês</Text>
+              <View>
+                <Text style={styles.modalTitle}>Editar Conta</Text>
+                <Text style={styles.modalSubtitle}>
+                  Atualize o valor mensal, vencimento ou exclua
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setModalEditBill(false)}>
+                <Ionicons name="close" size={24} color="#71717A" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.inputLabel}>Nome da Conta</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Ex: Celulares internet, Mei, Aluguel"
+              placeholderTextColor="#9CA3AF"
+              value={editTitle}
+              onChangeText={setEditTitle}
+            />
+
+            <View style={{ flexDirection: 'row', gap: 12 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.inputLabel}>Valor Mensal (R$)</Text>
+                <TextInput
+                  style={[styles.input, styles.inputValueHighlight]}
+                  placeholder="0,00"
+                  keyboardType="numeric"
+                  placeholderTextColor="#9CA3AF"
+                  value={editAmount}
+                  onChangeText={setEditAmount}
+                />
+              </View>
+
+              <View style={{ flex: 1 }}>
+                <Text style={styles.inputLabel}>Dia Vencimento</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="10"
+                  keyboardType="number-pad"
+                  placeholderTextColor="#9CA3AF"
+                  value={editDay}
+                  onChangeText={setEditDay}
+                />
+              </View>
+            </View>
+
+            <Text style={styles.inputLabel}>Categoria</Text>
+            <View style={styles.categoryPillsRow}>
+              {[
+                { id: 'moradia', label: 'Moradia' },
+                { id: 'transporte', label: 'Transporte' },
+                { id: 'cartao', label: 'Cartão' },
+                { id: 'outros', label: 'Outros' },
+              ].map((cat) => (
+                <TouchableOpacity
+                  key={cat.id}
+                  style={[
+                    styles.catPill,
+                    editCategory === cat.id && styles.catPillActive,
+                  ]}
+                  onPress={() => setEditCategory(cat.id)}
+                >
+                  <Text
+                    style={[
+                      styles.catPillText,
+                      editCategory === cat.id && styles.catPillTextActive,
+                    ]}
+                  >
+                    {cat.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <Text style={styles.inputLabel}>Status da Conta</Text>
+            <View style={styles.statusToggleRow}>
+              <TouchableOpacity
+                style={[
+                  styles.statusToggleBtn,
+                  !editIsPaid && styles.statusToggleBtnPendingActive,
+                ]}
+                onPress={() => setEditIsPaid(false)}
+              >
+                <Ionicons
+                  name="time-outline"
+                  size={16}
+                  color={!editIsPaid ? '#EF4444' : '#6B7280'}
+                />
+                <Text
+                  style={[
+                    styles.statusToggleText,
+                    !editIsPaid && styles.statusToggleTextPendingActive,
+                  ]}
+                >
+                  Pendente
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.statusToggleBtn,
+                  editIsPaid && styles.statusToggleBtnPaidActive,
+                ]}
+                onPress={() => setEditIsPaid(true)}
+              >
+                <Ionicons
+                  name="checkmark-circle"
+                  size={16}
+                  color={editIsPaid ? '#10B981' : '#6B7280'}
+                />
+                <Text
+                  style={[
+                    styles.statusToggleText,
+                    editIsPaid && styles.statusToggleTextPaidActive,
+                  ]}
+                >
+                  Já Paga
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* BOTÕES DE AÇÃO: EXCLUIR E SALVAR */}
+            <View style={styles.modalButtonsRow}>
+              <TouchableOpacity
+                style={styles.modalDeleteBtn}
+                activeOpacity={0.8}
+                onPress={handleDeleteBill}
+              >
+                <Ionicons name="trash-outline" size={18} color="#EF4444" />
+                <Text style={styles.modalDeleteBtnText}>Excluir</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.modalSaveEditBtn}
+                activeOpacity={0.85}
+                onPress={handleSaveEditBill}
+              >
+                <Ionicons name="save-outline" size={18} color="#FFFFFF" />
+                <Text style={styles.modalSaveBtnText}>Salvar Alterações</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* MODAL SELETOR DE MÊS & VER DATA MODERNO */}
+      <Modal visible={modalMonthPicker} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBox}>
+            <View style={styles.modalHeader}>
+              <View>
+                <Text style={styles.modalTitle}>Ver Data & Período</Text>
+                <Text style={styles.modalSubtitle}>
+                  Navegue pela agenda mensal das suas finanças
+                </Text>
+              </View>
               <TouchableOpacity onPress={() => setModalMonthPicker(false)}>
                 <Ionicons name="close" size={24} color="#71717A" />
               </TouchableOpacity>
             </View>
 
-            {[
-              'Agosto 2026',
-              'Setembro 2026',
-              'Outubro 2026',
-              'Novembro 2026',
-              'Dezembro 2026',
-            ].map((m) => (
+            {/* SELETOR DE ANO */}
+            <View style={styles.pickerYearRow}>
               <TouchableOpacity
-                key={m}
-                style={[
-                  styles.monthPickItem,
-                  (selectedMonth === m || (!selectedMonth && m === 'Outubro 2026')) &&
-                    styles.monthPickItemActive,
-                ]}
-                onPress={() => {
-                  setSelectedMonth?.(m);
-                  setModalMonthPicker(false);
-                }}
+                style={styles.pickerYearArrowBtn}
+                onPress={() => setPickerYear((y) => y - 1)}
+                activeOpacity={0.7}
               >
-                <Text
-                  style={[
-                    styles.monthPickText,
-                    (selectedMonth === m || (!selectedMonth && m === 'Outubro 2026')) &&
-                      styles.monthPickTextActive,
-                  ]}
-                >
-                  {m}
-                </Text>
-                {(selectedMonth === m || (!selectedMonth && m === 'Outubro 2026')) && (
-                  <Ionicons name="checkmark" size={18} color="#7C3AED" />
-                )}
+                <Ionicons name="chevron-back" size={20} color="#7C3AED" />
               </TouchableOpacity>
-            ))}
+              <View style={styles.pickerYearBadge}>
+                <Ionicons name="calendar" size={16} color="#7C3AED" />
+                <Text style={styles.pickerYearText}>{pickerYear}</Text>
+              </View>
+              <TouchableOpacity
+                style={styles.pickerYearArrowBtn}
+                onPress={() => setPickerYear((y) => y + 1)}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="chevron-forward" size={20} color="#7C3AED" />
+              </TouchableOpacity>
+            </View>
+
+            {/* GRADE DOS 12 MESES */}
+            <View style={styles.monthsGrid}>
+              {ALL_CALENDAR_MONTHS.map((m) => {
+                const monthString = `${m.full} ${pickerYear}`;
+                const isSelected =
+                  selectedMonth === monthString ||
+                  (!selectedMonth && m.full === 'Outubro' && pickerYear === 2026);
+
+                return (
+                  <TouchableOpacity
+                    key={m.num}
+                    style={[
+                      styles.monthGridItem,
+                      isSelected && styles.monthGridItemActive,
+                    ]}
+                    activeOpacity={0.75}
+                    onPress={() => {
+                      setSelectedMonth?.(monthString);
+                      setModalMonthPicker(false);
+                    }}
+                  >
+                    <Text
+                      style={[
+                        styles.monthGridShortText,
+                        isSelected && styles.monthGridShortTextActive,
+                      ]}
+                    >
+                      {m.short}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.monthGridFullText,
+                        isSelected && styles.monthGridFullTextActive,
+                      ]}
+                    >
+                      {m.full}
+                    </Text>
+                    {isSelected && (
+                      <View style={styles.monthSelectedBadge}>
+                        <Ionicons name="checkmark" size={11} color="#FFFFFF" />
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            {/* INFORMAÇÃO RESUMO DO MÊS */}
+            <View style={styles.monthInfoCard}>
+              <Ionicons name="information-circle-outline" size={18} color="#7C3AED" />
+              <Text style={styles.monthInfoCardText}>
+                Visualizando <Text style={{ fontWeight: '800' }}>{selectedMonth || 'Outubro 2026'}</Text> com {bills.length} contas cadastradas.
+              </Text>
+            </View>
           </View>
         </View>
       </Modal>
@@ -779,6 +1087,14 @@ const styles = StyleSheet.create({
     color: '#18181B',
     letterSpacing: -0.3,
   },
+  chevronBox: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#F3EEFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   monthHeaderActions: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -793,6 +1109,11 @@ const styles = StyleSheet.create({
     borderColor: '#EFEAF8',
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#7C3AED',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
   },
   segmentedContainer: {
     flexDirection: 'row',
@@ -828,17 +1149,10 @@ const styles = StyleSheet.create({
   heroCardContainer: {
     position: 'relative',
     width: '100%',
-    aspectRatio: 1024 / 447,
+    aspectRatio: 1008 / 419,
     borderRadius: 24,
     overflow: 'hidden',
-    backgroundColor: '#0F0826',
-    borderWidth: 1.5,
-    borderColor: 'rgba(168, 85, 247, 0.5)',
-    shadowColor: '#7C3AED',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.3,
-    shadowRadius: 16,
-    elevation: 8,
+    backgroundColor: 'transparent',
     marginTop: 4,
     marginBottom: 16,
   },
@@ -994,21 +1308,31 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#18181B',
   },
-  billStatusRow: {
+  billDateBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    marginTop: 3,
+    marginTop: 4,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 8,
+    paddingVertical: 2.5,
+    borderRadius: 8,
   },
-  billPaidText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#10B981',
+  billDateBadgePaid: {
+    backgroundColor: '#ECFDF5',
   },
-  billPendingText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#EF4444',
+  billDateBadgePending: {
+    backgroundColor: '#FEF2F2',
+  },
+  billDateTextPaid: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#059669',
+  },
+  billDateTextPending: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#DC2626',
   },
   billRight: {
     alignItems: 'flex-end',
@@ -1019,6 +1343,9 @@ const styles = StyleSheet.create({
     color: '#18181B',
   },
   payActionPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
     backgroundColor: '#EDE9FE',
     paddingHorizontal: 8,
     paddingVertical: 3,
@@ -1029,6 +1356,21 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '800',
     color: '#7C3AED',
+  },
+  paidActionPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    marginTop: 4,
+  },
+  paidActionText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#16A34A',
   },
   addBillBtn: {
     flexDirection: 'row',
@@ -1104,6 +1446,11 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#18181B',
   },
+  modalSubtitle: {
+    fontSize: 12.5,
+    color: '#71717A',
+    marginTop: 2,
+  },
   inputLabel: {
     fontSize: 13,
     fontWeight: '700',
@@ -1120,6 +1467,11 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     fontSize: 15,
     color: '#111827',
+  },
+  inputValueHighlight: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#7C3AED',
   },
   categoryPillsRow: {
     flexDirection: 'row',
@@ -1143,6 +1495,74 @@ const styles = StyleSheet.create({
   catPillTextActive: {
     color: '#FFFFFF',
   },
+  statusToggleRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 6,
+    marginBottom: 6,
+  },
+  statusToggleBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1.5,
+    borderColor: 'transparent',
+  },
+  statusToggleBtnPendingActive: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#EF4444',
+  },
+  statusToggleBtnPaidActive: {
+    backgroundColor: '#ECFDF5',
+    borderColor: '#10B981',
+  },
+  statusToggleText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#6B7280',
+  },
+  statusToggleTextPendingActive: {
+    color: '#DC2626',
+  },
+  statusToggleTextPaidActive: {
+    color: '#059669',
+  },
+  modalButtonsRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 24,
+  },
+  modalDeleteBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#FEE2E2',
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 18,
+  },
+  modalDeleteBtnText: {
+    color: '#EF4444',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  modalSaveEditBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#7C3AED',
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+  },
   modalSaveBtn: {
     backgroundColor: '#7C3AED',
     borderRadius: 14,
@@ -1155,25 +1575,99 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '800',
   },
-  monthPickItem: {
+  pickerYearRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 14,
+    justifyContent: 'space-between',
+    backgroundColor: '#F9FAFB',
+    borderRadius: 14,
     paddingHorizontal: 12,
-    borderRadius: 12,
+    paddingVertical: 8,
+    marginBottom: 16,
   },
-  monthPickItemActive: {
-    backgroundColor: '#F3EEFF',
+  pickerYearArrowBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
   },
-  monthPickText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#374151',
+  pickerYearBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
-  monthPickTextActive: {
+  pickerYearText: {
+    fontSize: 18,
     fontWeight: '800',
-    color: '#7C3AED',
+    color: '#18181B',
+  },
+  monthsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    justifyContent: 'space-between',
+  },
+  monthGridItem: {
+    width: '31%',
+    backgroundColor: '#F9FAFB',
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
+    position: 'relative',
+  },
+  monthGridItemActive: {
+    backgroundColor: '#7C3AED',
+    borderColor: '#6D28D9',
+  },
+  monthGridShortText: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#18181B',
+  },
+  monthGridShortTextActive: {
+    color: '#FFFFFF',
+  },
+  monthGridFullText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#6B7280',
+    marginTop: 2,
+  },
+  monthGridFullTextActive: {
+    color: 'rgba(255, 255, 255, 0.85)',
+  },
+  monthSelectedBadge: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  monthInfoCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#F3EEFF',
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 16,
+  },
+  monthInfoCardText: {
+    flex: 1,
+    fontSize: 12,
+    color: '#6D28D9',
+    fontWeight: '500',
   },
 });
 

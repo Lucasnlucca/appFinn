@@ -191,7 +191,7 @@ export function FinanceProvider({ children }) {
   const [heroCardMode, setHeroCardMode] = useState('balance'); // 'balance' (Saldo em Contas) | 'monthResult' (Resultado do Mês)
   const [activeMember, setActiveMember] = useState('Casal'); // 'Casal' | 'Lucas' | 'Veronica'
   const [members, setMembers] = useState({ user1: 'Lucas', user2: 'Veronica' });
-  const [selectedMonth, setSelectedMonth] = useState('Out 2026');
+  const [selectedMonth, setSelectedMonth] = useState('Outubro 2026');
   const [hideBalances, setHideBalances] = useState(false);
   const [aiSkin, setAiSkin] = useState('estrategista'); // 'estrategista' | 'direto' | 'poupador' | 'investidor' | 'casal'
   const [loggedInUser, setLoggedInUser] = useState({ id: 'user-lucas', name: 'Lucas', email: 'lucas@finn.local' });
@@ -285,6 +285,38 @@ export function FinanceProvider({ children }) {
   // Alternar status de conta paga (Paga vs Pendente)
   const toggleBillPaid = async (billId) => {
     const nextBills = bills.map((b) => (b.id === billId ? { ...b, paid: !b.paid } : b));
+    setBills(nextBills);
+    await AsyncStorage.setItem(STORAGE_KEYS.BILLS, JSON.stringify(nextBills));
+  };
+
+  // Atualizar dados de conta existente (edição de valores mensais, vencimento, etc.)
+  const updateBill = async (billId, updatedData) => {
+    const nextBills = bills.map((b) => {
+      if (b.id !== billId) return b;
+      const dueDay = updatedData.dueDay !== undefined ? parseInt(updatedData.dueDay, 10) : b.dueDay;
+      const isPaid = updatedData.paid !== undefined ? !!updatedData.paid : b.paid;
+      const parsedAmount =
+        updatedData.amount !== undefined
+          ? typeof updatedData.amount === 'number'
+            ? updatedData.amount
+            : parseFloat(String(updatedData.amount).replace(',', '.')) || 0
+          : b.amount;
+
+      return {
+        ...b,
+        ...updatedData,
+        amount: parsedAmount,
+        dueDay: dueDay,
+        subtext: isPaid ? `Pago · ${dueDay} out` : `Vence dia ${dueDay}`,
+      };
+    });
+    setBills(nextBills);
+    await AsyncStorage.setItem(STORAGE_KEYS.BILLS, JSON.stringify(nextBills));
+  };
+
+  // Excluir conta da agenda
+  const deleteBill = async (billId) => {
+    const nextBills = bills.filter((b) => b.id !== billId);
     setBills(nextBills);
     await AsyncStorage.setItem(STORAGE_KEYS.BILLS, JSON.stringify(nextBills));
   };
@@ -969,6 +1001,8 @@ Responda de forma clara, motivadora e estruturada em tópicos!`;
         totalOtherIncome,
         toggleBillPaid,
         addBill,
+        updateBill,
+        deleteBill,
         totalBillsAmount,
         paidBillsAmount,
         pendingBillsAmount,
