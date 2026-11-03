@@ -427,87 +427,92 @@ export default function BankCard({
         end={theme.gradientEnd}
         style={styles.cardSurface}
       >
-        {/* Camada artística vetorial / textura */}
-        <BankCardOverlay overlayType={theme.overlayType} />
+        {/* Camada artística vetorial / textura totalmente isolada no fundo */}
+        <View style={StyleSheet.absoluteFill} pointerEvents="none">
+          <BankCardOverlay overlayType={theme.overlayType} />
+        </View>
 
-        {/* Linha superior: Logo do Banco à esquerda, "Credit card" e Contactless à direita */}
-        <View style={styles.topRow}>
-          <CardHeaderLogo bankId={theme.bankId} theme={theme} />
+        {/* Conteúdo visível do cartão com flexbox protegido */}
+        <View style={styles.cardContent}>
+          {/* Linha superior: Logo do Banco à esquerda, "Credit card" e Contactless à direita */}
+          <View style={styles.topRow}>
+            <CardHeaderLogo bankId={theme.bankId} theme={theme} />
 
-          <View style={styles.topRightRow}>
-            <Text
-              style={[
-                styles.creditCardLabel,
-                { color: theme.secondaryTextColor || 'rgba(255, 255, 255, 0.75)' },
-              ]}
-            >
-              {theme.cardLabel || 'Credit card'}
-            </Text>
-            <ContactlessIcon
-              color={theme.secondaryTextColor || 'rgba(255, 255, 255, 0.75)'}
-              size={18}
-            />
+            <View style={styles.topRightRow}>
+              <Text
+                style={[
+                  styles.creditCardLabel,
+                  { color: theme.secondaryTextColor || 'rgba(255, 255, 255, 0.75)' },
+                ]}
+              >
+                {theme.cardLabel || 'Credit card'}
+              </Text>
+              <ContactlessIcon
+                color={theme.secondaryTextColor || 'rgba(255, 255, 255, 0.75)'}
+                size={18}
+              />
+            </View>
           </View>
-        </View>
 
-        {/* Chip Metálico EMV */}
-        <View style={styles.chipRow}>
-          <EmvChip variant={theme.chipVariant} />
-        </View>
+          {/* Chip Metálico EMV */}
+          <View style={styles.chipRow}>
+            <EmvChip variant={theme.chipVariant} />
+          </View>
 
-        {/* Número do Cartão (Embossed OCR Style) */}
-        <View style={styles.cardNumberRow}>
-          <Text
-            style={[
-              styles.cardNumberText,
-              { color: theme.textColor },
-            ]}
-          >
-            {formattedCardNumber}
-          </Text>
-        </View>
-
-        {/* Linha Inferior: Nome do Titular e Validade */}
-        <View style={styles.bottomRow}>
-          <View style={styles.holderInfo}>
+          {/* Número do Cartão (Embossed OCR Style) */}
+          <View style={styles.cardNumberRow}>
             <Text
               style={[
-                styles.holderNameText,
+                styles.cardNumberText,
                 { color: theme.textColor },
               ]}
-              numberOfLines={1}
             >
-              {displayName}
+              {formattedCardNumber}
             </Text>
           </View>
 
-          <View style={styles.expiryBox}>
-            <View style={styles.validThruLabelBox}>
+          {/* Linha Inferior: Nome do Titular e Validade */}
+          <View style={styles.bottomRow}>
+            <View style={styles.holderInfo}>
               <Text
                 style={[
-                  styles.validThruLabel,
-                  { color: theme.secondaryTextColor || 'rgba(255, 255, 255, 0.7)' },
+                  styles.holderNameText,
+                  { color: theme.textColor },
                 ]}
+                numberOfLines={1}
               >
-                VALID
-              </Text>
-              <Text
-                style={[
-                  styles.validThruLabel,
-                  { color: theme.secondaryTextColor || 'rgba(255, 255, 255, 0.7)' },
-                ]}
-              >
-                THRU
+                {displayName}
               </Text>
             </View>
-            <Text
-              style={[
-                styles.expiryValueText,
-                { color: theme.textColor },
-              ]}
-            >
-              {displayExpiry}
-            </Text>
+
+            <View style={styles.expiryBox}>
+              <View style={styles.validThruLabelBox}>
+                <Text
+                  style={[
+                    styles.validThruLabel,
+                    { color: theme.secondaryTextColor || 'rgba(255, 255, 255, 0.7)' },
+                  ]}
+                >
+                  VALID
+                </Text>
+                <Text
+                  style={[
+                    styles.validThruLabel,
+                    { color: theme.secondaryTextColor || 'rgba(255, 255, 255, 0.7)' },
+                  ]}
+                >
+                  THRU
+                </Text>
+              </View>
+              <Text
+                style={[
+                  styles.expiryValueText,
+                  { color: theme.textColor },
+                ]}
+              >
+                {displayExpiry}
+              </Text>
+            </View>
           </View>
         </View>
       </LinearGradient>
@@ -531,13 +536,18 @@ const styles = StyleSheet.create({
   cardSurface: {
     flex: 1,
     borderRadius: 22,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.16)',
+    position: 'relative',
+  },
+  cardContent: {
+    flex: 1,
     paddingHorizontal: 20,
     paddingTop: 18,
     paddingBottom: 16,
     justifyContent: 'space-between',
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.16)',
+    zIndex: 10,
   },
   topRow: {
     flexDirection: 'row',

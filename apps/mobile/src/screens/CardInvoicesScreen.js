@@ -21,6 +21,7 @@ import { useFinance } from '../context/FinanceContext';
 import BankLogo, { getBankInfo } from '../components/BankLogo';
 import BankCard from '../components/BankCard';
 import BankCardCarousel from '../components/BankCardCarousel';
+import WalletCardHolder from '../components/WalletCardHolder';
 import {
   ALL_BANK_THEMES,
   getBankTheme,
@@ -342,14 +343,41 @@ export default function CardInvoicesScreen({ navigation }) {
           })}
         </ScrollView>
 
-        {/* CARTÃO VISUAL PRINCIPAL / CARROSSEL */}
+        {/* CARTÃO VISUAL PRINCIPAL OU CARTEIRA MASCULINA EM 'TODOS' */}
         <View style={styles.cardHeroContainer}>
-          <BankCardCarousel
-            cards={filteredCards.length > 0 ? filteredCards : cards}
-            activeCardId={focusedCardId || filteredCards[0]?.id || cards[0]?.id}
-            onSelectCard={(c) => setFocusedCardId(c.id)}
-            userName={defaultUserName}
-          />
+          {selectedBankFilter === 'Todos' ? (
+            <WalletCardHolder
+              cards={cards}
+              activeCardId={focusedCardId || cards[0]?.id}
+              onSelectCard={(c) => {
+                const theme = getBankTheme(c.bankId || c.bank || c.name);
+                setSelectedBankFilter(theme.name);
+                setFocusedCardId(c.id);
+              }}
+            />
+          ) : filteredCards.length > 1 ? (
+            <BankCardCarousel
+              cards={filteredCards}
+              activeCardId={focusedCardId || filteredCards[0]?.id}
+              onSelectCard={(c) => setFocusedCardId(c.id)}
+              userName={defaultUserName}
+            />
+          ) : (
+            <BankCard
+              bankId={
+                getBankTheme(
+                  filteredCards[0]?.bankId ||
+                    filteredCards[0]?.bank ||
+                    filteredCards[0]?.name
+                ).bankId
+              }
+              cardId={filteredCards[0]?.id}
+              holderName={filteredCards[0]?.holderName || defaultUserName}
+              lastFourDigits={filteredCards[0]?.lastFourDigits || '4568'}
+              expiryMonth={filteredCards[0]?.expiryMonth || '10'}
+              expiryYear={filteredCards[0]?.expiryYear || '26'}
+            />
+          )}
         </View>
 
         {/* DOIS CARDS DE RESUMO SUPERIOR */}
@@ -417,7 +445,10 @@ export default function CardInvoicesScreen({ navigation }) {
                   isCardFocused && styles.cardItemFocused,
                 ]}
                 activeOpacity={0.9}
-                onPress={() => setFocusedCardId(card.id)}
+                onPress={() => {
+                  setFocusedCardId(card.id);
+                  setSelectedBankFilter(theme.name);
+                }}
               >
                 <View style={styles.cardItemTopRow}>
                   {/* LOGO OFICIAL DO BANCO */}
