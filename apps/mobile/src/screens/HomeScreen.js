@@ -37,6 +37,7 @@ export default function HomeScreen({ navigation }) {
     Audiowide: require('../../assets/fonts/Audiowide-Regular.ttf'),
   });
   const {
+    loggedInUser,
     totalBalance,
     totalIncome,
     totalExpense,
