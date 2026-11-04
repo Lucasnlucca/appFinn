@@ -5,10 +5,10 @@ import { COLORS } from '../theme/colors';
 
 // 1. Gráfico Donut de Progresso do Orçamento (Usado na Home: "Resumo do Mês")
 export function BudgetDonut({
-  percent = 66,
+  percent = 0,
   size = 114,
   strokeWidth = 11,
-  centerValue = '66%',
+  centerValue = '0%',
   centerLabel = 'Do orçamento',
 }) {
   const radius = (size - strokeWidth) / 2;
@@ -65,7 +65,7 @@ export function BudgetDonut({
 // 2. Gráfico Donut Multi-Segmento (Usado em Análises: "Gastos por categoria")
 export function MultiCategoryDonut({
   segments = [],
-  totalFormatted = 'R$ 5.430,90',
+  totalFormatted = 'R$ 0,00',
   size = 138,
   strokeWidth = 14,
 }) {

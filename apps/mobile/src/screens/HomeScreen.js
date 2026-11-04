@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -18,7 +18,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useFonts } from 'expo-font';
 import { COLORS } from '../theme/colors';
-import { useFinance } from '../context/FinanceContext';
+import { useFinance, CATEGORIES } from '../context/FinanceContext';
 import AddTransactionModal from '../components/AddTransactionModal';
 import CofrinhosModal from '../components/CofrinhosModal';
 import { BudgetDonut } from '../components/DonutChart';
@@ -156,15 +156,37 @@ export default function HomeScreen({ navigation }) {
     );
   };
 
-  const currentUserName = loggedInUser?.name?.split(' ')[0] || members?.user1 || 'Você';
+  const rawName =
+    loggedInUser?.fullName ||
+    loggedInUser?.name ||
+    (members?.user1 && members.user1 !== 'Principal' ? members.user1 : '');
+  const currentUserName = rawName.trim().split(' ')[0] || '';
 
   // Cálculos dinâmicos reais de progresso do mês e orçamento
   const now = new Date();
   const currentDay = now.getDate();
   const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
   const monthProgress = Math.round((currentDay / daysInMonth) * 100);
-  const totalBudget = categoryBreakdown.reduce((s, c) => s + (c.budget || 0), 0) || 1;
-  const budgetProgress = totalExpense > 0 ? Math.round((totalExpense / totalBudget) * 100) : 0;
+  const totalBudget = CATEGORIES.filter((c) => c.id !== 'receita').reduce(
+    (s, c) => s + (c.budget || 0),
+    0
+  );
+  const budgetProgress =
+    totalBudget > 0 ? Math.min(Math.round((totalExpense / totalBudget) * 100), 100) : 0;
+
+  const homeInsightText = useMemo(() => {
+    if (!transactions || transactions.length === 0) {
+      return 'Adicione suas contas e transações para a IA analisar seus hábitos financeiros.';
+    }
+    if (totalExpense === 0 && totalIncome > 0) {
+      return `Você já recebeu ${formatMoney(totalIncome)} este mês e ainda não teve despesas registradas.`;
+    }
+    if (categoryBreakdown && categoryBreakdown.length > 0) {
+      const topCat = categoryBreakdown[0];
+      return `Sua principal despesa este mês é ${topCat.label} com ${formatMoney(topCat.spent)} (${topCat.percentOfTotal}% do total).`;
+    }
+    return 'O FINN AI está acompanhando suas despesas em tempo real.';
+  }, [transactions, totalExpense, totalIncome, categoryBreakdown]);
 
   const handleSaveBalance = async () => {
     if (!editingAcc) return;
@@ -236,9 +258,9 @@ export default function HomeScreen({ navigation }) {
           { paddingBottom: insets.bottom + 105 },
         ]}
       >
-        {/* SAUDAÇÃO PERSONALIZADA (Olá, Lucas 👋) */}
+        {/* SAUDAÇÃO PERSONALIZADA */}
         <View style={styles.greetingWrap}>
-          <Text style={styles.greetingTitle}>Olá, {currentUserName} 👋</Text>
+          <Text style={styles.greetingTitle}>Olá{currentUserName ? `, ${currentUserName}` : ''} 👋</Text>
           <Text style={styles.greetingSub}>Aqui está o resumo das suas finanças.</Text>
         </View>
 
@@ -301,15 +323,23 @@ export default function HomeScreen({ navigation }) {
                 style={styles.heroBalanceValue}
                 numberOfLines={1}
               >
-                {formatMoney((heroCardMode === 'balance' ? totalBalance : resultadoDoMes) || 12540.20)}
+                {formatMoney(heroCardMode === 'balance' ? totalBalance : resultadoDoMes)}
               </Text>
 
               {/* Tag de Comparativo / Tendência Inferior */}
-              <View style={styles.heroTrendPill}>
-                <Ionicons name="arrow-up" size={12} color="#34D399" />
-                <Text style={styles.heroTrendPercent}>+4,8%</Text>
-                <Text style={styles.heroTrendLabel}> em relação ao mês anterior</Text>
-              </View>
+              {accounts.length > 0 ? (
+                <View style={styles.heroTrendPill}>
+                  <Ionicons name="wallet-outline" size={12} color="#34D399" />
+                  <Text style={styles.heroTrendLabel}>
+                    {accounts.length} conta{accounts.length > 1 ? 's' : ''} cadastrada{accounts.length > 1 ? 's' : ''}
+                  </Text>
+                </View>
+              ) : (
+                <View style={styles.heroTrendPill}>
+                  <Ionicons name="sparkles" size={12} color="#FBBF24" />
+                  <Text style={styles.heroTrendLabel}>Toque para adicionar sua primeira conta</Text>
+                </View>
+              )}
             </View>
           </TouchableOpacity>
         </View>
@@ -356,8 +386,8 @@ export default function HomeScreen({ navigation }) {
           <View style={styles.resumoBody}>
             {/* Lado Esquerdo: Donut Chart com Porcentagem do Orçamento */}
             <BudgetDonut
-              percent={budgetProgress > 0 ? budgetProgress : 66}
-              centerValue={`${budgetProgress > 0 ? budgetProgress : 66}%`}
+              percent={budgetProgress}
+              centerValue={`${budgetProgress}%`}
               centerLabel="Do orçamento"
               size={116}
             />
@@ -413,10 +443,10 @@ export default function HomeScreen({ navigation }) {
 
             <View style={styles.insightsBody}>
               <View style={styles.targetIconCircle}>
-                <Ionicons name="disc" size={20} color="#FFFFFF" />
+                <Ionicons name="sparkles" size={18} color="#FFFFFF" />
               </View>
               <Text style={styles.insightsText}>
-                Seus gastos com alimentação subiram 18% neste mês.
+                {homeInsightText}
               </Text>
               <View style={styles.insightsChevronBtn}>
                 <Ionicons name="chevron-forward" size={16} color="#FFFFFF" />

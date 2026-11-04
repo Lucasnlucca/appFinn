@@ -106,10 +106,12 @@ export function FinanceProvider({ children }) {
         const storedUser = await getStoredUser();
         const storedToken = await getStoredToken();
         if (storedUser && storedToken) {
-          setLoggedInUser(storedUser);
-          if (storedUser.name) {
-            setMembers((prev) => ({ ...prev, user1: storedUser.name }));
-            setActiveMember(storedUser.name);
+          const uName = storedUser.fullName || storedUser.name || '';
+          const normalized = { ...storedUser, name: uName };
+          setLoggedInUser(normalized);
+          if (uName) {
+            setMembers((prev) => ({ ...prev, user1: uName }));
+            setActiveMember(uName);
           }
         } else {
           setLoggedInUser(null);

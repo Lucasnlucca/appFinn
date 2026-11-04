@@ -4,23 +4,29 @@ import Svg, { Path, Defs, LinearGradient, Stop, Circle } from 'react-native-svg'
 import { COLORS } from '../theme/colors';
 
 export default function ExpenseLineChart({
-  data = [
-    { month: 'Mai', value: 3800 },
-    { month: 'Jun', value: 5200 },
-    { month: 'Jul', value: 4100 },
-    { month: 'Ago', value: 6300 },
-    { month: 'Set', value: 4900 },
-    { month: 'Out', value: 5430.90 },
-  ],
-  peakFormatted = 'R$ 5.430,90',
+  data = [],
+  peakFormatted = 'R$ 0,00',
 }) {
   const chartHeight = 110;
   const chartWidth = 230;
-  const maxValue = 8000;
 
-  // Calcula coordenadas dos 6 pontos
-  const points = data.map((d, index) => {
-    const x = 15 + (index * (chartWidth - 30)) / (data.length - 1);
+  // Garante dados seguros sem crash caso vazio
+  const monthLabels = ['Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out'];
+  const safeData = data && data.length >= 2 ? data : monthLabels.map((m) => ({ month: m, value: 0 }));
+
+  const rawMax = Math.max(...safeData.map((d) => d.value || 0), 0);
+  const maxValue = rawMax > 0 ? rawMax * 1.25 : 1000;
+
+  const formatAxis = (val) => {
+    if (val >= 1000) {
+      return `${(val / 1000).toFixed(val % 1000 === 0 ? 0 : 1)}K`;
+    }
+    return `${Math.round(val)}`;
+  };
+
+  // Calcula coordenadas dos pontos
+  const points = safeData.map((d, index) => {
+    const x = 15 + (index * (chartWidth - 30)) / (safeData.length - 1);
     const normalizedY = 1 - Math.min(Math.max(d.value, 0), maxValue) / maxValue;
     const y = 18 + normalizedY * (chartHeight - 32);
     return { x, y, ...d };
@@ -49,12 +55,12 @@ export default function ExpenseLineChart({
       </View>
 
       <View style={styles.chartRow}>
-        {/* EIXO Y (0 a 8K) */}
+        {/* EIXO Y */}
         <View style={styles.yAxisWrap}>
-          <Text style={styles.axisLabel}>8K</Text>
-          <Text style={styles.axisLabel}>6K</Text>
-          <Text style={styles.axisLabel}>4K</Text>
-          <Text style={styles.axisLabel}>2K</Text>
+          <Text style={styles.axisLabel}>{formatAxis(maxValue)}</Text>
+          <Text style={styles.axisLabel}>{formatAxis(maxValue * 0.75)}</Text>
+          <Text style={styles.axisLabel}>{formatAxis(maxValue * 0.5)}</Text>
+          <Text style={styles.axisLabel}>{formatAxis(maxValue * 0.25)}</Text>
           <Text style={styles.axisLabel}>0</Text>
         </View>
 

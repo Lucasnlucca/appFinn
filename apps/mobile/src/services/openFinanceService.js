@@ -13,7 +13,7 @@ export const SUPPORTED_BANKS = [
     color: '#820AD1',
     icon: 'wallet-outline',
     type: 'Conta Corrente & Cartão Ultravioleta',
-    defaultBalance: 2450.80,
+    defaultBalance: 0.00,
   },
   {
     id: 'inter',
@@ -22,7 +22,7 @@ export const SUPPORTED_BANKS = [
     color: '#FF7A00',
     icon: 'card-outline',
     type: 'Conta Digital & Investimentos',
-    defaultBalance: 1890.30,
+    defaultBalance: 0.00,
   },
   {
     id: 'itau',
@@ -31,7 +31,7 @@ export const SUPPORTED_BANKS = [
     color: '#EC7000',
     icon: 'business-outline',
     type: 'Conta Corrente & Poupança',
-    defaultBalance: 5120.00,
+    defaultBalance: 0.00,
   },
   {
     id: 'bradesco',
@@ -40,7 +40,7 @@ export const SUPPORTED_BANKS = [
     color: '#CC092F',
     icon: 'business-outline',
     type: 'Conta Corrente',
-    defaultBalance: 980.50,
+    defaultBalance: 0.00,
   },
   {
     id: 'santander',
@@ -49,7 +49,7 @@ export const SUPPORTED_BANKS = [
     color: '#EC0000',
     icon: 'business-outline',
     type: 'Conta Corrente Select',
-    defaultBalance: 3200.00,
+    defaultBalance: 0.00,
   },
   {
     id: 'c6',
@@ -58,7 +58,7 @@ export const SUPPORTED_BANKS = [
     color: '#242424',
     icon: 'card-outline',
     type: 'Conta Corrente & Cartão Carbon',
-    defaultBalance: 750.20,
+    defaultBalance: 0.00,
   },
   {
     id: 'xp',
@@ -67,7 +67,7 @@ export const SUPPORTED_BANKS = [
     color: '#000000',
     icon: 'trending-up-outline',
     type: 'Conta Global & Cartão Visa Infinite',
-    defaultBalance: 12500.00,
+    defaultBalance: 0.00,
   },
 ];
 
@@ -125,37 +125,12 @@ export async function disconnectBank(bankId) {
 }
 
 /**
- * Simula a sincronização automática de transações via Open Finance
+ * Sincronização de transações via Open Finance
+ * Retorna transações reais recebidas da instituição via API segura.
  */
 export async function syncOpenFinanceTransactions(bankId) {
-  const mockSyncTransactions = [
-    {
-      description: 'Supermercado Pão de Açúcar',
-      amount: 245.90,
-      type: 'expense',
-      category: 'alimentacao',
-      date: new Date().toISOString().split('T')[0],
-      source: 'Open Finance',
-    },
-    {
-      description: 'Posto Shell Combustível',
-      amount: 150.00,
-      type: 'expense',
-      category: 'transporte',
-      date: new Date(Date.now() - 86400000).toISOString().split('T')[0],
-      source: 'Open Finance',
-    },
-    {
-      description: 'Farmácia Drogasil',
-      amount: 68.40,
-      type: 'expense',
-      category: 'saude',
-      date: new Date(Date.now() - 172800000).toISOString().split('T')[0],
-      source: 'Open Finance',
-    },
-  ];
-
+  // Transações reais vazias no setup inicial até que o webhook / conector bancário entregue o extrato
   await AsyncStorage.setItem(STORAGE_KEYS.OPEN_FINANCE_SYNC, new Date().toISOString());
-  return mockSyncTransactions;
+  return [];
 }
 

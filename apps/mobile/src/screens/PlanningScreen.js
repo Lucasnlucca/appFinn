@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -44,6 +44,9 @@ export default function PlanningScreen({ navigation }) {
     variableExpensesList,
     categoryBreakdown,
     hideBalances,
+    transactions,
+    economizadoPercent,
+    resultadoDoMes,
   } = useFinance();
 
   // Abas de Análises & Planejamento: 'geral' (Análises do Print) | 'categorias' | 'fixed' | 'variable' | 'cofrinhos'
@@ -77,6 +80,52 @@ export default function PlanningScreen({ navigation }) {
       })
     );
   };
+
+  const planningInsightText = useMemo(() => {
+    if (!transactions || transactions.length === 0) {
+      return 'Cadastre suas primeiras movimentações para que o FINN AI descubra padrões de economia e dicas personalizadas para você!';
+    }
+    if (totalExpense === 0) {
+      return 'Nenhuma despesa registrada este mês. Seu orçamento está totalmente preservado!';
+    }
+    if (totalIncome > totalExpense) {
+      return `Você já economizou ${economizadoPercent}% da sua renda este mês (${formatMoney(resultadoDoMes)} de saldo positivo). Continue assim! 🚀`;
+    }
+    return `Atenção: suas saídas no mês (${formatMoney(totalExpense)}) superaram as entradas (${formatMoney(totalIncome)}).`;
+  }, [transactions, totalExpense, totalIncome, economizadoPercent, resultadoDoMes]);
+
+  const evolutionData = useMemo(() => {
+    const monthNames = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+    const now = new Date();
+    const result = [];
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const y = d.getFullYear();
+      const m = d.getMonth();
+      const key = `${y}-${String(m + 1).padStart(2, '0')}`;
+      result.push({
+        key,
+        month: monthNames[m],
+        value: 0,
+      });
+    }
+
+    (transactions || []).forEach((t) => {
+      if (t.type === 'expense' && t.date) {
+        const tKey = t.date.substring(0, 7);
+        const found = result.find((item) => item.key === tKey);
+        if (found) {
+          found.value += Number(t.amount) || 0;
+        }
+      }
+    });
+
+    return result;
+  }, [transactions]);
+
+  const peakExpense = useMemo(() => {
+    return Math.max(...evolutionData.map((d) => d.value), 0);
+  }, [evolutionData]);
 
   const pagasBills = bills.filter((b) => b.paid);
   const pendentesBills = bills.filter((b) => !b.paid);
@@ -227,72 +276,73 @@ export default function PlanningScreen({ navigation }) {
             {/* CARD 1: GASTOS POR CATEGORIA (DONUT MULTI-SEGMENTO) */}
             <View style={styles.analisesCard}>
               <Text style={styles.analisesCardTitle}>Gastos por categoria</Text>
-              <View style={styles.donutRow}>
-                {/* Lado Esquerdo: Donut Chart Colorido */}
-                <MultiCategoryDonut
-                  segments={
-                    categoryBreakdown.length > 0
-                      ? categoryBreakdown.map((c) => ({
-                          label: c.label,
-                          value: c.spent,
-                          percent: c.percentOfTotal,
-                          color: c.color,
-                          icon: c.icon,
-                        }))
-                      : [
-                          { label: 'Alimentação', value: 1846.5, percent: 34, color: '#8B5CF6', icon: 'restaurant-outline' },
-                          { label: 'Moradia', value: 1195.0, percent: 22, color: '#06B6D4', icon: 'home-outline' },
-                          { label: 'Transporte', value: 814.6, percent: 15, color: '#F97316', icon: 'car-outline' },
-                          { label: 'Saúde', value: 488.8, percent: 9, color: '#EC4899', icon: 'heart-outline' },
-                          { label: 'Outros', value: 1086.0, percent: 20, color: '#A78BFA', icon: 'ellipsis-horizontal-outline' },
-                        ]
-                  }
-                  totalFormatted={totalExpense > 0 ? formatMoney(totalExpense) : 'R$ 5.430,90'}
-                  size={136}
-                  strokeWidth={13}
-                />
-
-                {/* Lado Direito: Lista de Categorias com Ícones Originais */}
-                <View style={styles.categoryLegendList}>
-                  {(categoryBreakdown.length > 0
-                    ? categoryBreakdown
-                    : [
-                        { label: 'Alimentação', percentOfTotal: 34, color: '#8B5CF6', icon: 'restaurant-outline' },
-                        { label: 'Moradia', percentOfTotal: 22, color: '#06B6D4', icon: 'home-outline' },
-                        { label: 'Transporte', percentOfTotal: 15, color: '#F97316', icon: 'car-outline' },
-                        { label: 'Saúde', percentOfTotal: 9, color: '#EC4899', icon: 'heart-outline' },
-                        { label: 'Outros', percentOfTotal: 20, color: '#A78BFA', icon: 'ellipsis-horizontal-outline' },
-                      ]
-                  ).map((cat, idx) => (
-                    <View key={`cat-${idx}`} style={styles.categoryLegendRow}>
-                      <View style={styles.categoryLegendIconWrap}>
-                        <Ionicons name={cat.icon || 'ellipse'} size={15} color={cat.color} />
-                      </View>
-                      <Text style={styles.categoryLegendName} numberOfLines={1}>
-                        {cat.label}
-                      </Text>
-                      <Text style={styles.categoryLegendPercent}>
-                        {cat.percentOfTotal || cat.percent}%
-                      </Text>
-                    </View>
-                  ))}
+              {categoryBreakdown.length === 0 ? (
+                <View style={styles.emptyAnalisesBox}>
+                  <Ionicons name="pie-chart-outline" size={38} color="#D1D5DB" />
+                  <Text style={styles.emptyAnalisesTitle}>Nenhum gasto registrado neste mês</Text>
+                  <Text style={styles.emptyAnalisesSub}>
+                    Adicione transações de despesa para visualizar a divisão percentual por categoria.
+                  </Text>
                 </View>
-              </View>
+              ) : (
+                <View style={styles.donutRow}>
+                  {/* Lado Esquerdo: Donut Chart Colorido */}
+                  <MultiCategoryDonut
+                    segments={categoryBreakdown.map((c) => ({
+                      label: c.label,
+                      value: c.spent,
+                      percent: c.percentOfTotal,
+                      color: c.color,
+                      icon: c.icon,
+                    }))}
+                    totalFormatted={formatMoney(totalExpense)}
+                    size={136}
+                    strokeWidth={13}
+                  />
+
+                  {/* Lado Direito: Lista de Categorias com Ícones Originais */}
+                  <View style={styles.categoryLegendList}>
+                    {categoryBreakdown.map((cat, idx) => (
+                      <View key={`cat-${idx}`} style={styles.categoryLegendRow}>
+                        <View style={styles.categoryLegendIconWrap}>
+                          <Ionicons name={cat.icon || 'ellipse'} size={15} color={cat.color} />
+                        </View>
+                        <Text style={styles.categoryLegendName} numberOfLines={1}>
+                          {cat.label}
+                        </Text>
+                        <Text style={styles.categoryLegendPercent}>
+                          {cat.percentOfTotal || cat.percent}%
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              )}
             </View>
 
-            {/* CARD 2: EVOLUÇÃO DE GASTOS (GRÁFICO DE LINHA SUAVE COM ÁREA) */}
+            {/* CARD 2: EVOLUÇÃO DE GASTOS */}
             <View style={styles.analisesCard}>
               <View style={styles.analisesCardHeaderRow}>
                 <Text style={styles.analisesCardTitle}>Evolução de gastos</Text>
                 <TouchableOpacity style={styles.periodDropdownBtn}>
-                  <Text style={styles.periodDropdownText}>Últimos 6 meses</Text>
-                  <Ionicons name="chevron-down" size={12} color="#71717A" />
+                  <Text style={styles.periodDropdownText}>Mês atual</Text>
                 </TouchableOpacity>
               </View>
 
-              <ExpenseLineChart
-                peakFormatted={totalExpense > 0 ? formatMoney(totalExpense) : 'R$ 5.430,90'}
-              />
+              {peakExpense === 0 && totalExpense === 0 ? (
+                <View style={styles.emptyAnalisesBox}>
+                  <Ionicons name="analytics-outline" size={38} color="#D1D5DB" />
+                  <Text style={styles.emptyAnalisesTitle}>Sem histórico de gastos</Text>
+                  <Text style={styles.emptyAnalisesSub}>
+                    O gráfico de linha será traçado conforme novas despesas forem registradas.
+                  </Text>
+                </View>
+              ) : (
+                <ExpenseLineChart
+                  data={evolutionData}
+                  peakFormatted={formatMoney(peakExpense || totalExpense)}
+                />
+              )}
             </View>
 
             {/* CARD 3: INSIGHT DA IA COM GRADIENTE */}
@@ -313,7 +363,7 @@ export default function PlanningScreen({ navigation }) {
 
                 <View style={styles.aiInsightBody}>
                   <Text style={styles.aiInsightText}>
-                    Seus gastos com transporte caíram 12% neste mês. Ótimo trabalho! 🚀
+                    {planningInsightText}
                   </Text>
                   <View style={styles.aiInsightArrowBtn}>
                     <Ionicons name="arrow-forward" size={16} color="#FFFFFF" />
@@ -1593,5 +1643,25 @@ const styles = StyleSheet.create({
     color: COLORS.white,
     fontSize: 14,
     fontWeight: '800',
+  },
+  emptyAnalisesBox: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 28,
+    paddingHorizontal: 20,
+  },
+  emptyAnalisesTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: COLORS.text,
+    marginTop: 10,
+    textAlign: 'center',
+  },
+  emptyAnalisesSub: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+    marginTop: 4,
+    lineHeight: 18,
   },
 });

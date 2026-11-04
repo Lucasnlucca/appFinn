@@ -183,7 +183,12 @@ export async function loginUser(email, password) {
     await saveAuthToken(data.token);
   }
   if (data?.user) {
-    await saveAuthUser(data.user);
+    const normalizedUser = {
+      ...data.user,
+      name: data.user.fullName || data.user.name || (email ? email.split('@')[0] : 'Você'),
+    };
+    await saveAuthUser(normalizedUser);
+    data.user = normalizedUser;
   }
 
   return data;
@@ -208,7 +213,12 @@ export async function registerUser(email, password, fullName, phone) {
     await saveAuthToken(data.token);
   }
   if (data?.user) {
-    await saveAuthUser(data.user);
+    const normalizedUser = {
+      ...data.user,
+      name: data.user.fullName || data.user.name || fullName || 'Você',
+    };
+    await saveAuthUser(normalizedUser);
+    data.user = normalizedUser;
   }
 
   return data;
