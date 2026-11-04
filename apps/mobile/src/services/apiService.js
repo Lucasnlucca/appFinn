@@ -416,3 +416,35 @@ export async function syncDatabaseWithPostgres({ localCards = [], localAccounts 
   }
 }
 
+// ==========================================
+// FINANÇAS COMPARTILHADAS (HOUSEHOLDS & GRUPOS)
+// ==========================================
+
+export async function fetchCurrentHouseholdApi() {
+  await ensureAuthenticated();
+  return apiRequest('households/current');
+}
+
+export async function createHouseholdApi(name, currency = 'BRL') {
+  await ensureAuthenticated();
+  return apiRequest('households', {
+    method: 'POST',
+    body: { name, currency },
+  });
+}
+
+export async function createHouseholdInvitationApi(email, role = 'MEMBER') {
+  await ensureAuthenticated();
+  return apiRequest('households/invitations', {
+    method: 'POST',
+    body: { email, role },
+  });
+}
+
+export async function acceptHouseholdInvitationApi(token) {
+  await ensureAuthenticated();
+  return apiRequest(`households/invitations/accept?token=${encodeURIComponent(token)}`, {
+    method: 'POST',
+  });
+}
+

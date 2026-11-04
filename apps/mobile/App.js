@@ -20,6 +20,7 @@ import SettingsScreen from './src/screens/SettingsScreen';
 import CardsAccountsScreen from './src/screens/CardsAccountsScreen';
 import CardInvoicesScreen from './src/screens/CardInvoicesScreen';
 import MonthlyAgendaScreen from './src/screens/MonthlyAgendaScreen';
+import SharedFinancesScreen from './src/screens/SharedFinancesScreen';
 import LoginScreen from './src/screens/LoginScreen';
 import AddTransactionModal from './src/components/AddTransactionModal';
 import FloatingAiButton from './src/components/FloatingAiButton';
@@ -122,6 +123,7 @@ function MainAppContent({ assetsLoaded, isFontsReady }) {
         <Stack.Screen name="CardsAccounts" component={CardsAccountsScreen} />
         <Stack.Screen name="CardInvoices" component={CardInvoicesScreen} />
         <Stack.Screen name="MonthlyAgenda" component={MonthlyAgendaScreen} />
+        <Stack.Screen name="SharedFinances" component={SharedFinancesScreen} />
         <Stack.Screen
           name="FinnAI"
           component={FinnAIScreen}

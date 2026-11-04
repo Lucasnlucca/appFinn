@@ -64,6 +64,9 @@ export default function HomeScreen({ navigation }) {
     toggleHideBalances,
     updateAccountBalance,
     addAccount,
+    viewMode,
+    setViewMode,
+    sharedGroups,
   } = useFinance();
 
   const [modalVisible, setModalVisible] = useState(false);
@@ -262,6 +265,43 @@ export default function HomeScreen({ navigation }) {
         <View style={styles.greetingWrap}>
           <Text style={styles.greetingTitle}>Olá{currentUserName ? `, ${currentUserName}` : ''} 👋</Text>
           <Text style={styles.greetingSub}>Aqui está o resumo das suas finanças.</Text>
+        </View>
+
+        {/* SELETOR DE MODO DE VISUALIZAÇÃO: Minhas | Compartilhadas | Consolidada */}
+        <View style={styles.viewModeContainer}>
+          <View style={styles.viewModePillGroup}>
+            {[
+              { id: 'personal', label: 'Minhas' },
+              { id: 'shared', label: 'Compartilhadas' },
+              { id: 'consolidated', label: 'Consolidada' },
+            ].map((tab) => {
+              const active = (viewMode || 'personal') === tab.id;
+              return (
+                <TouchableOpacity
+                  key={tab.id}
+                  style={[styles.viewModePill, active && styles.viewModePillActive]}
+                  onPress={() => setViewMode && setViewMode(tab.id)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.viewModePillText, active && styles.viewModePillTextActive]}>
+                    {tab.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {viewMode === 'shared' && (
+            <TouchableOpacity
+              style={styles.openSharedBtn}
+              onPress={() => navigation.navigate('SharedFinances')}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="people" size={14} color="#7C3AED" />
+              <Text style={styles.openSharedBtnText}>Ver Grupo</Text>
+              <Ionicons name="chevron-forward" size={12} color="#7C3AED" />
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* CARD HERO ROBÔ COM VÍDEO NATIVO E SALDO */}
@@ -1311,6 +1351,55 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 8,
     gap: 14,
+  },
+  viewModeContainer: {
+    paddingHorizontal: 4,
+    marginBottom: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  viewModePillGroup: {
+    flexDirection: 'row',
+    backgroundColor: '#F1F5F9',
+    borderRadius: 20,
+    padding: 3,
+  },
+  viewModePill: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  viewModePillActive: {
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  viewModePillText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  viewModePillTextActive: {
+    color: '#7C3AED',
+    fontWeight: '700',
+  },
+  openSharedBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#EDE9FE',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  openSharedBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#7C3AED',
   },
   oldHeroCard: {
     borderRadius: 22,

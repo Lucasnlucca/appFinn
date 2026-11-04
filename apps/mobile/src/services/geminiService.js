@@ -250,11 +250,13 @@ Quando o usuário disser que gastou ou recebeu dinheiro (ex: "gastei 45 no merca
 export async function analyzeReceiptImage({
   base64Image,
   mimeType = 'image/jpeg',
+  userNotes = '',
   financialContext,
   members = { user1: 'Titular', user2: 'Parceiro(a)' },
 }) {
   const activeUser = financialContext?.activeMember || members.user1;
   const prompt = `Analise atentamente esta foto/print de comprovante bancário, recibo ou cupom fiscal.
+${userNotes ? `Observação enviada pelo usuário: "${userNotes}"\nConsidere com prioridade essa informação para classificar a despesa/receita.\n` : ''}
 Responda de forma gentil e amigável em português explicando o que identificou.
 E no FINAL ABSOLUTO da mensagem, adicione a tag estruturada:
 [TRANSACTION: {"description": "Nome do favorecido/loja", "amount": 0.00, "type": "expense", "category": "alimentacao", "author": "${activeUser}"}]
@@ -276,15 +278,17 @@ Se não conseguir ler nenhum valor no comprovante, responda educadamente pedindo
 }
 
 /**
- * Analisa documento PDF (Boleto, Nota Fiscal, Extrato)
+ * Analisa documento PDF (Boleto, Nota Fiscal, Extrato, Fatura de Cartão)
  */
 export async function analyzeInvoicePdf({
   base64Pdf,
+  userNotes = '',
   financialContext,
   members = { user1: 'Titular', user2: 'Parceiro(a)' },
 }) {
   const activeUser = financialContext?.activeMember || members.user1;
-  const prompt = `Analise este documento PDF financeiro (boleto bancário ou fatura de serviços).
+  const prompt = `Analise este documento PDF financeiro (boleto bancário, fatura de cartão de crédito ou nota de serviços).
+${userNotes ? `Observação enviada pelo usuário: "${userNotes}"\nConsidere essa observação rigorosamente (ex: banco emissor, titular ou mês de referência).\n` : ''}
 Explique educadamente quem é o cedente/emissor e o valor principal.
 E no FINAL ABSOLUTO da mensagem, adicione a tag estruturada:
 [TRANSACTION: {"description": "Nome da empresa/serviço", "amount": 0.00, "type": "expense", "category": "moradia", "author": "${activeUser}"}]`;

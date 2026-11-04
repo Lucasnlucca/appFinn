@@ -19,8 +19,13 @@ import {
   createCreditCard as apiCreateCreditCard,
   createAccount as apiCreateAccount,
   logoutUser,
+  clearAuthSession,
   getStoredUser,
   getStoredToken,
+  fetchCurrentHouseholdApi,
+  createHouseholdApi,
+  createHouseholdInvitationApi,
+  acceptHouseholdInvitationApi,
 } from '../services/apiService';
 import { getBankTheme } from '../constants/BankThemeRegistry';
 
@@ -88,6 +93,11 @@ export function FinanceProvider({ children }) {
   });
   const [isSyncingPostgres, setIsSyncingPostgres] = useState(false);
   const [aiChat, setAiChat] = useState([]);
+  const [viewMode, setViewModeState] = useState('personal'); // 'personal' | 'shared' | 'consolidated'
+  const [sharedGroups, setSharedGroups] = useState([]);
+  const [activeGroupId, setActiveGroupIdState] = useState(null);
+  const [groupInvitations, setGroupInvitations] = useState([]);
+  const [settlements, setSettlements] = useState([]);
   const [loaded, setLoaded] = useState(false);
 
   // Helper para persistir dados no namespace isolado do usuário conectado (Ambiente Separado)
@@ -153,6 +163,11 @@ export function FinanceProvider({ children }) {
           savedHide,
           savedHeroMode,
           savedSkin,
+          savedGroups,
+          savedActiveGrpId,
+          savedInvs,
+          savedSettles,
+          savedMode,
         ] = await Promise.all([
           AsyncStorage.getItem(getUserStorageKey(uid, 'transactions')),
           AsyncStorage.getItem(getUserStorageKey(uid, 'accounts')),
@@ -164,6 +179,11 @@ export function FinanceProvider({ children }) {
           AsyncStorage.getItem(getUserStorageKey(uid, 'hide_balances')),
           AsyncStorage.getItem(getUserStorageKey(uid, 'hero_view_mode')),
           AsyncStorage.getItem(getUserStorageKey(uid, 'ai_skin')),
+          AsyncStorage.getItem(getUserStorageKey(uid, 'shared_groups')),
+          AsyncStorage.getItem(getUserStorageKey(uid, 'active_group_id')),
+          AsyncStorage.getItem(getUserStorageKey(uid, 'group_invitations')),
+          AsyncStorage.getItem(getUserStorageKey(uid, 'settlements')),
+          AsyncStorage.getItem(getUserStorageKey(uid, 'view_mode')),
         ]);
 
         const parsedTrans = savedTrans ? JSON.parse(savedTrans) : [];
@@ -205,6 +225,11 @@ export function FinanceProvider({ children }) {
         if (savedHide) setHideBalances(JSON.parse(savedHide));
         if (savedHeroMode) setHeroCardMode(JSON.parse(savedHeroMode));
         if (savedSkin) setAiSkin(savedSkin);
+        if (savedGroups) setSharedGroups(JSON.parse(savedGroups));
+        if (savedActiveGrpId) setActiveGroupIdState(savedActiveGrpId);
+        if (savedInvs) setGroupInvitations(JSON.parse(savedInvs));
+        if (savedSettles) setSettlements(JSON.parse(savedSettles));
+        if (savedMode) setViewModeState(savedMode);
 
         // Dispara sincronização silenciosa para obter cartões/contas do PostgreSQL deste usuário
         syncWithPostgres();
@@ -721,15 +746,201 @@ export function FinanceProvider({ children }) {
     setBills([]);
     setCofrinhos([]);
     setAiChat([]);
+    setSharedGroups([]);
+    setActiveGroupIdState(null);
+    setGroupInvitations([]);
+    setSettlements([]);
+    setViewModeState('personal');
     setLoggedInUser(null);
     await clearAuthSession();
     await logoutUser().catch(() => {});
   };
 
-  // Cálculos financeiros consolidados
+  // Atualização em tempo real do perfil do usuário logado
+  const updateUserProfile = async (updates) => {
+    if (!loggedInUser) return;
+    const currentName = updates.fullName || updates.name || loggedInUser.fullName || loggedInUser.name;
+    const updated = {
+      ...loggedInUser,
+      ...updates,
+      name: currentName,
+      fullName: currentName,
+    };
+    setLoggedInUser(updated);
+    setMembers((prev) => ({ ...prev, user1: currentName }));
+    if (activeMember === loggedInUser.name || activeMember === 'Principal' || !activeMember) {
+      setActiveMember(currentName);
+    }
+    await AsyncStorage.setItem('@finn_auth_user', JSON.stringify(updated));
+    await saveUserItem('user_profile', updated);
+    return updated;
+  };
+
+  // Alternador de Modo de Visualização: 'personal' | 'shared' | 'consolidated'
+  const setViewMode = async (mode) => {
+    setViewModeState(mode);
+    await saveUserItem('view_mode', mode);
+  };
+
+  const setActiveGroupId = async (id) => {
+    setActiveGroupIdState(id);
+    await saveUserItem('active_group_id', id);
+  };
+
+  // Módulo Finanças Compartilhadas: Criar Grupo
+  const createSharedGroup = async ({ name, type = 'Casal', description = '' }) => {
+    const ownerName = loggedInUser?.fullName || loggedInUser?.name || 'Você';
+    const newGroup = {
+      id: 'grp-' + Date.now(),
+      name: name || 'Finanças do Casal',
+      type: type || 'Casal',
+      description: description || '',
+      createdAt: new Date().toISOString(),
+      inviteCode: Math.random().toString(36).substring(2, 8).toUpperCase(),
+      members: [
+        {
+          id: loggedInUser?.id || 'admin',
+          name: ownerName,
+          email: loggedInUser?.email || '',
+          role: 'ADMIN',
+        },
+      ],
+    };
+
+    try {
+      const apiRes = await createHouseholdApi(name);
+      if (apiRes?.id) {
+        newGroup.remoteId = apiRes.id;
+      }
+    } catch (e) {
+      console.log('Grupo criado offline/localmente:', e.message);
+    }
+
+    const nextGroups = [newGroup, ...sharedGroups];
+    setSharedGroups(nextGroups);
+    setActiveGroupIdState(newGroup.id);
+    await saveUserItem('shared_groups', nextGroups);
+    await saveUserItem('active_group_id', newGroup.id);
+    return newGroup;
+  };
+
+  // Convidar Pessoa para o Grupo Compartilhado
+  const invitePersonToGroup = async ({ groupId, email, type = 'Casal', message = '' }) => {
+    const code = Math.random().toString(36).substring(2, 8).toUpperCase();
+    const inv = {
+      id: 'inv-' + Date.now(),
+      groupId: groupId || activeGroupId,
+      email: email.trim().toLowerCase(),
+      type,
+      message,
+      token: code,
+      createdAt: new Date().toISOString(),
+      status: 'PENDING',
+    };
+
+    try {
+      const apiRes = await createHouseholdInvitationApi(email);
+      if (apiRes?.token) {
+        inv.token = apiRes.token;
+      }
+    } catch (e) {
+      console.log('Convite gerado localmente:', e.message);
+    }
+
+    const nextInvitations = [inv, ...groupInvitations];
+    setGroupInvitations(nextInvitations);
+    await saveUserItem('group_invitations', nextInvitations);
+    return inv;
+  };
+
+  // Aceitar Convite de Grupo
+  const acceptGroupInvitation = async (code) => {
+    try {
+      await acceptHouseholdInvitationApi(code);
+    } catch (e) {
+      console.log('Ingresso offline/local:', e.message);
+    }
+
+    const joinedGroup = {
+      id: 'grp-joined-' + Date.now(),
+      name: 'Finanças do Casal',
+      type: 'Casal',
+      description: 'Convite aceito',
+      createdAt: new Date().toISOString(),
+      inviteCode: code,
+      members: [
+        { id: 'partner', name: 'Veronica', email: '', role: 'ADMIN' },
+        { id: loggedInUser?.id || 'me', name: loggedInUser?.name || 'Você', email: loggedInUser?.email || '', role: 'MEMBER' },
+      ],
+    };
+
+    const nextGroups = [joinedGroup, ...sharedGroups];
+    setSharedGroups(nextGroups);
+    setActiveGroupIdState(joinedGroup.id);
+    await saveUserItem('shared_groups', nextGroups);
+    await saveUserItem('active_group_id', joinedGroup.id);
+    return joinedGroup;
+  };
+
+  // Lançar Despesa Compartilhada
+  const addSharedExpense = async (expData) => {
+    const payer = expData.paidBy || loggedInUser?.name || 'Você';
+    const splitRatio = expData.splitMethod === 'equal' ? 0.5 : parseFloat(expData.splitRatio) || 0.5;
+    const newTx = {
+      id: 'tx-shared-' + Date.now(),
+      title: expData.description,
+      amount: parseFloat(expData.amount) || 0,
+      type: 'expense',
+      category: expData.category || 'alimentacao',
+      date: new Date().toISOString().split('T')[0],
+      author: payer,
+      paidBy: payer,
+      isShared: true,
+      splitMethod: expData.splitMethod || 'equal',
+      splitRatio: splitRatio,
+      sharedGroupId: expData.groupId || activeGroupId,
+      notes: expData.notes || '',
+    };
+
+    const nextTxs = [newTx, ...transactions];
+    setTransactions(nextTxs);
+    await saveUserItem('transactions', nextTxs);
+    return newTx;
+  };
+
+  // Registrar Acerto de Contas
+  const recordSettlement = async (settlementData) => {
+    const newSettlement = {
+      id: 'set-' + Date.now(),
+      groupId: settlementData.groupId || activeGroupId,
+      fromMember: settlementData.fromMember,
+      toMember: settlementData.toMember,
+      amount: parseFloat(settlementData.amount) || 0,
+      notes: settlementData.notes || '',
+      date: new Date().toISOString(),
+      status: 'COMPLETED',
+    };
+
+    const nextSettlements = [newSettlement, ...settlements];
+    setSettlements(nextSettlements);
+    await saveUserItem('settlements', nextSettlements);
+    return newSettlement;
+  };
+
+  // Cálculos financeiros consolidados com suporte a Contexto/Modo de Visualização:
+  // 'personal' (Minhas finanças) | 'shared' (Finanças compartilhadas) | 'consolidated' (Visão consolidada)
+  const currentUserName = loggedInUser?.fullName || loggedInUser?.name || members?.user1 || 'Principal';
+
   const filteredTransactions = transactions.filter((t) => {
+    if (viewMode === 'shared') {
+      return !!t.isShared;
+    }
+    if (viewMode === 'personal') {
+      return !t.isShared || t.author === currentUserName || t.paidBy === currentUserName;
+    }
+    // 'consolidated'
     if (activeMember === 'Casal') return true;
-    return t.author === activeMember;
+    return t.author === activeMember || t.isShared;
   });
 
   const totalIncome = filteredTransactions
@@ -738,13 +949,21 @@ export function FinanceProvider({ children }) {
 
   const totalExpense = filteredTransactions
     .filter((t) => t.type === 'expense')
-    .reduce((sum, t) => sum + t.amount, 0);
+    .reduce((sum, t) => {
+      if (viewMode === 'consolidated' && t.isShared) {
+        const ratio = t.splitRatio !== undefined ? t.splitRatio : 0.5;
+        return sum + (t.amount * ratio);
+      }
+      return sum + t.amount;
+    }, 0);
 
   const resultadoDoMes = totalIncome - totalExpense;
   const accountsBalance = accounts.reduce((sum, a) => sum + (a.balance || 0), 0);
-  // Se o usuário tem contas cadastradas, o saldo total é a soma das contas.
-  // Se ainda não cadastrou nenhuma conta, o saldo total reflete o resultado das movimentações reais
-  const totalBalance = accounts.length > 0 ? accountsBalance : resultadoDoMes;
+  const totalBalance = viewMode === 'shared'
+    ? -totalExpense
+    : accounts.length > 0
+    ? accountsBalance
+    : resultadoDoMes;
 
   // Cálculos de gastos fixos vs variáveis
   const fixedExpensesList = filteredTransactions.filter((t) => t.type === 'expense' && t.expenseType === 'fixed');
@@ -934,11 +1153,11 @@ Responda de forma clara, motivadora e estruturada em tópicos!`;
     return { text: aiReplyText, transaction: createdTxs[0] || null, transactions: createdTxs };
   };
 
-  const processReceiptMedia = async (base64Image, mimeType = 'image/jpeg') => {
+  const processReceiptMedia = async (base64Image, mimeType = 'image/jpeg', userNotes = '') => {
     const userMsg = {
       id: 'msg-' + Date.now(),
       sender: 'user',
-      text: '📷 [Comprovante anexado]',
+      text: userNotes ? `📷 [Comprovante]: ${userNotes}` : '📷 [Comprovante anexado]',
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     };
 
@@ -952,6 +1171,7 @@ Responda de forma clara, motivadora e estruturada em tópicos!`;
       const raw = await analyzeReceiptImage({
         base64Image,
         mimeType,
+        userNotes,
         financialContext: { totalBalance, totalIncome, totalExpense, activeMember },
         members,
       });
@@ -981,11 +1201,11 @@ Responda de forma clara, motivadora e estruturada em tópicos!`;
     return { text: aiReplyText, transaction: createdTxs[0] || null, transactions: createdTxs };
   };
 
-  const processPdfInvoice = async (base64Pdf) => {
+  const processPdfInvoice = async (base64Pdf, userNotes = '') => {
     const userMsg = {
       id: 'msg-' + Date.now(),
       sender: 'user',
-      text: '📄 [Boleto / Nota anexada]',
+      text: userNotes ? `📄 [Documento/Fatura]: ${userNotes}` : '📄 [Boleto / Nota anexada]',
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     };
 
@@ -998,6 +1218,7 @@ Responda de forma clara, motivadora e estruturada em tópicos!`;
     try {
       const raw = await analyzeInvoicePdf({
         base64Pdf,
+        userNotes,
         financialContext: { totalBalance, totalIncome, totalExpense, activeMember },
         members,
       });
@@ -1152,6 +1373,19 @@ Responda de forma clara, motivadora e estruturada em tópicos!`;
         isSyncingPostgres,
         syncWithPostgres,
         testPostgresConnection,
+        updateUserProfile,
+        viewMode,
+        setViewMode,
+        sharedGroups,
+        activeGroupId,
+        setActiveGroupId,
+        groupInvitations,
+        settlements,
+        createSharedGroup,
+        invitePersonToGroup,
+        acceptGroupInvitation,
+        addSharedExpense,
+        recordSettlement,
       }}
     >
       {children}

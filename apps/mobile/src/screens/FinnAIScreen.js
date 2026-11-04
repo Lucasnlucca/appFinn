@@ -21,8 +21,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
-import * as FileSystem from 'expo-file-system/legacy';
-import { File } from 'expo-file-system';
+import { readFileAsBase64, readFileAsText } from '../services/fileHelper';
 import {
   useAudioRecorder,
   RecordingPresets,
@@ -38,27 +37,6 @@ const finnAvatarSource = require('../../assets/finn-ai-avatar.png');
 const finnChatHeroSource = require('../../assets/finn-chat-hero.png');
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-
-// Função segura para ler arquivos em Base64 compatível com Expo SDK 58
-async function readFileAsBase64(uri) {
-  try {
-    if (FileSystem?.readAsStringAsync) {
-      return await FileSystem.readAsStringAsync(uri, {
-        encoding: FileSystem.EncodingType?.Base64 || 'base64',
-      });
-    }
-  } catch (err) {
-    console.warn('readAsStringAsync legacy fallback:', err);
-  }
-
-  try {
-    const file = new File(uri);
-    return await file.base64();
-  } catch (err) {
-    console.warn('File.base64 failed:', err);
-    throw err;
-  }
-}
 
 // Limpa texto para fala natural no sintetizador de voz (sem markdown e sem emojis)
 function cleanTextForSpeech(text) {
@@ -169,6 +147,7 @@ export default function FinnAIScreen({ navigation }) {
   const [inputText, setInputText] = useState('');
   const [analyzing, setAnalyzing] = useState(false);
   const [analyzingStatus, setAnalyzingStatus] = useState('');
+  const [attachedFile, setAttachedFile] = useState(null); // { type, name, uri, base64, content, mimeType }
 
   // Gravador de Áudio Oficial do Expo (SDK 58)
   const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
@@ -311,12 +290,41 @@ export default function FinnAIScreen({ navigation }) {
     });
   };
 
-  // 2. ENVIAR MENSAGEM DE TEXTO
+  // 2. ENVIAR MENSAGEM DE TEXTO OU ARQUIVO ANEXADO
   const handleSend = async (textToSend) => {
     const text = textToSend || inputText;
-    if (!text.trim() || analyzing) return;
+    if ((!text.trim() && !attachedFile) || analyzing) return;
+
     setInputText('');
     setAnalyzing(true);
+
+    // Se houver arquivo anexado (PDF, CSV, Imagem), processa junto com a observação do usuário
+    if (attachedFile) {
+      const file = attachedFile;
+      setAttachedFile(null);
+
+      try {
+        if (file.type === 'pdf') {
+          setAnalyzingStatus('Lendo boleto / fatura em PDF...');
+          await processPdfInvoice(file.base64, text.trim() || undefined);
+        } else if (file.type === 'csv') {
+          setAnalyzingStatus('Analisando extrato CSV...');
+          const prompt = text.trim()
+            ? `[EXTRATO CSV ANEXADO: ${file.name}]\nObservação do usuário: "${text.trim()}"\n\nConteúdo:\n${file.content.slice(0, 3500)}\n\nPor favor, analise as movimentações desse extrato considerando a observação.`
+            : `[EXTRATO CSV ANEXADO: ${file.name}]\n${file.content.slice(0, 3500)}\n\nPor favor, analise as movimentações desse extrato e registre as receitas e despesas identificadas.`;
+          await sendAiMessage(prompt);
+        } else if (file.type === 'image') {
+          setAnalyzingStatus('Analisando comprovante...');
+          await processReceiptMedia(file.base64, file.mimeType, text.trim() || undefined);
+        }
+      } catch (err) {
+        Alert.alert('Erro ao processar anexo', err.message);
+      } finally {
+        setAnalyzing(false);
+      }
+      return;
+    }
+
     setAnalyzingStatus('FINN pensando...');
     try {
       await sendAiMessage(text.trim());
@@ -344,15 +352,20 @@ export default function FinnAIScreen({ navigation }) {
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
         const asset = result.assets[0];
-        setAnalyzing(true);
-        setAnalyzingStatus('Analisando comprovante com Google Gemini...');
-        const mime = asset.mimeType || 'image/jpeg';
-        await processReceiptMedia(asset.base64, mime);
+        let base64 = asset.base64;
+        if (!base64 && asset.uri) {
+          base64 = await readFileAsBase64(asset.uri);
+        }
+        setAttachedFile({
+          type: 'image',
+          name: asset.fileName || 'comprovante.jpg',
+          uri: asset.uri,
+          base64,
+          mimeType: asset.mimeType || 'image/jpeg',
+        });
       }
     } catch (e) {
       Alert.alert('Erro ao carregar imagem', e.message);
-    } finally {
-      setAnalyzing(false);
     }
   };
 
@@ -374,19 +387,24 @@ export default function FinnAIScreen({ navigation }) {
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
         const asset = result.assets[0];
-        setAnalyzing(true);
-        setAnalyzingStatus('Analisando foto com Google Gemini...');
-        const mime = asset.mimeType || 'image/jpeg';
-        await processReceiptMedia(asset.base64, mime);
+        let base64 = asset.base64;
+        if (!base64 && asset.uri) {
+          base64 = await readFileAsBase64(asset.uri);
+        }
+        setAttachedFile({
+          type: 'image',
+          name: asset.fileName || 'foto_comprovante.jpg',
+          uri: asset.uri,
+          base64,
+          mimeType: asset.mimeType || 'image/jpeg',
+        });
       }
     } catch (e) {
       Alert.alert('Erro na câmera', e.message);
-    } finally {
-      setAnalyzing(false);
     }
   };
 
-  // 5. ANEXAR PDF
+  // 5. ANEXAR PDF (NÃO ENVIA DIRETO: FICA ANEXADO PARA COMPLEMENTAR SE DESEJAR)
   const handlePickPdf = async () => {
     setAttachModalVisible(false);
     try {
@@ -397,20 +415,21 @@ export default function FinnAIScreen({ navigation }) {
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
         const asset = result.assets[0];
-        setAnalyzing(true);
-        setAnalyzingStatus('Lendo boleto / fatura em PDF...');
-
         const base64 = await readFileAsBase64(asset.uri);
-        await processPdfInvoice(base64);
+        setAttachedFile({
+          type: 'pdf',
+          name: asset.name || 'fatura.pdf',
+          uri: asset.uri,
+          base64,
+          mimeType: 'application/pdf',
+        });
       }
     } catch (e) {
       Alert.alert('Erro ao carregar PDF', e.message);
-    } finally {
-      setAnalyzing(false);
     }
   };
 
-  // 6. ANEXAR CSV
+  // 6. ANEXAR CSV (NÃO ENVIA DIRETO: FICA ANEXADO PARA COMPLEMENTAR SE DESEJAR)
   const handlePickCsv = async () => {
     setAttachModalVisible(false);
     try {
@@ -421,33 +440,22 @@ export default function FinnAIScreen({ navigation }) {
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
         const asset = result.assets[0];
-        setAnalyzing(true);
-        setAnalyzingStatus('Lendo e analisando extrato CSV...');
-
-        let content = '';
-        try {
-          if (FileSystem?.readAsStringAsync) {
-            content = await FileSystem.readAsStringAsync(asset.uri, {
-              encoding: FileSystem.EncodingType?.UTF8 || 'utf8',
-            });
-          }
-        } catch (err) {
-          console.warn('readAsStringAsync utf8 falhou:', err);
+        const content = await readFileAsText(asset.uri);
+        let base64 = '';
+        if (!content) {
+          base64 = await readFileAsBase64(asset.uri);
         }
-
-        if (content) {
-          await sendAiMessage(
-            `[EXTRATO CSV ANEXADO: ${asset.name}]\n${content.slice(0, 3000)}\n\nPor favor, analise as movimentações desse extrato e registre as receitas e despesas identificadas.`
-          );
-        } else {
-          const base64 = await readFileAsBase64(asset.uri);
-          await processPdfInvoice(base64);
-        }
+        setAttachedFile({
+          type: 'csv',
+          name: asset.name || 'extrato.csv',
+          uri: asset.uri,
+          content,
+          base64,
+          mimeType: 'text/csv',
+        });
       }
     } catch (e) {
       Alert.alert('Erro ao carregar CSV', e.message);
-    } finally {
-      setAnalyzing(false);
     }
   };
 
@@ -956,6 +964,40 @@ export default function FinnAIScreen({ navigation }) {
               { paddingBottom: Math.max(insets.bottom, 14) },
             ]}
           >
+            {/* PRÉVIA DO ARQUIVO ANEXADO ANTES DO ENVIO */}
+            {attachedFile && (
+              <View style={styles.attachedPreviewBox}>
+                <View style={styles.attachedIconWrap}>
+                  <Ionicons
+                    name={
+                      attachedFile.type === 'pdf'
+                        ? 'document-text'
+                        : attachedFile.type === 'csv'
+                        ? 'stats-chart'
+                        : 'image'
+                    }
+                    size={17}
+                    color="#7C3AED"
+                  />
+                </View>
+                <View style={{ flex: 1, marginHorizontal: 8 }}>
+                  <Text style={styles.attachedFileName} numberOfLines={1}>
+                    {attachedFile.name}
+                  </Text>
+                  <Text style={styles.attachedFileSub}>
+                    {attachedFile.type.toUpperCase()} • Digite uma mensagem antes de enviar (opcional)
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.attachedRemoveBtn}
+                  onPress={() => setAttachedFile(null)}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Ionicons name="close-circle" size={20} color="#9CA3AF" />
+                </TouchableOpacity>
+              </View>
+            )}
+
             <View style={styles.inputBarPill}>
               {/* Botão de Clipe / Anexos */}
               <TouchableOpacity
@@ -1578,6 +1620,43 @@ const styles = StyleSheet.create({
   inputBarOuter: {
     paddingHorizontal: 16,
     backgroundColor: '#F7F5FC',
+  },
+  attachedPreviewBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F3E8FF',
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#E9D5FF',
+    shadowColor: '#7C3AED',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  attachedIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  attachedFileName: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#581C87',
+  },
+  attachedFileSub: {
+    fontSize: 10,
+    color: '#7E22CE',
+    marginTop: 1,
+  },
+  attachedRemoveBtn: {
+    padding: 3,
   },
   inputBarPill: {
     flexDirection: 'row',

@@ -13,11 +13,15 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as DocumentPicker from 'expo-document-picker';
 import { useFinance } from '../context/FinanceContext';
+import { readFileAsBase64, readFileAsText } from '../services/fileHelper';
+import { analyzeInvoicePdf, sendTextMessageToGemini } from '../services/geminiService';
 import BankLogo, { getBankInfo } from '../components/BankLogo';
 import BankCard from '../components/BankCard';
 import BankCardCarousel from '../components/BankCardCarousel';
@@ -39,6 +43,8 @@ export default function CardInvoicesScreen({ navigation }) {
     removeCard,
     members,
     loggedInUser,
+    transactions = [],
+    addTransactionsBatch,
   } = useFinance();
 
   const defaultUserName =
@@ -46,6 +52,8 @@ export default function CardInvoicesScreen({ navigation }) {
 
   const [selectedBankFilter, setSelectedBankFilter] = useState('Todos');
   const [focusedCardId, setFocusedCardId] = useState(cards[0]?.id || null);
+  const [selectedInvoiceMonth, setSelectedInvoiceMonth] = useState('Nov/2026');
+  const [importingInvoice, setImportingInvoice] = useState(false);
 
   // Modais
   const [modalNewCard, setModalNewCard] = useState(false);
@@ -127,6 +135,120 @@ export default function CardInvoicesScreen({ navigation }) {
         (b.brandLabel && b.brandLabel.toLowerCase().includes(q))
     );
   }, [bankSearchText]);
+
+  // Cartão Focado e Tema (Modelo Foto 3)
+  const focusedCard = useMemo(() => {
+    return cards.find((c) => c.id === focusedCardId) || cards[0] || null;
+  }, [cards, focusedCardId]);
+
+  const focusedCardTheme = useMemo(() => {
+    if (!focusedCard) return getBankTheme('nubank');
+    return getBankTheme(focusedCard.bankId || focusedCard.bank || focusedCard.name);
+  }, [focusedCard]);
+
+  // Transações/Lançamentos reais deste cartão
+  const invoiceTransactions = useMemo(() => {
+    if (!focusedCard) return [];
+    return transactions.filter(
+      (t) =>
+        t.cardId === focusedCard.id ||
+        (t.cardName && t.cardName.toLowerCase() === (focusedCard.name || '').toLowerCase()) ||
+        (t.paymentMethod === 'credit_card' && (!t.cardId || t.cardId === focusedCard.id))
+    );
+  }, [transactions, focusedCard]);
+
+  const displayInvoiceTxs = useMemo(() => {
+    return invoiceTransactions;
+  }, [invoiceTransactions]);
+
+  // Importar Fatura (PDF / CSV) diretamente da tela do cartão (Conforme solicitado)
+  const handleImportInvoice = async () => {
+    try {
+      const res = await DocumentPicker.getDocumentAsync({
+        type: ['application/pdf', 'text/csv', 'text/comma-separated-values'],
+        copyToCacheDirectory: true,
+      });
+
+      if (res.canceled || !res.assets || res.assets.length === 0) return;
+      const asset = res.assets[0];
+      setImportingInvoice(true);
+
+      const isPdf = asset.name?.toLowerCase().endsWith('.pdf') || asset.mimeType?.includes('pdf');
+      let base64OrText = '';
+      if (isPdf) {
+        base64OrText = await readFileAsBase64(asset.uri);
+      } else {
+        base64OrText = await readFileAsText(asset.uri);
+      }
+
+      const activeCard = focusedCard || cards[0];
+      const bankName = activeCard?.name || 'Nubank';
+      const promptNotes = `Fatura do cartão de crédito ${bankName}. Extraia o valor total da fatura e liste todas as compras/lançamentos detalhados.`;
+
+      let aiResponse = '';
+      if (isPdf) {
+        aiResponse = await analyzeInvoicePdf({
+          base64Pdf: base64OrText,
+          userNotes: promptNotes,
+          members,
+        });
+      } else {
+        aiResponse = await sendTextMessageToGemini({
+          text: `Analise este extrato CSV da fatura do cartão ${bankName}:\n\n${base64OrText.slice(0, 10000)}`,
+          userNotes: promptNotes,
+          members,
+        });
+      }
+
+      // Regex para capturar valor total da fatura
+      const matchTotal = aiResponse.match(/R\$\s*([\d\.,]+)/);
+      let parsedInvoiceTotal = 0;
+      if (matchTotal) {
+        parsedInvoiceTotal = parseFloat(matchTotal[1].replace(/\./g, '').replace(',', '.')) || 0;
+      }
+
+      // Regex para capturar lançamentos estruturados
+      const txRegex = /\[TRANSACTION:\s*({.*?})\]/g;
+      let txMatch;
+      const newExtractedTxs = [];
+      while ((txMatch = txRegex.exec(aiResponse)) !== null) {
+        try {
+          const parsed = JSON.parse(txMatch[1]);
+          newExtractedTxs.push({
+            id: 'tx-inv-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4),
+            title: parsed.description || parsed.title || 'Compra Cartão',
+            amount: parseFloat(parsed.amount) || 0,
+            type: 'expense',
+            category: parsed.category || 'outros',
+            date: new Date().toISOString().split('T')[0],
+            cardId: activeCard?.id,
+            cardName: bankName,
+            paymentMethod: 'credit_card',
+            author: loggedInUser?.name || members?.user1 || 'Titular',
+          });
+        } catch (e) {}
+      }
+
+      if (newExtractedTxs.length > 0 && addTransactionsBatch) {
+        await addTransactionsBatch(newExtractedTxs);
+      }
+
+      if (parsedInvoiceTotal > 0 && activeCard?.id) {
+        await updateCard(activeCard.id, {
+          currentInvoice: parsedInvoiceTotal,
+        });
+      }
+
+      Alert.alert(
+        'Fatura Importada!',
+        `A fatura do ${bankName} foi processada pela IA com sucesso.\n${parsedInvoiceTotal > 0 ? `• Total da Fatura: R$ ${parsedInvoiceTotal.toFixed(2).replace('.', ',')}\n` : ''}${newExtractedTxs.length > 0 ? `• ${newExtractedTxs.length} lançamentos adicionados.` : ''}`
+      );
+    } catch (e) {
+      Alert.alert('Erro ao importar', 'Não foi possível ler o arquivo: ' + e.message);
+    } finally {
+      setImportingInvoice(false);
+    }
+  };
 
   // Abertura do modal de criação
   const handleOpenAddModal = () => {
@@ -270,8 +392,8 @@ export default function CardInvoicesScreen({ navigation }) {
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <StatusBar barStyle="dark-content" backgroundColor="#F7F5FC" />
 
-      {/* HEADER SUPERIOR */}
-      <View style={styles.topHeader}>
+      {/* HEADER SUPERIOR IDÊNTICO À FOTO 3 */}
+      <View style={styles.photo3TopHeader}>
         <TouchableOpacity
           style={styles.headerBtn}
           onPress={() => navigation?.goBack?.()}
@@ -280,28 +402,38 @@ export default function CardInvoicesScreen({ navigation }) {
           <Ionicons name="arrow-back" size={24} color="#18181B" />
         </TouchableOpacity>
 
-        {/* LOGO FINN CENTRALIZADA */}
-        <View style={styles.headerLogoRow}>
-          <Image
-            source={finnLogoSource}
-            style={styles.headerLogoIcon}
-            resizeMode="contain"
-          />
-          <Text style={styles.headerLogoText}>FINN</Text>
+        <View style={styles.photo3MonthSelector}>
+          <TouchableOpacity
+            onPress={() => {
+              const months = ['Out/2026', 'Nov/2026', 'Dez/2026'];
+              const idx = months.indexOf(selectedInvoiceMonth);
+              if (idx > 0) setSelectedInvoiceMonth(months[idx - 1]);
+            }}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Ionicons name="chevron-back" size={16} color="#71717A" />
+          </TouchableOpacity>
+
+          <Text style={styles.photo3MonthTitle}>Fatura {selectedInvoiceMonth}</Text>
+
+          <TouchableOpacity
+            onPress={() => {
+              const months = ['Out/2026', 'Nov/2026', 'Dez/2026'];
+              const idx = months.indexOf(selectedInvoiceMonth);
+              if (idx < months.length - 1) setSelectedInvoiceMonth(months[idx + 1]);
+            }}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Ionicons name="chevron-forward" size={16} color="#71717A" />
+          </TouchableOpacity>
         </View>
 
-        {/* BOTÃO DE AJUDA / CONFIGURAÇÕES */}
         <TouchableOpacity
-          style={styles.headerSettingsBtn}
+          style={styles.photo3AddBtn}
+          onPress={handleOpenAddModal}
           activeOpacity={0.7}
-          onPress={() =>
-            Alert.alert(
-              'Faturas dos Cartões',
-              'Acompanhe as faturas em aberto e fechadas de todos os seus cartões de crédito em um só lugar com sincronização em tempo real.'
-            )
-          }
         >
-          <Ionicons name="settings-sharp" size={19} color="#71717A" />
+          <Ionicons name="add" size={22} color="#18181B" />
         </TouchableOpacity>
       </View>
 
@@ -312,228 +444,171 @@ export default function CardInvoicesScreen({ navigation }) {
           { paddingBottom: insets.bottom + 40 },
         ]}
       >
-        {/* TÍTULO PRINCIPAL */}
-        <Text style={styles.pageTitle}>Faturas dos cartões</Text>
-
-        {/* SELETOR DE BANCOS / PILLS */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.filterPillsRow}
-        >
-          {filterPills.map((filterName) => {
-            const isActive = selectedBankFilter === filterName;
-            return (
-              <TouchableOpacity
-                key={filterName}
-                style={[styles.filterPill, isActive && styles.filterPillActive]}
-                onPress={() => handleSelectFilter(filterName)}
-                activeOpacity={0.8}
-              >
-                <Text
-                  style={[
-                    styles.filterPillText,
-                    isActive && styles.filterPillTextActive,
-                  ]}
-                >
-                  {filterName}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
-
-        {/* CARTÃO VISUAL PRINCIPAL: CARTEIRA DE COURO EM 'TODOS', OU CARROSSEL NO BANCO ESPECÍFICO */}
-        <View style={styles.cardHeroContainer}>
-          {cards.length === 0 ? (
-            <TouchableOpacity
-              style={styles.emptyCardHeroBox}
-              activeOpacity={0.8}
-              onPress={handleOpenAddModal}
-            >
-              <View style={styles.emptyHeroIconCircle}>
-                <Ionicons name="card-outline" size={32} color="#7C3AED" />
-              </View>
-              <Text style={styles.emptyHeroTitle}>Nenhum cartão cadastrado</Text>
-              <Text style={styles.emptyHeroSubtitle}>
-                Toque aqui para adicionar seu cartão de crédito real
-              </Text>
-            </TouchableOpacity>
-          ) : selectedBankFilter === 'Todos' ? (
-            <WalletCardHolder
-              cards={cards}
-              activeCardId={focusedCardId || cards[0]?.id}
-              onSelectCard={(c) => {
-                const theme = getBankTheme(c.bankId || c.bank || c.name);
-                setSelectedBankFilter(theme.name);
-                setFocusedCardId(c.id);
-              }}
-            />
-          ) : (
-            <BankCardCarousel
-              cards={filteredCards.length > 0 ? filteredCards : cards}
-              activeCardId={focusedCardId || filteredCards[0]?.id || cards[0]?.id}
-              onSelectCard={(c) => setFocusedCardId(c.id)}
-              userName={defaultUserName}
-            />
-          )}
-        </View>
-
-        {/* DOIS CARDS DE RESUMO SUPERIOR */}
-        <View style={styles.summaryRow}>
-          {/* CARD 1: A PAGAR */}
-          <View style={styles.summaryCard}>
-            <View style={styles.summaryIconBox}>
-              <Ionicons name="card-outline" size={18} color="#7C3AED" />
-            </View>
-            <Text style={styles.summaryLabel}>A pagar</Text>
-            <Text style={styles.summaryValue}>R$ 0,00</Text>
-            <Text style={styles.summarySub}>0 faturas fechadas</Text>
-          </View>
-
-          {/* CARD 2: EM ABERTO */}
-          <View style={styles.summaryCard}>
-            <View style={styles.summaryIconBox}>
-              <Ionicons name="flash-outline" size={18} color="#7C3AED" />
-            </View>
-            <Text style={styles.summaryLabel}>Em aberto</Text>
-            <Text style={styles.summaryValue}>
-              {formatMoney(totalOpenInvoices)}
-            </Text>
-            <Text style={styles.summarySub}>
-              {totalCardsCount > 0
-                ? `${totalCardsCount} faturas em aberto`
-                : 'Nenhuma fatura em aberto'}
-            </Text>
-          </View>
-        </View>
-
-        {/* SEÇÃO "SEUS CARTÕES" */}
-        <View style={styles.cardsSectionHeader}>
-          <Text style={styles.cardsSectionTitle}>Seus cartões</Text>
-          <TouchableOpacity
-            style={styles.evolucaoBtn}
-            activeOpacity={0.75}
-            onPress={() => setModalEvolucao(true)}
+        {/* SELETOR DE CARTÕES SE HOUVER MAIS DE UM */}
+        {cards.length > 1 && (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.filterPillsRow}
           >
-            <Text style={styles.evolucaoBtnText}>Ver evolução</Text>
-            <Ionicons name="bar-chart-outline" size={14} color="#7C3AED" />
+            {cards.map((cardItem) => {
+              const isSelected = (focusedCard?.id || cards[0]?.id) === cardItem.id;
+              return (
+                <TouchableOpacity
+                  key={cardItem.id}
+                  style={[styles.filterPill, isSelected && styles.filterPillActive]}
+                  onPress={() => setFocusedCardId(cardItem.id)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.filterPillText, isSelected && styles.filterPillTextActive]}>
+                    {cardItem.name || 'Cartão'}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        )}
+
+        {/* ========================================================================= */}
+        {/* CARD PRINCIPAL COM DESIGN DA FOTO 3 (NUBANK / ROXO GRADIENTE + CHIP)     */}
+        {/* ========================================================================= */}
+        <View style={styles.photo3CardWrapper}>
+          <LinearGradient
+            colors={focusedCardTheme?.gradientColors || ['#7C3AED', '#4C1D95']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.photo3Card}
+          >
+            {/* Topo do Cartão: Chip EMV + Nome do Banco */}
+            <View style={styles.photo3CardTopRow}>
+              <View style={styles.photo3Chip}>
+                <View style={styles.photo3ChipInner} />
+                <View style={styles.photo3ChipLineH} />
+                <View style={styles.photo3ChipLineV} />
+              </View>
+              <Text style={styles.photo3BankName}>
+                {(focusedCard?.name || focusedCardTheme?.name || 'NUBANK').toUpperCase()}
+              </Text>
+            </View>
+
+            {/* Total da Fatura */}
+            <Text style={styles.photo3TotalLabel}>Total da fatura</Text>
+            <Text style={styles.photo3TotalValue}>
+              {formatMoney(
+                focusedCard?.currentInvoice !== undefined && focusedCard?.currentInvoice !== null
+                  ? focusedCard.currentInvoice
+                  : 579.60
+              )}
+            </Text>
+
+            {/* Datas de Fechamento e Vencimento */}
+            <View style={styles.photo3DatesRow}>
+              <View style={styles.photo3DateCol}>
+                <Text style={styles.photo3DateLabel}>Fechamento</Text>
+                <Text style={styles.photo3DateValue}>
+                  {`0${focusedCard?.closingDay || 1}`.slice(-2)}/11/2026
+                </Text>
+              </View>
+              <View style={styles.photo3DateCol}>
+                <Text style={styles.photo3DateLabel}>Vencimento</Text>
+                <Text style={styles.photo3DateValue}>
+                  {`0${focusedCard?.dueDay || 10}`.slice(-2)}/11/2026
+                </Text>
+              </View>
+            </View>
+
+            {/* Limite Usado no Ciclo */}
+            <View style={styles.photo3LimitHeader}>
+              <Text style={styles.photo3LimitLabel}>Limite usado no ciclo</Text>
+              <Text style={styles.photo3LimitPercent}>
+                {focusedCard?.usedPercent !== undefined ? focusedCard.usedPercent : 36}%
+              </Text>
+            </View>
+
+            {/* Barra de Progresso */}
+            <View style={styles.photo3LimitTrack}>
+              <View
+                style={[
+                  styles.photo3LimitFill,
+                  {
+                    width: `${focusedCard?.usedPercent !== undefined ? Math.min(focusedCard.usedPercent, 100) : 36}%`,
+                  },
+                ]}
+              />
+            </View>
+
+            {/* Valores de Limite */}
+            <Text style={styles.photo3LimitSub}>
+              {formatMoney(focusedCard?.usedLimit || (focusedCard?.limit ? (focusedCard.limit * (focusedCard.usedPercent || 36)) / 100 : 1791.20))} de {formatMoney(focusedCard?.limit || 5000.00)}
+            </Text>
+          </LinearGradient>
+        </View>
+
+        {/* ========================================================================= */}
+        {/* BOTÃO PARA IMPORTAR FATURA DIRETO DO CARTÃO (CONFORME SOLICITADO)         */}
+        {/* ========================================================================= */}
+        <TouchableOpacity
+          style={styles.importInvoiceBtn}
+          onPress={handleImportInvoice}
+          disabled={importingInvoice}
+          activeOpacity={0.8}
+        >
+          {importingInvoice ? (
+            <ActivityIndicator size="small" color="#7C3AED" />
+          ) : (
+            <>
+              <Ionicons name="document-text-outline" size={18} color="#7C3AED" />
+              <Text style={styles.importInvoiceBtnText}>
+                Importar fatura (PDF / CSV)
+              </Text>
+              <Ionicons name="sparkles" size={16} color="#7C3AED" />
+            </>
+          )}
+        </TouchableOpacity>
+
+        {/* ========================================================================= */}
+        {/* SEÇÃO: LANÇAMENTOS DA FATURA (5)                                         */}
+        {/* ========================================================================= */}
+        <View style={styles.photo3TxSectionHeader}>
+          <Text style={styles.photo3TxSectionTitle}>
+            Lançamentos da fatura ({displayInvoiceTxs.length})
+          </Text>
+          <TouchableOpacity
+            style={styles.miniManageBtn}
+            onPress={() => focusedCard && handleOpenEditModal(focusedCard)}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="settings-outline" size={14} color="#7C3AED" />
+            <Text style={styles.miniManageBtnText}>Gerenciar</Text>
           </TouchableOpacity>
         </View>
 
-        {/* LISTA DE CARTÕES */}
-        <View style={styles.cardsList}>
-          {filteredCards.length === 0 ? (
-            <View style={styles.emptyCardsListBox}>
-              <Ionicons name="card-outline" size={36} color="#9CA3AF" />
-              <Text style={styles.emptyCardsListTitle}>Nenhum cartão encontrado</Text>
-              <Text style={styles.emptyCardsListSub}>
-                Toque no botão (+) no topo para adicionar seu primeiro cartão.
-              </Text>
+        {displayInvoiceTxs.length === 0 ? (
+          <View style={styles.emptyInvoiceTxBox}>
+            <Ionicons name="receipt-outline" size={32} color="#A1A1AA" />
+            <Text style={styles.emptyInvoiceTxTitle}>Nenhum lançamento nesta fatura</Text>
+            <Text style={styles.emptyInvoiceTxSub}>
+              Toque no botão "Importar fatura (PDF / CSV)" acima para ler seu arquivo automaticamente ou converse com o FINN AI.
+            </Text>
+          </View>
+        ) : (
+          displayInvoiceTxs.map((tx) => (
+            <View key={tx.id} style={styles.invoiceTxRow}>
+              <View style={styles.invoiceTxIconCircle}>
+                <Ionicons name="card-outline" size={18} color="#7C3AED" />
+              </View>
+              <View style={styles.invoiceTxMain}>
+                <Text style={styles.invoiceTxTitle}>{tx.title || tx.description}</Text>
+                <Text style={styles.invoiceTxSub}>
+                  {tx.date || '04/11/2026'} · {tx.author || 'Titular'}
+                </Text>
+              </View>
+              <Text style={styles.invoiceTxAmount}>{formatMoney(tx.amount)}</Text>
             </View>
-          ) : (
-            filteredCards.map((card) => {
-            const theme = getBankTheme(card.bankId || card.bank || card.name);
-            const limit = card.limit || 5000;
-            const invoice = card.currentInvoice || 0;
-            const usedPercent =
-              card.usedPercent !== undefined
-                ? card.usedPercent
-                : limit > 0
-                ? Math.min(Math.round((invoice / limit) * 100), 100)
-                : 0;
+          ))
+        )}
 
-            const isCardFocused = focusedCardId === card.id;
-
-            return (
-              <TouchableOpacity
-                key={card.id}
-                style={[
-                  styles.cardItem,
-                  isCardFocused && styles.cardItemFocused,
-                ]}
-                activeOpacity={0.9}
-                onPress={() => setFocusedCardId(card.id)}
-              >
-                <View style={styles.cardItemTopRow}>
-                  {/* LOGO OFICIAL DO BANCO */}
-                  <BankLogo bank={theme.bankId} size={44} />
-
-                  {/* INFORMAÇÕES CENTRAIS */}
-                  <View style={styles.cardItemInfo}>
-                    <Text style={styles.cardItemName}>
-                      {card.name || theme.name}
-                    </Text>
-                    <Text style={styles.cardItemDueDate}>
-                      {card.dueDateText ||
-                        `Vence em ${card.dueDay || 10}/11/2026`}
-                    </Text>
-                  </View>
-
-                  {/* VALOR E STATUS */}
-                  <View style={styles.cardItemRight}>
-                    <Text style={styles.cardItemInvoiceValue}>
-                      {formatMoney(invoice)}
-                    </Text>
-                    <View style={styles.statusPill}>
-                      <Text style={styles.statusPillText}>
-                        {card.status || 'Em aberto'}
-                      </Text>
-                    </View>
-                  </View>
-                </View>
-
-                {/* BARRA DE PROGRESSO DE LIMITE */}
-                <View style={styles.progressSection}>
-                  <View style={styles.progressTrack}>
-                    <View
-                      style={[
-                        styles.progressFill,
-                        {
-                          width: `${usedPercent}%`,
-                          backgroundColor: theme.gradientColors[0],
-                        },
-                      ]}
-                    />
-                  </View>
-                  <View style={styles.cardItemBottomActionsRow}>
-                    <Text style={styles.progressMetaText}>
-                      {usedPercent}% do limite usado · Limite: {formatMoney(limit)}
-                    </Text>
-
-                    {/* BOTÕES DE AÇÃO: EDITAR E EXCLUIR */}
-                    <View style={styles.actionButtonsRow}>
-                      <TouchableOpacity
-                        style={styles.miniActionBtn}
-                        onPress={() => handleOpenEditModal(card)}
-                        activeOpacity={0.7}
-                      >
-                        <Ionicons
-                          name="pencil-outline"
-                          size={15}
-                          color="#7C3AED"
-                        />
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={[styles.miniActionBtn, styles.miniDeleteBtn]}
-                        onPress={() => handleConfirmDeleteCard(card)}
-                        activeOpacity={0.7}
-                      >
-                        <Ionicons
-                          name="trash-outline"
-                          size={15}
-                          color="#EF4444"
-                        />
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                </View>
-              </TouchableOpacity>
-            );
-          }))}
-        </View>
-
-        {/* BOTÃO PARA ADICIONAR NOVO CARTÃO */}
+        {/* BOTÃO PARA ADICIONAR CARTÃO ADICIONAL */}
         <TouchableOpacity
           style={styles.addCardBtn}
           activeOpacity={0.8}
@@ -969,6 +1044,263 @@ const styles = StyleSheet.create({
     marginTop: 4,
     marginBottom: 16,
     letterSpacing: -0.3,
+  },
+  photo3TopHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+  },
+  photo3MonthSelector: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  photo3MonthTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#18181B',
+  },
+  photo3AddBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#E4E4E7',
+  },
+  photo3CardWrapper: {
+    width: '100%',
+    marginBottom: 16,
+  },
+  photo3Card: {
+    borderRadius: 22,
+    padding: 22,
+    shadowColor: '#4C1D95',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.25,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  photo3CardTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 16,
+  },
+  photo3Chip: {
+    width: 38,
+    height: 28,
+    borderRadius: 6,
+    backgroundColor: '#EAB308',
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#CA8A04',
+    justifyContent: 'center',
+    alignItems: 'center',
+    position: 'relative',
+  },
+  photo3ChipInner: {
+    width: 20,
+    height: 18,
+    borderRadius: 3,
+    borderWidth: 1,
+    borderColor: '#A16207',
+  },
+  photo3ChipLineH: {
+    position: 'absolute',
+    width: '100%',
+    height: 1,
+    backgroundColor: '#A16207',
+  },
+  photo3ChipLineV: {
+    position: 'absolute',
+    height: '100%',
+    width: 1,
+    backgroundColor: '#A16207',
+  },
+  photo3BankName: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#FFFFFF',
+    letterSpacing: 2,
+  },
+  photo3TotalLabel: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: 'rgba(255, 255, 255, 0.75)',
+    marginBottom: 4,
+  },
+  photo3TotalValue: {
+    fontSize: 32,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: -0.5,
+    marginBottom: 16,
+  },
+  photo3DatesRow: {
+    flexDirection: 'row',
+    gap: 28,
+    marginBottom: 18,
+  },
+  photo3DateCol: {},
+  photo3DateLabel: {
+    fontSize: 11,
+    fontWeight: '500',
+    color: 'rgba(255, 255, 255, 0.7)',
+  },
+  photo3DateValue: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    marginTop: 2,
+  },
+  photo3LimitHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  photo3LimitLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: 'rgba(255, 255, 255, 0.85)',
+  },
+  photo3LimitPercent: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  photo3LimitTrack: {
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+    overflow: 'hidden',
+    marginBottom: 8,
+  },
+  photo3LimitFill: {
+    height: '100%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 4,
+  },
+  photo3LimitSub: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: 'rgba(255, 255, 255, 0.8)',
+  },
+  importInvoiceBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#EDE9FE',
+    borderWidth: 1,
+    borderColor: '#DDD6FE',
+    borderRadius: 16,
+    paddingVertical: 14,
+    marginBottom: 20,
+    shadowColor: '#7C3AED',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  importInvoiceBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#7C3AED',
+  },
+  photo3TxSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+    paddingHorizontal: 2,
+  },
+  photo3TxSectionTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#18181B',
+  },
+  miniManageBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+  },
+  miniManageBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#7C3AED',
+  },
+  emptyInvoiceTxBox: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    padding: 24,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
+    marginBottom: 16,
+  },
+  emptyInvoiceTxTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#18181B',
+    marginTop: 10,
+    marginBottom: 4,
+  },
+  emptyInvoiceTxSub: {
+    fontSize: 12,
+    color: '#64748B',
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+  invoiceTxRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  invoiceTxIconCircle: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: '#EDE9FE',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  invoiceTxMain: {
+    flex: 1,
+  },
+  invoiceTxTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#18181B',
+    marginBottom: 2,
+  },
+  invoiceTxSub: {
+    fontSize: 11,
+    color: '#94A3B8',
+    fontWeight: '500',
+  },
+  invoiceTxAmount: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#18181B',
   },
   filterPillsRow: {
     flexDirection: 'row',

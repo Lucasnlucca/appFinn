@@ -43,6 +43,7 @@ export default function SettingsScreen({ navigation }) {
   const {
     members,
     updateMembersNames,
+    updateUserProfile,
     clearAllData,
     loadDemoData,
     loggedInUser,
@@ -118,11 +119,19 @@ export default function SettingsScreen({ navigation }) {
     setOpenSection((prev) => (prev === sectionId ? null : sectionId));
   };
 
-  const handleSaveNames = () => {
+  const handleSaveNames = async () => {
+    const trimmedUser1 = user1.trim() || 'Principal';
+    const trimmedUser2 = user2.trim() || 'Veronica';
     updateMembersNames({
-      user1: user1.trim() || 'Lucas',
-      user2: user2.trim() || 'Veronica',
+      user1: trimmedUser1,
+      user2: trimmedUser2,
     });
+    if (updateUserProfile) {
+      await updateUserProfile({
+        fullName: trimmedUser1,
+        name: trimmedUser1,
+      });
+    }
     setSavedNotice(true);
     setTimeout(() => setSavedNotice(false), 2500);
   };
@@ -484,326 +493,94 @@ export default function SettingsScreen({ navigation }) {
           </View>
 
           {/* ================================================================= */}
-          {/* 3. INTELIGÊNCIA ARTIFICIAL */}
+          {/* 3. FINANÇAS COMPARTILHADAS (CASAL / FAMÍLIA) */}
           {/* ================================================================= */}
           <View style={styles.accordionCard}>
             <TouchableOpacity
               style={[
                 styles.accordionHeader,
-                openSection === 'ia' && styles.accordionHeaderOpen,
+                openSection === 'compartilhado' && styles.accordionHeaderOpen,
               ]}
               activeOpacity={0.8}
-              onPress={() => toggleSection('ia')}
+              onPress={() => toggleSection('compartilhado')}
             >
               <View style={[styles.accordionIconBox, { backgroundColor: '#EDE9FE' }]}>
-                <Image
-                  source={finnAvatarSource}
-                  style={{ width: 28, height: 28, borderRadius: 14 }}
-                  resizeMode="cover"
-                />
+                <Ionicons name="people-sharp" size={20} color="#7C3AED" />
               </View>
               <View style={styles.accordionHeaderInfo}>
-                <Text style={styles.accordionTitle}>Inteligência Artificial</Text>
+                <Text style={styles.accordionTitle}>Finanças Compartilhadas</Text>
                 <Text style={styles.accordionSubtitle}>
-                  Google Gemini AI (Multimodal) e leitura de documentos
+                  Divisão de contas, acerto e grupos para casais
                 </Text>
               </View>
               <Ionicons
-                name={openSection === 'ia' ? 'chevron-up' : 'chevron-down'}
+                name={openSection === 'compartilhado' ? 'chevron-up' : 'chevron-down'}
                 size={20}
-                color={openSection === 'ia' ? '#7C3AED' : '#71717A'}
+                color={openSection === 'compartilhado' ? '#7C3AED' : '#71717A'}
               />
             </TouchableOpacity>
 
-            {openSection === 'ia' && (
+            {openSection === 'compartilhado' && (
               <View style={styles.accordionBody}>
-                {/* Link para abrir o Chat com a IA */}
+                {/* SUBMENU 1: PAINEL & RESUMO CONJUNTO */}
                 <TouchableOpacity
-                  style={[styles.submenuItem, { marginBottom: 14 }]}
+                  style={styles.submenuItem}
                   activeOpacity={0.75}
-                  onPress={() => navigation?.navigate?.('FinnAI')}
+                  onPress={() => navigation?.navigate?.('SharedFinances')}
                 >
-                  <View
-                    style={[
-                      styles.submenuIconBox,
-                      { backgroundColor: '#EDE9FE' },
-                    ]}
-                  >
-                    <Ionicons
-                      name="chatbubble-ellipses-outline"
-                      size={18}
-                      color="#7C3AED"
-                    />
+                  <View style={[styles.submenuIconBox, { backgroundColor: '#EDE9FE' }]}>
+                    <Ionicons name="pie-chart-outline" size={18} color="#7C3AED" />
                   </View>
                   <View style={styles.submenuInfo}>
-                    <Text style={styles.submenuTitle}>Abrir FINN AI</Text>
+                    <Text style={styles.submenuTitle}>Painel Conjunto</Text>
                     <Text style={styles.submenuSub}>
-                      Conversar com o assistente, enviar áudios e comprovantes
+                      Despesas compartilhadas e gráfico do casal
                     </Text>
                   </View>
                   <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
                 </TouchableOpacity>
 
-                {/* Configuração da Chave */}
-                <Text style={styles.inputLabel}>CHAVE DE API (GEMINI_API_KEY)</Text>
-                <View style={styles.keyInputWrap}>
-                  <TextInput
-                    style={styles.keyInput}
-                    value={geminiKey}
-                    onChangeText={setGeminiKeyState}
-                    placeholder="Cole sua AI Studio API Key..."
-                    placeholderTextColor="#9CA3AF"
-                    secureTextEntry={!showGeminiKey}
-                    autoCapitalize="none"
-                  />
-                  <TouchableOpacity
-                    onPress={() => setShowGeminiKey(!showGeminiKey)}
-                  >
-                    <Ionicons
-                      name={showGeminiKey ? 'eye-off-outline' : 'eye-outline'}
-                      size={18}
-                      color="#9CA3AF"
-                    />
-                  </TouchableOpacity>
-                </View>
-
-                {/* Seleção do Modelo */}
-                <Text style={styles.inputLabel}>MODELO DO GEMINI</Text>
-                <View style={styles.modelRow}>
-                  {[
-                    'gemini-3.5-flash',
-                    'gemini-3.5-flash-lite',
-                    'gemini-3.8-flash',
-                  ].map((m) => (
-                    <TouchableOpacity
-                      key={m}
-                      style={[
-                        styles.modelBtn,
-                        geminiModel === m && styles.modelBtnActive,
-                      ]}
-                      onPress={() => setGeminiModelState(m)}
-                    >
-                      <Text
-                        style={[
-                          styles.modelBtnText,
-                          geminiModel === m && styles.modelBtnTextActive,
-                        ]}
-                      >
-                        {m.replace('gemini-', '')}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-
+                {/* SUBMENU 2: ACERTO DE CONTAS */}
                 <TouchableOpacity
-                  style={styles.primaryBtn}
-                  onPress={handleSaveGemini}
-                  activeOpacity={0.8}
+                  style={styles.submenuItem}
+                  activeOpacity={0.75}
+                  onPress={() => navigation?.navigate?.('SharedFinances')}
                 >
-                  <Text style={styles.primaryBtnText}>
-                    {geminiSavedNotice
-                      ? '✓ Chave Salva com Sucesso!'
-                      : 'Salvar Configuração Gemini'}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            )}
-          </View>
-
-          {/* ================================================================= */}
-          {/* 4. BANCO DE DADOS & INFRAESTRUTURA VPS */}
-          {/* ================================================================= */}
-          <View style={styles.accordionCard}>
-            <TouchableOpacity
-              style={[
-                styles.accordionHeader,
-                openSection === 'infra' && styles.accordionHeaderOpen,
-              ]}
-              activeOpacity={0.8}
-              onPress={() => toggleSection('infra')}
-            >
-              <View style={[styles.accordionIconBox, { backgroundColor: '#E0F2FE' }]}>
-                <Ionicons name="server" size={20} color="#0284C7" />
-              </View>
-              <View style={styles.accordionHeaderInfo}>
-                <Text style={styles.accordionTitle}>
-                  Banco de Dados & API VPS
-                </Text>
-                <Text style={styles.accordionSubtitle}>
-                  PostgreSQL 17 • NestJS • Sincronização em Nuvem
-                </Text>
-              </View>
-              <Ionicons
-                name={openSection === 'infra' ? 'chevron-up' : 'chevron-down'}
-                size={20}
-                color={openSection === 'infra' ? '#7C3AED' : '#71717A'}
-              />
-            </TouchableOpacity>
-
-            {openSection === 'infra' && (
-              <View style={styles.accordionBody}>
-                <View style={styles.vpsInfoBox}>
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <Text style={styles.vpsLabel}>MOTOR DE BANCO:</Text>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                      <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: postgresStatus?.isOnline ? '#16A34A' : '#EAB308' }} />
-                      <Text style={{ fontSize: 11, fontWeight: '700', color: postgresStatus?.isOnline ? '#16A34A' : '#CA8A04' }}>
-                        {postgresStatus?.isOnline ? 'PostgreSQL 17 Conectado' : 'Aguardando Sinc'}
-                      </Text>
-                    </View>
+                  <View style={[styles.submenuIconBox, { backgroundColor: '#DCFCE7' }]}>
+                    <Ionicons name="swap-horizontal-outline" size={18} color="#16A34A" />
                   </View>
-                  <Text style={styles.vpsValue}>
-                    PostgreSQL 17 (Prisma ORM • Easypanel VPS)
-                  </Text>
-
-                  <Text style={[styles.vpsLabel, { marginTop: 10 }]}>
-                    ENDPOINT DA API NESTJS:
-                  </Text>
-                  <Text style={styles.vpsValue} numberOfLines={1}>
-                    {DEFAULT_API_URL}
-                  </Text>
-
-                  {postgresStatus?.lastSync && (
-                    <>
-                      <Text style={[styles.vpsLabel, { marginTop: 10 }]}>
-                        ÚLTIMA SINCRONIZAÇÃO:
-                      </Text>
-                      <Text style={styles.vpsValue}>
-                        Hoje às {postgresStatus.lastSync} {postgresStatus.latencyMs ? `(${postgresStatus.latencyMs}ms)` : ''}
-                      </Text>
-                    </>
-                  )}
-                </View>
-
-                {/* Status do Ping */}
-                {vpsPingStatus && (
-                  <View
-                    style={[
-                      styles.pingResultBox,
-                      vpsPingStatus.success
-                        ? styles.pingSuccess
-                        : styles.pingError,
-                    ]}
-                  >
-                    <Ionicons
-                      name={
-                        vpsPingStatus.success
-                          ? 'checkmark-circle'
-                          : 'alert-circle'
-                      }
-                      size={18}
-                      color={vpsPingStatus.success ? '#16A34A' : '#EF4444'}
-                    />
-                    <Text
-                      style={[
-                        styles.pingResultText,
-                        {
-                          color: vpsPingStatus.success ? '#16A34A' : '#EF4444',
-                        },
-                      ]}
-                    >
-                      {vpsPingStatus.success
-                        ? `PostgreSQL 17 Conectado (${vpsPingStatus.latencyMs}ms) • Status: ${vpsPingStatus.database || 'ok'}`
-                        : `Falha: ${vpsPingStatus.error}`}
+                  <View style={styles.submenuInfo}>
+                    <Text style={styles.submenuTitle}>Acerto de Contas</Text>
+                    <Text style={styles.submenuSub}>
+                      Veja quem deve para quem e quite o saldo
                     </Text>
                   </View>
-                )}
+                  <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
+                </TouchableOpacity>
 
-                <View style={{ gap: 8 }}>
-                  <TouchableOpacity
-                    style={styles.vpsTestBtn}
-                    onPress={handleTestPostgres}
-                    disabled={testingVps}
-                    activeOpacity={0.8}
-                  >
-                    {testingVps ? (
-                      <ActivityIndicator size="small" color="#0284C7" />
-                    ) : (
-                      <>
-                        <Ionicons
-                          name="wifi-outline"
-                          size={16}
-                          color="#0284C7"
-                        />
-                        <Text style={styles.vpsTestBtnText}>
-                          Testar Conexão com PostgreSQL
-                        </Text>
-                      </>
-                    )}
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[styles.vpsTestBtn, { backgroundColor: '#EDE9FE', borderColor: '#DDD6FE' }]}
-                    onPress={handleManualSync}
-                    disabled={isSyncingPostgres}
-                    activeOpacity={0.8}
-                  >
-                    {isSyncingPostgres ? (
-                      <ActivityIndicator size="small" color="#7C3AED" />
-                    ) : (
-                      <>
-                        <Ionicons
-                          name="sync-outline"
-                          size={16}
-                          color="#7C3AED"
-                        />
-                        <Text style={[styles.vpsTestBtnText, { color: '#7C3AED' }]}>
-                          Sincronizar Dados Agora (Nuvem ↔ Local)
-                        </Text>
-                      </>
-                    )}
-                  </TouchableOpacity>
-                </View>
-              </View>
-            )}
-          </View>
-
-          {/* ================================================================= */}
-          {/* 5. DADOS E MANUTENÇÃO */}
-          {/* ================================================================= */}
-          <View style={styles.accordionCard}>
-            <TouchableOpacity
-              style={[
-                styles.accordionHeader,
-                openSection === 'dados' && styles.accordionHeaderOpen,
-              ]}
-              activeOpacity={0.8}
-              onPress={() => toggleSection('dados')}
-            >
-              <View style={[styles.accordionIconBox, { backgroundColor: '#EDE9FE' }]}>
-                <Ionicons name="shield-outline" size={20} color="#7C3AED" />
-              </View>
-              <View style={styles.accordionHeaderInfo}>
-                <Text style={styles.accordionTitle}>Dados e Manutenção</Text>
-                <Text style={styles.accordionSubtitle}>
-                  Limpeza, carga de exemplos e testes de dados
-                </Text>
-              </View>
-              <Ionicons
-                name={openSection === 'dados' ? 'chevron-up' : 'chevron-down'}
-                size={20}
-                color={openSection === 'dados' ? '#7C3AED' : '#71717A'}
-              />
-            </TouchableOpacity>
-
-            {openSection === 'dados' && (
-              <View style={styles.accordionBody}>
+                {/* SUBMENU 3: GERENCIAR PARTICIPANTES & CONVITES */}
                 <TouchableOpacity
-                  style={styles.dangerBtn}
-                  onPress={handleReset}
-                  activeOpacity={0.8}
+                  style={styles.submenuItem}
+                  activeOpacity={0.75}
+                  onPress={() => navigation?.navigate?.('SharedFinances')}
                 >
-                  <Ionicons name="trash-outline" size={18} color="#EF4444" />
-                  <Text style={styles.dangerBtnText}>
-                    Limpar Tudo (Usar Dados Reais)
-                  </Text>
+                  <View style={[styles.submenuIconBox, { backgroundColor: '#E0F2FE' }]}>
+                    <Ionicons name="person-add-outline" size={18} color="#0284C7" />
+                  </View>
+                  <View style={styles.submenuInfo}>
+                    <Text style={styles.submenuTitle}>Convidar & Participantes</Text>
+                    <Text style={styles.submenuSub}>
+                      Convidar parceiro(a) por e-mail ou código
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
                 </TouchableOpacity>
               </View>
             )}
           </View>
 
           {/* ================================================================= */}
-          {/* 6. SOBRE O FINN */}
+          {/* 4. SOBRE O FINN */}
           {/* ================================================================= */}
           <View style={styles.accordionCard}>
             <TouchableOpacity
