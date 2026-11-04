@@ -302,21 +302,36 @@ export default function HomeScreen({ navigation }) {
           >
             <View style={styles.heroContentLeft}>
               {/* Pill Saldo Atual com Carteira e Olho */}
-              <TouchableOpacity
-                style={styles.heroWalletPill}
-                onPress={toggleHideBalances}
-                activeOpacity={0.75}
-              >
-                <View style={styles.walletIconBox}>
-                  <Ionicons name="wallet-outline" size={13} color="#FFFFFF" />
-                </View>
-                <Text style={styles.heroWalletText}>Saldo atual (contas)</Text>
-                <Ionicons
-                  name={hideBalances ? 'eye-off-outline' : 'eye-outline'}
-                  size={14}
-                  color="#FFFFFF"
-                />
-              </TouchableOpacity>
+              <View style={styles.heroWalletPill}>
+                <TouchableOpacity
+                  style={{ flexDirection: 'row', alignItems: 'center' }}
+                  onPress={toggleHeroCardMode}
+                  activeOpacity={0.75}
+                >
+                  <View style={styles.walletIconBox}>
+                    <Ionicons name="wallet-outline" size={13} color="#FFFFFF" />
+                  </View>
+                  <Text style={styles.heroWalletText}>
+                    {heroCardMode === 'monthResult'
+                      ? 'Resultado do mês'
+                      : accounts.length > 0
+                      ? 'Saldo atual (contas)'
+                      : 'Saldo disponível'}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={toggleHideBalances}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  activeOpacity={0.7}
+                  style={{ marginLeft: 6 }}
+                >
+                  <Ionicons
+                    name={hideBalances ? 'eye-off-outline' : 'eye-outline'}
+                    size={14}
+                    color="#FFFFFF"
+                  />
+                </TouchableOpacity>
+              </View>
 
               {/* Saldo Principal Formatado em Destaque */}
               <Text
@@ -337,7 +352,11 @@ export default function HomeScreen({ navigation }) {
               ) : (
                 <View style={styles.heroTrendPill}>
                   <Ionicons name="sparkles" size={12} color="#FBBF24" />
-                  <Text style={styles.heroTrendLabel}>Toque para adicionar sua primeira conta</Text>
+                  <Text style={styles.heroTrendLabel}>
+                    {transactions.length > 0
+                      ? 'Saldo acumulado das suas movimentações'
+                      : 'Toque para adicionar sua primeira conta'}
+                  </Text>
                 </View>
               )}
             </View>
@@ -509,7 +528,11 @@ export default function HomeScreen({ navigation }) {
             <Text style={styles.mascotDesc}>
               {totalExpense === 0 && totalIncome === 0
                 ? 'Tudo pronto para começar! Adicione seus saldos reais ou envie comprovantes para a IA FINN.'
-                : `Você usou ${budgetProgress}% do orçamento previsto com ${monthProgress}% do mês decorrido.`}
+                : totalBudget > 0
+                ? `Você usou ${budgetProgress}% do orçamento previsto com ${monthProgress}% do mês decorrido.`
+                : totalIncome > 0
+                ? `Você já recebeu ${formatMoney(totalIncome)} este mês e não teve despesas. Defina um teto de gastos no Planejamento!`
+                : `Você gastou ${formatMoney(totalExpense)} este mês.`}
             </Text>
 
             <TouchableOpacity

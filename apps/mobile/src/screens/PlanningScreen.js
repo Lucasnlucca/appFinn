@@ -672,7 +672,9 @@ export default function PlanningScreen({ navigation }) {
 
                     <View style={{ alignItems: 'flex-end' }}>
                       <Text style={styles.catSpentText}>{formatMoney(cat.spent)}</Text>
-                      <Text style={styles.catBudgetText}>meta {formatMoney(cat.budget)}</Text>
+                      <Text style={styles.catBudgetText}>
+                        {cat.budget > 0 ? `meta ${formatMoney(cat.budget)}` : `${cat.percentOfTotal}% do total`}
+                      </Text>
                     </View>
                   </View>
                 ))

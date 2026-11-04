@@ -48,23 +48,23 @@ export const getInitialChat = (userName) => [
   },
 ];
 
-// Categorias Oficiais idênticas ao Print 4 do usuário
+// Categorias Oficiais (Orçamento inicial zerado - o usuário define suas próprias metas reais)
 export const CATEGORIES = [
-  { id: 'sem_categoria', label: 'Sem categoria', icon: 'help-circle-outline', emoji: '✓', color: '#94A3B8', budget: 300.00 },
-  { id: 'alimentacao', label: 'Alimentação', icon: 'restaurant-outline', emoji: '🍔', color: '#F97316', budget: 1200.00 },
-  { id: 'assinaturas', label: 'Assinaturas', icon: 'repeat-outline', emoji: '🔁', color: '#8B5CF6', budget: 250.00 },
-  { id: 'educacao', label: 'Educação', icon: 'school-outline', emoji: '📚', color: '#EC4899', budget: 500.00 },
-  { id: 'financiamento', label: 'Financiamento', icon: 'card-outline', emoji: '💳', color: '#EAB308', budget: 1500.00 },
-  { id: 'lazer', label: 'Lazer', icon: 'game-controller-outline', emoji: '🎮', color: '#10B981', budget: 400.00 },
-  { id: 'moradia', label: 'Moradia', icon: 'home-outline', emoji: '🏠', color: '#3B82F6', budget: 2200.00 },
-  { id: 'outros', label: 'Outros', icon: 'cube-outline', emoji: '📦', color: '#64748B', budget: 300.00 },
-  { id: 'pets', label: 'Pets', icon: 'paw-outline', emoji: '🐾', color: '#F59E0B', budget: 350.00 },
-  { id: 'presentes', label: 'Presentes', icon: 'gift-outline', emoji: '🎁', color: '#F43F5E', budget: 200.00 },
-  { id: 'receita', label: 'Receita', icon: 'cash-outline', emoji: '💰', color: '#10B981', budget: 0 },
-  { id: 'saude', label: 'Saúde', icon: 'medkit-outline', emoji: '💊', color: '#EF4444', budget: 400.00 },
-  { id: 'transporte', label: 'Transporte', icon: 'car-sport-outline', emoji: '🚗', color: '#06B6D4', budget: 600.00 },
-  { id: 'vestuario', label: 'Vestuário', icon: 'shirt-outline', emoji: '👕', color: '#6366F1', budget: 350.00 },
-  { id: 'viagem', label: 'Viagem', icon: 'airplane-outline', emoji: '✈️', color: '#14B8A6', budget: 800.00 },
+  { id: 'sem_categoria', label: 'Sem categoria', icon: 'help-circle-outline', emoji: '✓', color: '#94A3B8', budget: 0.00 },
+  { id: 'alimentacao', label: 'Alimentação', icon: 'restaurant-outline', emoji: '🍔', color: '#F97316', budget: 0.00 },
+  { id: 'assinaturas', label: 'Assinaturas', icon: 'repeat-outline', emoji: '🔁', color: '#8B5CF6', budget: 0.00 },
+  { id: 'educacao', label: 'Educação', icon: 'school-outline', emoji: '📚', color: '#EC4899', budget: 0.00 },
+  { id: 'financiamento', label: 'Financiamento', icon: 'card-outline', emoji: '💳', color: '#EAB308', budget: 0.00 },
+  { id: 'lazer', label: 'Lazer', icon: 'game-controller-outline', emoji: '🎮', color: '#10B981', budget: 0.00 },
+  { id: 'moradia', label: 'Moradia', icon: 'home-outline', emoji: '🏠', color: '#3B82F6', budget: 0.00 },
+  { id: 'outros', label: 'Outros', icon: 'cube-outline', emoji: '📦', color: '#64748B', budget: 0.00 },
+  { id: 'pets', label: 'Pets', icon: 'paw-outline', emoji: '🐾', color: '#F59E0B', budget: 0.00 },
+  { id: 'presentes', label: 'Presentes', icon: 'gift-outline', emoji: '🎁', color: '#F43F5E', budget: 0.00 },
+  { id: 'receita', label: 'Receita', icon: 'cash-outline', emoji: '💰', color: '#10B981', budget: 0.00 },
+  { id: 'saude', label: 'Saúde', icon: 'medkit-outline', emoji: '💊', color: '#EF4444', budget: 0.00 },
+  { id: 'transporte', label: 'Transporte', icon: 'car-sport-outline', emoji: '🚗', color: '#06B6D4', budget: 0.00 },
+  { id: 'vestuario', label: 'Vestuário', icon: 'shirt-outline', emoji: '👕', color: '#6366F1', budget: 0.00 },
+  { id: 'viagem', label: 'Viagem', icon: 'airplane-outline', emoji: '✈️', color: '#14B8A6', budget: 0.00 },
 ];
 
 export function FinanceProvider({ children }) {
@@ -166,8 +166,37 @@ export function FinanceProvider({ children }) {
           AsyncStorage.getItem(getUserStorageKey(uid, 'ai_skin')),
         ]);
 
-        setTransactions(savedTrans ? JSON.parse(savedTrans) : []);
-        setAccounts(savedAccs ? JSON.parse(savedAccs) : []);
+        const parsedTrans = savedTrans ? JSON.parse(savedTrans) : [];
+        let parsedAccs = savedAccs ? JSON.parse(savedAccs) : [];
+
+        // Se o usuário tem movimentações (ex: Salário), mas ainda não possui nenhuma conta bancária cadastrada,
+        // cria automaticamente uma "Conta Principal" com o saldo resultante para abrigar esse dinheiro
+        if (parsedAccs.length === 0 && parsedTrans.length > 0) {
+          const initialBalance = parsedTrans.reduce(
+            (sum, t) => sum + (t.type === 'income' ? t.amount : -t.amount),
+            0
+          );
+          const autoAcc = {
+            id: 'acc-' + Date.now(),
+            name: 'Conta Principal',
+            bank: 'Conta Principal',
+            balance: initialBalance,
+            owner: loggedInUser.name || 'Titular',
+            icon: 'wallet-outline',
+            color: '#0E2F5A',
+          };
+          parsedAccs = [autoAcc];
+          saveUserItem('accounts', parsedAccs);
+
+          const updatedTrans = parsedTrans.map((t) =>
+            t.accountId ? t : { ...t, accountId: autoAcc.id }
+          );
+          setTransactions(updatedTrans);
+          saveUserItem('transactions', updatedTrans);
+        } else {
+          setTransactions(parsedTrans);
+        }
+        setAccounts(parsedAccs);
         setCards(savedCards ? JSON.parse(savedCards) : []);
         setBills(savedBills ? JSON.parse(savedBills) : []);
         setCofrinhos(savedCofs ? JSON.parse(savedCofs) : []);
@@ -428,6 +457,23 @@ export function FinanceProvider({ children }) {
   const addTransactionsBatch = async (txDataArray) => {
     if (!txDataArray || txDataArray.length === 0) return [];
 
+    let currentAccs = [...accounts];
+    // Se o usuário ainda não tiver nenhuma conta bancária cadastrada, cria automaticamente a "Conta Principal"
+    if (currentAccs.length === 0) {
+      const defaultAcc = {
+        id: 'acc-' + Date.now(),
+        name: 'Conta Principal',
+        bank: 'Conta Principal',
+        balance: 0,
+        owner: loggedInUser?.name || 'Titular',
+        icon: 'wallet-outline',
+        color: '#0E2F5A',
+      };
+      currentAccs = [defaultAcc];
+    }
+
+    const defaultAccId = currentAccs[0].id;
+
     const newTxs = txDataArray.map((txData, idx) => ({
       id: txData.id || `tx-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 7)}`,
       description: txData.description,
@@ -439,7 +485,7 @@ export function FinanceProvider({ children }) {
       author: txData.author || (loggedInUser?.name || members.user1 || 'Titular'),
       date: txData.date || new Date().toISOString().split('T')[0],
       createdAt: txData.createdAt || new Date().toISOString(),
-      accountId: txData.accountId || accounts[0]?.id,
+      accountId: txData.accountId || defaultAccId,
       notes: txData.notes || '',
     }));
 
@@ -451,22 +497,21 @@ export function FinanceProvider({ children }) {
     });
 
     // Atualiza saldo da conta bancária para cada movimentação
-    setAccounts((prev) => {
-      const updated = prev.map((acc) => {
-        let delta = 0;
-        for (const tx of newTxs) {
-          if (tx.accountId === acc.id) {
-            delta += tx.type === 'income' ? tx.amount : -tx.amount;
-          }
+    const updatedAccs = currentAccs.map((acc) => {
+      let delta = 0;
+      for (const tx of newTxs) {
+        if (tx.accountId === acc.id) {
+          delta += tx.type === 'income' ? tx.amount : -tx.amount;
         }
-        if (delta !== 0) {
-          return { ...acc, balance: (acc.balance || 0) + delta };
-        }
-        return acc;
-      });
-      saveUserItem('accounts', updated);
-      return updated;
+      }
+      if (delta !== 0) {
+        return { ...acc, balance: (acc.balance || 0) + delta };
+      }
+      return acc;
     });
+
+    setAccounts(updatedAccs);
+    saveUserItem('accounts', updatedAccs);
 
     for (const tx of newTxs) {
       syncTransactionToAppwrite(tx).catch(() => {});
@@ -695,8 +740,11 @@ export function FinanceProvider({ children }) {
     .filter((t) => t.type === 'expense')
     .reduce((sum, t) => sum + t.amount, 0);
 
-  const resultadoDoMes = totalIncome - totalExpense; // R$ 2.775,70
-  const totalBalance = accounts.reduce((sum, a) => sum + (a.balance || 0), 0); // R$ 33.778,15
+  const resultadoDoMes = totalIncome - totalExpense;
+  const accountsBalance = accounts.reduce((sum, a) => sum + (a.balance || 0), 0);
+  // Se o usuário tem contas cadastradas, o saldo total é a soma das contas.
+  // Se ainda não cadastrou nenhuma conta, o saldo total reflete o resultado das movimentações reais
+  const totalBalance = accounts.length > 0 ? accountsBalance : resultadoDoMes;
 
   // Cálculos de gastos fixos vs variáveis
   const fixedExpensesList = filteredTransactions.filter((t) => t.type === 'expense' && t.expenseType === 'fixed');
@@ -726,9 +774,9 @@ export function FinanceProvider({ children }) {
     const spent = filteredTransactions
       .filter((t) => t.type === 'expense' && t.category === cat.id)
       .reduce((sum, t) => sum + t.amount, 0);
-    const budget = cat.budget || 500;
+    const budget = cat.budget || 0;
     const percentOfTotal = totalExpense > 0 ? Math.round((spent / totalExpense) * 100) : 0;
-    const percentOfBudget = Math.min(Math.round((spent / budget) * 100), 100);
+    const percentOfBudget = budget > 0 ? Math.min(Math.round((spent / budget) * 100), 100) : 0;
     return {
       ...cat,
       spent,
