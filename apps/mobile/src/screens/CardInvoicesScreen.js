@@ -92,21 +92,72 @@ export default function CardInvoicesScreen({ navigation }) {
     );
   };
 
+  // Cartões padrão caso o usuário ainda não tenha cadastrado os seus
+  const DEFAULT_WALLET_CARDS = useMemo(() => [
+    {
+      id: 'default-nubank',
+      name: 'Nubank',
+      bank: 'Nubank',
+      bankId: 'nubank',
+      currentInvoice: 579.60,
+      limit: 5000.00,
+      usedLimit: 1791.20,
+      usedPercent: 36,
+      closingDay: 1,
+      dueDay: 10,
+      lastFourDigits: '8834',
+      holderName: defaultUserName,
+    },
+    {
+      id: 'default-c6',
+      name: 'C6 Bank',
+      bank: 'C6 Bank',
+      bankId: 'c6',
+      currentInvoice: 1240.00,
+      limit: 8000.00,
+      usedLimit: 1240.00,
+      usedPercent: 16,
+      closingDay: 5,
+      dueDay: 15,
+      lastFourDigits: '4192',
+      holderName: defaultUserName,
+    },
+    {
+      id: 'default-itau',
+      name: 'Itaú',
+      bank: 'Itaú',
+      bankId: 'itau',
+      currentInvoice: 890.30,
+      limit: 6500.00,
+      usedLimit: 890.30,
+      usedPercent: 14,
+      closingDay: 8,
+      dueDay: 20,
+      lastFourDigits: '3055',
+      holderName: defaultUserName,
+    },
+  ], [defaultUserName]);
+
+  // Lista ativa de cartões para exibição na carteira e nas faturas
+  const displayCards = useMemo(() => {
+    return cards.length > 0 ? cards : DEFAULT_WALLET_CARDS;
+  }, [cards, DEFAULT_WALLET_CARDS]);
+
   // Bancos dinâmicos baseados nos cartões cadastrados
   const dynamicBanks = useMemo(() => {
-    const names = cards.map((c) => {
+    const names = displayCards.map((c) => {
       const theme = getBankTheme(c.bankId || c.bank || c.name);
       return theme.name;
     });
     return Array.from(new Set(names));
-  }, [cards]);
+  }, [displayCards]);
 
   const filterPills = ['Todos', ...dynamicBanks];
 
   // Filtragem dos cartões de acordo com a pill selecionada
   const filteredCards = useMemo(() => {
-    if (selectedBankFilter === 'Todos') return cards;
-    return cards.filter((c) => {
+    if (selectedBankFilter === 'Todos') return displayCards;
+    return displayCards.filter((c) => {
       const theme = getBankTheme(c.bankId || c.bank || c.name);
       return (
         theme.name.toLowerCase() === selectedBankFilter.toLowerCase() ||
@@ -115,14 +166,14 @@ export default function CardInvoicesScreen({ navigation }) {
         (c.name && c.name.toLowerCase().includes(selectedBankFilter.toLowerCase()))
       );
     });
-  }, [cards, selectedBankFilter]);
+  }, [displayCards, selectedBankFilter]);
 
   // Totais calculados
   const totalOpenInvoices = useMemo(() => {
-    return cards.reduce((sum, c) => sum + (c.currentInvoice || 0), 0);
-  }, [cards]);
+    return displayCards.reduce((sum, c) => sum + (c.currentInvoice || 0), 0);
+  }, [displayCards]);
 
-  const totalCardsCount = cards.length;
+  const totalCardsCount = displayCards.length;
 
   // Bancos filtrados pela barra de busca do modal
   const filteredBankThemes = useMemo(() => {
@@ -138,8 +189,11 @@ export default function CardInvoicesScreen({ navigation }) {
 
   // Cartão Focado e Tema (Modelo Foto 3)
   const focusedCard = useMemo(() => {
-    return cards.find((c) => c.id === focusedCardId) || cards[0] || null;
-  }, [cards, focusedCardId]);
+    if (selectedBankFilter !== 'Todos' && filteredCards.length > 0) {
+      return filteredCards[0];
+    }
+    return displayCards.find((c) => c.id === focusedCardId) || displayCards[0];
+  }, [displayCards, filteredCards, selectedBankFilter, focusedCardId]);
 
   const focusedCardTheme = useMemo(() => {
     if (!focusedCard) return getBankTheme('nubank');
@@ -378,7 +432,7 @@ export default function CardInvoicesScreen({ navigation }) {
   const handleSelectFilter = (bankName) => {
     setSelectedBankFilter(bankName);
     if (bankName !== 'Todos') {
-      const match = cards.find((c) => {
+      const match = displayCards.find((c) => {
         const theme = getBankTheme(c.bankId || c.bank || c.name);
         return theme.name.toLowerCase() === bankName.toLowerCase();
       });
@@ -444,29 +498,51 @@ export default function CardInvoicesScreen({ navigation }) {
           { paddingBottom: insets.bottom + 40 },
         ]}
       >
-        {/* SELETOR DE CARTÕES SE HOUVER MAIS DE UM */}
-        {cards.length > 1 && (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.filterPillsRow}
-          >
-            {cards.map((cardItem) => {
-              const isSelected = (focusedCard?.id || cards[0]?.id) === cardItem.id;
-              return (
-                <TouchableOpacity
-                  key={cardItem.id}
-                  style={[styles.filterPill, isSelected && styles.filterPillActive]}
-                  onPress={() => setFocusedCardId(cardItem.id)}
-                  activeOpacity={0.8}
+        {/* TÍTULO PRINCIPAL CONFORME PRINT DO USUÁRIO */}
+        <Text style={styles.pageTitle}>Faturas dos cartões</Text>
+
+        {/* SELETOR DE BANCOS / PILLS (Todos, Nubank, C6 Bank, Itaú...) */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filterPillsRow}
+        >
+          {filterPills.map((filterName) => {
+            const isActive = selectedBankFilter === filterName;
+            return (
+              <TouchableOpacity
+                key={filterName}
+                style={[styles.filterPill, isActive && styles.filterPillActive]}
+                onPress={() => handleSelectFilter(filterName)}
+                activeOpacity={0.8}
+              >
+                <Text
+                  style={[
+                    styles.filterPillText,
+                    isActive && styles.filterPillTextActive,
+                  ]}
                 >
-                  <Text style={[styles.filterPillText, isSelected && styles.filterPillTextActive]}>
-                    {cardItem.name || 'Cartão'}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
+                  {filterName}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+
+        {/* EFEITO CARTEIRA DE COURO MASCULINA (QUANDO 'TODOS' ESTIVER ATIVO) */}
+        {selectedBankFilter === 'Todos' && (
+          <View style={styles.walletSectionWrapper}>
+            <WalletCardHolder
+              cards={displayCards}
+              activeCardId={focusedCard?.id || displayCards[0]?.id}
+              onSelectCard={(c) => {
+                setFocusedCardId(c.id);
+              }}
+            />
+            <Text style={styles.walletSwipeHintText}>
+              Deslize para cima 👆 para subir cada cartão ou para baixo 👇 para guardar
+            </Text>
+          </View>
         )}
 
         {/* ========================================================================= */}
@@ -1301,6 +1377,18 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '800',
     color: '#18181B',
+  },
+  walletSectionWrapper: {
+    width: '100%',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  walletSwipeHintText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#7C3AED',
+    marginTop: 8,
+    textAlign: 'center',
   },
   filterPillsRow: {
     flexDirection: 'row',

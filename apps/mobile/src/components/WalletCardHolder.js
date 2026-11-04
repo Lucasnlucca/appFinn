@@ -16,7 +16,7 @@ import { getBankTheme } from '../constants/BankThemeRegistry';
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const WALLET_WIDTH = Math.min(SCREEN_WIDTH - 40, 360);
 const CARDS_PER_PAGE = 4;
-const ELEVATION_PX = -18; // Elevação sutil e realista (sem voar para fora da carteira)
+const ELEVATION_STEP_PX = -42; // Elevação expressiva ao subir cada cartão da carteira
 
 // Ícone Contactless minimalista
 function ContactlessIcon({ color = '#FFFFFF', size = 13 }) {
@@ -177,7 +177,13 @@ export default function WalletCardHolder({
 
   const initialCardId = activeCardId || pageCards[0]?.id || cards[0]?.id;
   const [selectedCardId, setSelectedCardId] = useState(initialCardId);
-  const selectedCardIdRef = useRef(initialCardId);
+
+  // raisedIndex: quantos cartões estão levantados na carteira (de 0 até pageCards.length)
+  // Ao passar pra cima ele sobe um cartão, ao passar de novo sobe outro e assim por diante.
+  // Na outra direção (passar pra baixo) ele vai voltando os cartões um por um.
+  const [raisedIndex, setRaisedIndex] = useState(1);
+  const raisedIndexRef = useRef(1);
+  raisedIndexRef.current = raisedIndex;
 
   const pageCardsRef = useRef(pageCards);
   pageCardsRef.current = pageCards;
@@ -191,126 +197,126 @@ export default function WalletCardHolder({
   // Dicionário de animação por card.id
   const animElevationsRef = useRef({});
 
-  pageCards.forEach((c) => {
+  pageCards.forEach((c, idx) => {
     if (!animElevationsRef.current[c.id]) {
       animElevationsRef.current[c.id] = new Animated.Value(
-        c.id === selectedCardIdRef.current ? ELEVATION_PX : 0
+        idx < raisedIndex ? ELEVATION_STEP_PX : 0
       );
     }
   });
 
-  const elevateCard = useCallback((targetCardId) => {
-    if (!targetCardId) return;
-    if (targetCardId === selectedCardIdRef.current) return;
-
-    selectedCardIdRef.current = targetCardId;
-    setSelectedCardId(targetCardId);
-
-    pageCardsRef.current.forEach((card) => {
+  // Atualiza as animações de todos os cartões quando raisedIndex mudar
+  useEffect(() => {
+    pageCards.forEach((card, i) => {
       let anim = animElevationsRef.current[card.id];
       if (!anim) {
-        anim = new Animated.Value(0);
+        anim = new Animated.Value(i < raisedIndex ? ELEVATION_STEP_PX : 0);
         animElevationsRef.current[card.id] = anim;
       }
-      const toValue = card.id === targetCardId ? ELEVATION_PX : 0;
+      const toValue = i < raisedIndex ? ELEVATION_STEP_PX : 0;
       Animated.spring(anim, {
         toValue,
-        friction: 8,
+        friction: 7,
         tension: 65,
         useNativeDriver: true,
       }).start();
     });
-  }, []);
+  }, [raisedIndex, pageCards]);
 
-  // Sincroniza seleção externa
+  const handleSwipeUp = useCallback(() => {
+    setRaisedIndex((prev) => {
+      const next = Math.min(prev + 1, pageCardsRef.current.length);
+      const activeCard = pageCardsRef.current[next - 1];
+      if (activeCard) {
+        setSelectedCardId(activeCard.id);
+        onSelectCard?.(activeCard);
+      }
+      return next;
+    });
+  }, [onSelectCard]);
+
+  const handleSwipeDown = useCallback(() => {
+    setRaisedIndex((prev) => {
+      const next = Math.max(prev - 1, 0);
+      const activeCard = next > 0 ? pageCardsRef.current[next - 1] : pageCardsRef.current[0];
+      if (activeCard) {
+        setSelectedCardId(activeCard.id);
+        onSelectCard?.(activeCard);
+      }
+      return next;
+    });
+  }, [onSelectCard]);
+
+  // Sincroniza seleção externa se activeCardId mudar
   useEffect(() => {
     if (!cards || cards.length === 0) return;
     if (activeCardId) {
-      const cardIdx = cards.findIndex((c) => c.id === activeCardId);
+      const cardIdx = pageCards.findIndex((c) => c.id === activeCardId);
       if (cardIdx >= 0) {
-        const targetPage = Math.floor(cardIdx / CARDS_PER_PAGE);
-        if (targetPage !== currentPage) {
-          setCurrentPage(targetPage);
-        }
-        elevateCard(activeCardId);
+        setRaisedIndex(cardIdx + 1);
+        setSelectedCardId(activeCardId);
       }
     }
-  }, [activeCardId, cards, currentPage, elevateCard]);
+  }, [activeCardId, cards, pageCards]);
 
-  // Se a página mudar e o selecionado não estiver nela, seleciona o primeiro
-  useEffect(() => {
-    if (pageCards.length === 0) return;
-    const isSelectedInPage = pageCards.some((c) => c.id === selectedCardIdRef.current);
-    if (!isSelectedInPage) {
-      elevateCard(pageCards[0].id);
-    }
-  }, [currentPage, pageCards, elevateCard]);
+  const swipeHandledRef = useRef(false);
 
-  // Coordenadas normalizadas
-  const walletContainerRef = useRef(null);
-  const walletLayoutRef = useRef({ pageX: 0, pageY: 0, width: WALLET_WIDTH, height: 215 });
-
-  const measureWallet = useCallback(() => {
-    if (walletContainerRef.current?.measureInWindow) {
-      walletContainerRef.current.measureInWindow((x, y, w, h) => {
-        if (y !== undefined && !isNaN(y)) {
-          walletLayoutRef.current = { pageX: x, pageY: y, width: w, height: h };
-        }
-      });
-    }
-  }, []);
-
-  const getRelativeY = useCallback((evt, gestureState) => {
-    const touchPageY = evt?.nativeEvent?.pageY ?? gestureState?.moveY ?? 0;
-    if (walletLayoutRef.current.pageY > 0) {
-      return touchPageY - walletLayoutRef.current.pageY;
-    }
-    return evt?.nativeEvent?.locationY ?? 0;
-  }, []);
-
-  const handlePanInput = useCallback((evt, gestureState) => {
-    const relY = getRelativeY(evt, gestureState);
-    const targetIdx = getSlotIndexFromRelativeY(relY, layoutRef.current.slotTops);
-    const targetCard = pageCardsRef.current[targetIdx];
-    if (targetCard && targetCard.id !== selectedCardIdRef.current) {
-      elevateCard(targetCard.id);
-    }
-  }, [getRelativeY, elevateCard]);
-
-  // PanResponder não rouba toques simples e captura arrasto vertical
+  // PanResponder que captura gesto vertical com alta precisão
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => false,
       onStartShouldSetPanResponderCapture: () => false,
-
       onMoveShouldSetPanResponder: (_, gestureState) => {
-        return Math.abs(gestureState.dy) > 7 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx) * 1.2;
+        return Math.abs(gestureState.dy) > 10 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx);
       },
       onMoveShouldSetPanResponderCapture: (_, gestureState) => {
-        return Math.abs(gestureState.dy) > 7 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx) * 1.2;
+        return Math.abs(gestureState.dy) > 10 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx);
       },
-
-      onPanResponderGrant: (evt, gestureState) => {
-        measureWallet();
-        handlePanInput(evt, gestureState);
+      onPanResponderGrant: () => {
+        swipeHandledRef.current = false;
       },
-
-      onPanResponderMove: (evt, gestureState) => {
-        handlePanInput(evt, gestureState);
+      onPanResponderMove: (_, gestureState) => {
+        if (swipeHandledRef.current) return;
+        if (gestureState.dy < -25) {
+          swipeHandledRef.current = true;
+          handleSwipeUp();
+        } else if (gestureState.dy > 25) {
+          swipeHandledRef.current = true;
+          handleSwipeDown();
+        }
       },
-
-      onPanResponderRelease: () => {},
-      onPanResponderTerminate: () => {},
+      onPanResponderRelease: (_, gestureState) => {
+        if (!swipeHandledRef.current) {
+          if (gestureState.dy < -18) {
+            handleSwipeUp();
+          } else if (gestureState.dy > 18) {
+            handleSwipeDown();
+          }
+        }
+        swipeHandledRef.current = false;
+      },
     })
   ).current;
 
-  const handleCardPress = (card) => {
-    if (selectedCardIdRef.current === card.id) {
-      // Já elevado -> abre os detalhes do cartão
-      onSelectCard?.(card);
+  const handleCardPress = (card, i) => {
+    if (i < raisedIndex) {
+      if (i === raisedIndex - 1) {
+        // Se este já é o mais elevado, abaixa ele
+        setRaisedIndex(i);
+        const prevCard = i > 0 ? pageCards[i - 1] : pageCards[0];
+        if (prevCard) {
+          setSelectedCardId(prevCard.id);
+          onSelectCard?.(prevCard);
+        }
+      } else {
+        setSelectedCardId(card.id);
+        onSelectCard?.(card);
+      }
     } else {
-      // Eleva o cartão tocado
-      elevateCard(card.id);
+      // Sobe até este cartão
+      setRaisedIndex(i + 1);
+      setSelectedCardId(card.id);
+      onSelectCard?.(card);
     }
   };
 
@@ -360,15 +366,16 @@ export default function WalletCardHolder({
         {pageCards.map((card, i) => {
           const theme = getBankTheme(card.bankId || card.bank || card.name);
           const topOffset = layout.slotTops[i] ?? 10;
-          const isElevated = selectedCardId === card.id;
+          const isElevated = i < raisedIndex;
+          const isCurrentActive = selectedCardId === card.id;
 
           const restingZ = (i + 1) * 2;
-          const itemZIndex = isElevated ? 40 : restingZ;
-          const itemElevation = isElevated ? 16 : restingZ;
+          const itemZIndex = isElevated ? 50 + i : restingZ;
+          const itemElevation = isElevated ? 20 + i : restingZ;
 
           let anim = animElevationsRef.current[card.id];
           if (!anim) {
-            anim = new Animated.Value(isElevated ? ELEVATION_PX : 0);
+            anim = new Animated.Value(isElevated ? ELEVATION_STEP_PX : 0);
             animElevationsRef.current[card.id] = anim;
           }
 
@@ -400,7 +407,7 @@ export default function WalletCardHolder({
             >
               <TouchableOpacity
                 activeOpacity={0.92}
-                onPress={() => handleCardPress(card)}
+                onPress={() => handleCardPress(card, i)}
                 style={styles.cardTouchArea}
               >
                 <LinearGradient
