@@ -354,8 +354,6 @@ export default function WalletCardHolder({
 
       {/* CORPO DE COURO DA CARTEIRA MASCULINA */}
       <View
-        ref={walletContainerRef}
-        onLayout={() => measureWallet()}
         style={[styles.walletBody, { height: layout.walletHeight }]}
         {...panResponder.panHandlers}
       >
