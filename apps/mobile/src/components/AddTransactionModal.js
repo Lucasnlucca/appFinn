@@ -12,6 +12,7 @@ import {
   Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { COLORS } from '../theme/colors';
 import { useFinance, CATEGORIES } from '../context/FinanceContext';
 
@@ -147,6 +148,9 @@ export default function AddTransactionModal({ visible, onClose }) {
         style={styles.overlay}
       >
         <View style={styles.sheetContainer}>
+          {/* Indicador arrastável do Bottom Sheet */}
+          <View style={styles.sheetHandle} />
+
           {/* Header */}
           <View style={styles.header}>
             <Text style={styles.headerTitle}>
@@ -156,8 +160,8 @@ export default function AddTransactionModal({ visible, onClose }) {
                 ? 'Novo Recebimento'
                 : 'Novo Gasto Variável'}
             </Text>
-            <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-              <Ionicons name="close" size={24} color={COLORS.textSecondary} />
+            <TouchableOpacity onPress={onClose} style={styles.closeBtn} activeOpacity={0.7}>
+              <Ionicons name="close" size={20} color={COLORS.textSecondary} />
             </TouchableOpacity>
           </View>
 
@@ -315,7 +319,7 @@ export default function AddTransactionModal({ visible, onClose }) {
                     <Ionicons
                       name="briefcase-outline"
                       size={15}
-                      color={incomeSource === 'salary' ? COLORS.white : COLORS.textSecondary}
+                      color={incomeSource === 'salary' ? '#7C3AED' : COLORS.textSecondary}
                     />
                     <Text
                       style={[
@@ -337,12 +341,12 @@ export default function AddTransactionModal({ visible, onClose }) {
                     <Ionicons
                       name="flash"
                       size={15}
-                      color={incomeSource === 'freelance' ? COLORS.white : '#EA580C'}
+                      color={incomeSource === 'freelance' ? '#D97706' : '#F59E0B'}
                     />
                     <Text
                       style={[
                         styles.sourcePillText,
-                        incomeSource === 'freelance' && styles.sourcePillTextActive,
+                        incomeSource === 'freelance' && styles.sourcePillFreelaTextActive,
                       ]}
                     >
                       ⚡ Freelance / Extra
@@ -384,7 +388,7 @@ export default function AddTransactionModal({ visible, onClose }) {
                       <Text
                         style={[
                           styles.statusToggleText,
-                          billStatus === 'paid' && styles.statusToggleTextActive,
+                          billStatus === 'paid' && styles.statusTogglePaidTextActive,
                         ]}
                       >
                         Pago
@@ -400,7 +404,7 @@ export default function AddTransactionModal({ visible, onClose }) {
                   <Ionicons
                     name={isRecurring ? 'checkbox' : 'square-outline'}
                     size={22}
-                    color={isRecurring ? '#F97316' : COLORS.textMuted}
+                    color={isRecurring ? '#7C3AED' : COLORS.textMuted}
                   />
                   <Text style={styles.activeCheckText}>Ativo</Text>
                 </TouchableOpacity>
@@ -432,7 +436,7 @@ export default function AddTransactionModal({ visible, onClose }) {
                   <Ionicons
                     name="business-outline"
                     size={13}
-                    color={accountId === acc.id ? COLORS.white : COLORS.textSecondary}
+                    color={accountId === acc.id ? '#7C3AED' : COLORS.textSecondary}
                   />
                   <Text
                     style={[styles.accChipText, accountId === acc.id && styles.accChipTextActive]}
@@ -455,7 +459,7 @@ export default function AddTransactionModal({ visible, onClose }) {
                   <Ionicons
                     name="person-outline"
                     size={14}
-                    color={author === name ? COLORS.white : COLORS.textSecondary}
+                    color={author === name ? '#7C3AED' : COLORS.textSecondary}
                   />
                   <Text
                     style={[styles.authorText, author === name && styles.authorTextActive]}
@@ -477,15 +481,41 @@ export default function AddTransactionModal({ visible, onClose }) {
               multiline
             />
 
-            {/* BOTÃO PRINCIPAL DE ENVIO (LARANJA COMO NOS PRINTS 2 E 3) */}
-            <TouchableOpacity style={styles.submitBtnOrange} onPress={handleSave}>
-              <Text style={styles.submitBtnOrangeText}>
-                {mode === 'fixed'
-                  ? 'Salvar gasto fixo'
-                  : mode === 'income'
-                  ? 'Registrar recebimento'
-                  : 'Registrar gasto variável'}
-              </Text>
+            {/* BOTÃO PRINCIPAL DE ENVIO (SISTEMA FINN: ROXO/VERDE GRADIENTE) */}
+            <TouchableOpacity
+              activeOpacity={0.88}
+              style={styles.submitBtnWrapper}
+              onPress={handleSave}
+            >
+              <LinearGradient
+                colors={
+                  mode === 'income'
+                    ? ['#10B981', '#059669']
+                    : ['#7C3AED', '#9333EA']
+                }
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.submitBtn}
+              >
+                <Ionicons
+                  name={
+                    mode === 'income'
+                      ? 'checkmark-circle'
+                      : mode === 'fixed'
+                      ? 'calendar'
+                      : 'add-circle'
+                  }
+                  size={19}
+                  color="#FFFFFF"
+                />
+                <Text style={styles.submitBtnText}>
+                  {mode === 'fixed'
+                    ? 'Salvar gasto fixo'
+                    : mode === 'income'
+                    ? 'Registrar recebimento'
+                    : 'Registrar gasto variável'}
+                </Text>
+              </LinearGradient>
             </TouchableOpacity>
           </ScrollView>
         </View>
@@ -526,7 +556,7 @@ export default function AddTransactionModal({ visible, onClose }) {
                       </Text>
                     </View>
                     {isSelected && (
-                      <Ionicons name="checkmark-circle" size={18} color="#2563EB" />
+                      <Ionicons name="checkmark-circle" size={18} color="#7C3AED" />
                     )}
                   </TouchableOpacity>
                 );
@@ -542,17 +572,30 @@ export default function AddTransactionModal({ visible, onClose }) {
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.65)',
+    backgroundColor: 'rgba(15, 23, 42, 0.45)',
     justifyContent: 'flex-end',
   },
   sheetContainer: {
-    backgroundColor: '#1E232A',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
+    backgroundColor: COLORS.white,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
     paddingHorizontal: 20,
-    paddingTop: 18,
-    paddingBottom: 36,
+    paddingTop: 14,
+    paddingBottom: Platform.OS === 'ios' ? 36 : 24,
     maxHeight: '92%',
+    shadowColor: '#4C1D95',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 18,
+    elevation: 16,
+  },
+  sheetHandle: {
+    width: 38,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#E4E4E7',
+    alignSelf: 'center',
+    marginBottom: 14,
   },
   header: {
     flexDirection: 'row',
@@ -561,17 +604,19 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   headerTitle: {
-    color: COLORS.white,
-    fontSize: 19,
+    color: COLORS.text,
+    fontSize: 20,
     fontWeight: '800',
   },
   closeBtn: {
     padding: 6,
+    backgroundColor: '#F4F4F5',
+    borderRadius: 20,
   },
   modeTabsRow: {
     flexDirection: 'row',
     gap: 8,
-    backgroundColor: '#13171D',
+    backgroundColor: '#F4F2F9',
     padding: 4,
     borderRadius: 14,
     marginBottom: 16,
@@ -586,16 +631,31 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   modeTabActive: {
-    backgroundColor: '#0E2F5A',
+    backgroundColor: '#7C3AED',
+    shadowColor: '#7C3AED',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 3,
   },
   modeTabFixedActive: {
-    backgroundColor: '#F97316',
+    backgroundColor: '#8B5CF6',
+    shadowColor: '#8B5CF6',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 3,
   },
   modeTabIncomeActive: {
     backgroundColor: '#10B981',
+    shadowColor: '#10B981',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 3,
   },
   modeTabText: {
-    color: '#94A3B8',
+    color: '#71717A',
     fontSize: 13,
     fontWeight: '600',
   },
@@ -604,21 +664,21 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   fieldLabel: {
-    color: '#94A3B8',
-    fontSize: 12,
-    fontWeight: '600',
-    marginTop: 10,
+    color: '#52525B',
+    fontSize: 13,
+    fontWeight: '700',
+    marginTop: 12,
     marginBottom: 6,
   },
   textInput: {
-    backgroundColor: '#13171D',
-    borderRadius: 12,
+    backgroundColor: '#FAF8FD',
+    borderRadius: 14,
     paddingHorizontal: 14,
     paddingVertical: 12,
-    color: COLORS.white,
+    color: COLORS.text,
     fontSize: 15,
     borderWidth: 1,
-    borderColor: '#2A313C',
+    borderColor: '#EFEAF8',
   },
   valRow: {
     flexDirection: 'row',
@@ -629,22 +689,22 @@ const styles = StyleSheet.create({
   amountInputWrap: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#13171D',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    backgroundColor: '#FAF8FD',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
     borderWidth: 1,
-    borderColor: '#2A313C',
+    borderColor: '#EFEAF8',
   },
   currencyPrefix: {
-    color: '#94A3B8',
+    color: '#7C3AED',
     fontSize: 16,
-    fontWeight: '700',
+    fontWeight: '800',
     marginRight: 6,
   },
   amountInput: {
     flex: 1,
-    color: COLORS.white,
+    color: COLORS.text,
     fontSize: 18,
     fontWeight: '800',
     padding: 0,
@@ -653,47 +713,48 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: '#13171D',
-    borderRadius: 12,
+    backgroundColor: '#FAF8FD',
+    borderRadius: 14,
     paddingHorizontal: 12,
     paddingVertical: 12,
     borderWidth: 1,
-    borderColor: '#2A313C',
+    borderColor: '#EFEAF8',
   },
   miniDateBtn: {
-    backgroundColor: '#2A313C',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
+    backgroundColor: '#EDE9FE',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
   },
   miniDateBtnText: {
-    color: '#94A3B8',
-    fontSize: 10,
+    color: '#7C3AED',
+    fontSize: 11,
     fontWeight: '700',
   },
   smallInput: {
     flex: 1,
-    color: COLORS.white,
+    color: COLORS.text,
     fontSize: 15,
     fontWeight: '700',
     padding: 0,
   },
   dateText: {
-    color: COLORS.white,
+    color: COLORS.text,
     fontSize: 14,
     fontWeight: '600',
   },
   incomeSourceBox: {
-    backgroundColor: '#13171D',
-    padding: 10,
-    borderRadius: 12,
+    backgroundColor: '#FAF8FD',
+    padding: 12,
+    borderRadius: 14,
     marginTop: 10,
     borderWidth: 1,
-    borderColor: '#2A313C',
+    borderColor: '#EFEAF8',
   },
   sourcePillsRow: {
     flexDirection: 'row',
     gap: 10,
+    marginTop: 6,
   },
   sourcePill: {
     flex: 1,
@@ -703,25 +764,29 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingVertical: 10,
     borderRadius: 10,
-    backgroundColor: '#1E232A',
+    backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: '#2A313C',
+    borderColor: '#EFEAF8',
   },
   sourcePillSalaryActive: {
-    backgroundColor: '#0E2F5A',
-    borderColor: '#2563EB',
+    backgroundColor: '#EDE9FE',
+    borderColor: '#7C3AED',
   },
   sourcePillFreelaActive: {
-    backgroundColor: '#EA580C',
-    borderColor: '#F97316',
+    backgroundColor: '#FEF3C7',
+    borderColor: '#F59E0B',
   },
   sourcePillText: {
-    color: '#94A3B8',
+    color: '#71717A',
     fontSize: 12,
     fontWeight: '600',
   },
   sourcePillTextActive: {
-    color: COLORS.white,
+    color: '#7C3AED',
+    fontWeight: '700',
+  },
+  sourcePillFreelaTextActive: {
+    color: '#D97706',
     fontWeight: '700',
   },
   fixedOptionsRow: {
@@ -732,11 +797,11 @@ const styles = StyleSheet.create({
   },
   statusToggleRow: {
     flexDirection: 'row',
-    backgroundColor: '#13171D',
+    backgroundColor: '#F4F2F9',
     borderRadius: 10,
     padding: 3,
     borderWidth: 1,
-    borderColor: '#2A313C',
+    borderColor: '#EFEAF8',
   },
   statusToggleBtn: {
     flex: 1,
@@ -745,18 +810,22 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   statusTogglePending: {
-    backgroundColor: '#374151',
+    backgroundColor: '#E4E4E7',
   },
   statusTogglePaid: {
     backgroundColor: '#10B981',
   },
   statusToggleText: {
-    color: '#94A3B8',
+    color: '#71717A',
     fontSize: 12,
     fontWeight: '600',
   },
   statusToggleTextActive: {
-    color: COLORS.white,
+    color: '#18181B',
+    fontWeight: '700',
+  },
+  statusTogglePaidTextActive: {
+    color: '#FFFFFF',
     fontWeight: '700',
   },
   activeCheckRow: {
@@ -766,7 +835,7 @@ const styles = StyleSheet.create({
     paddingTop: 18,
   },
   activeCheckText: {
-    color: COLORS.white,
+    color: COLORS.text,
     fontSize: 14,
     fontWeight: '600',
   },
@@ -774,12 +843,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#13171D',
-    borderRadius: 12,
+    backgroundColor: '#FAF8FD',
+    borderRadius: 14,
     paddingHorizontal: 14,
     paddingVertical: 12,
     borderWidth: 1,
-    borderColor: '#2A313C',
+    borderColor: '#EFEAF8',
   },
   catSelectedLeft: {
     flexDirection: 'row',
@@ -790,7 +859,7 @@ const styles = StyleSheet.create({
     fontSize: 18,
   },
   catSelectedText: {
-    color: COLORS.white,
+    color: COLORS.text,
     fontSize: 15,
     fontWeight: '600',
   },
@@ -804,23 +873,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingVertical: 9,
     borderRadius: 10,
-    backgroundColor: '#13171D',
+    backgroundColor: '#FAF8FD',
     borderWidth: 1,
-    borderColor: '#2A313C',
+    borderColor: '#EFEAF8',
   },
   accChipActive: {
-    backgroundColor: '#0E2F5A',
-    borderColor: '#3B82F6',
+    backgroundColor: '#EDE9FE',
+    borderColor: '#7C3AED',
   },
   accChipText: {
-    color: '#94A3B8',
+    color: '#71717A',
     fontSize: 12,
     fontWeight: '600',
   },
   accChipTextActive: {
-    color: COLORS.white,
+    color: '#7C3AED',
+    fontWeight: '700',
   },
   authorRow: {
     flexDirection: 'row',
@@ -834,75 +904,89 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingVertical: 10,
     borderRadius: 10,
-    backgroundColor: '#13171D',
+    backgroundColor: '#FAF8FD',
     borderWidth: 1,
-    borderColor: '#2A313C',
+    borderColor: '#EFEAF8',
   },
   authorChipActive: {
-    backgroundColor: '#0E2F5A',
-    borderColor: '#3B82F6',
+    backgroundColor: '#EDE9FE',
+    borderColor: '#7C3AED',
   },
   authorText: {
-    color: '#94A3B8',
+    color: '#71717A',
     fontSize: 13,
     fontWeight: '600',
   },
   authorTextActive: {
-    color: COLORS.white,
+    color: '#7C3AED',
     fontWeight: '700',
   },
   notesInput: {
-    backgroundColor: '#13171D',
-    borderRadius: 12,
+    backgroundColor: '#FAF8FD',
+    borderRadius: 14,
     paddingHorizontal: 14,
     paddingVertical: 10,
-    color: COLORS.white,
+    color: COLORS.text,
     fontSize: 14,
     borderWidth: 1,
-    borderColor: '#2A313C',
+    borderColor: '#EFEAF8',
     minHeight: 50,
   },
-  submitBtnOrange: {
-    backgroundColor: '#F97316',
-    borderRadius: 14,
-    paddingVertical: 15,
-    alignItems: 'center',
-    justifyContent: 'center',
+  submitBtnWrapper: {
     marginTop: 20,
     marginBottom: 10,
+    borderRadius: 16,
+    shadowColor: '#7C3AED',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.28,
+    shadowRadius: 8,
+    elevation: 4,
   },
-  submitBtnOrangeText: {
+  submitBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderRadius: 16,
+    paddingVertical: 16,
+  },
+  submitBtnText: {
     color: COLORS.white,
     fontSize: 16,
     fontWeight: '800',
   },
   pickerOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.7)',
+    backgroundColor: 'rgba(15, 23, 42, 0.45)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
   },
   pickerBox: {
     width: '100%',
-    backgroundColor: '#1E232A',
-    borderRadius: 20,
-    padding: 18,
+    backgroundColor: COLORS.white,
+    borderRadius: 22,
+    padding: 20,
     borderWidth: 1,
-    borderColor: '#2A313C',
+    borderColor: '#EFEAF8',
+    shadowColor: '#4C1D95',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
+    elevation: 8,
   },
   pickerHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingBottom: 12,
+    paddingBottom: 14,
     borderBottomWidth: 1,
-    borderBottomColor: '#2A313C',
-    marginBottom: 8,
+    borderBottomColor: '#EFEAF8',
+    marginBottom: 10,
   },
   pickerTitle: {
-    color: COLORS.white,
-    fontSize: 16,
+    color: COLORS.text,
+    fontSize: 17,
     fontWeight: '700',
   },
   catOptionItem: {
@@ -910,11 +994,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingVertical: 12,
-    paddingHorizontal: 10,
-    borderRadius: 10,
+    paddingHorizontal: 12,
+    borderRadius: 12,
   },
   catOptionItemSelected: {
-    backgroundColor: 'rgba(37, 99, 235, 0.2)',
+    backgroundColor: '#EDE9FE',
   },
   catOptionLeft: {
     flexDirection: 'row',
@@ -925,12 +1009,12 @@ const styles = StyleSheet.create({
     fontSize: 20,
   },
   catOptionLabel: {
-    color: '#E2E8F0',
+    color: COLORS.text,
     fontSize: 15,
     fontWeight: '500',
   },
   catOptionLabelSelected: {
-    color: COLORS.white,
+    color: '#7C3AED',
     fontWeight: '700',
   },
 });
