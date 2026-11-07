@@ -406,6 +406,7 @@ export default function FinnAIScreen({ navigation }) {
           base64,
           mimeType: asset.mimeType || 'image/jpeg',
         });
+        setShowHero(false);
       }
     } catch (e) {
       Alert.alert('Erro ao carregar imagem', e.message);
@@ -441,6 +442,7 @@ export default function FinnAIScreen({ navigation }) {
           base64,
           mimeType: asset.mimeType || 'image/jpeg',
         });
+        setShowHero(false);
       }
     } catch (e) {
       Alert.alert('Erro na câmera', e.message);
@@ -466,6 +468,7 @@ export default function FinnAIScreen({ navigation }) {
           base64,
           mimeType: 'application/pdf',
         });
+        setShowHero(false);
       }
     } catch (e) {
       Alert.alert('Erro ao carregar PDF', e.message);
@@ -496,6 +499,7 @@ export default function FinnAIScreen({ navigation }) {
           base64,
           mimeType: 'text/csv',
         });
+        setShowHero(false);
       }
     } catch (e) {
       Alert.alert('Erro ao carregar CSV', e.message);

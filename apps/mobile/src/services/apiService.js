@@ -69,6 +69,8 @@ export async function saveAuthUser(user) {
   }
 }
 
+export const setStoredUser = saveAuthUser;
+
 // Limpar sessão
 export async function clearAuthSession() {
   try {

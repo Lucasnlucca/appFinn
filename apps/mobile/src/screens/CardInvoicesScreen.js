@@ -48,7 +48,7 @@ export default function CardInvoicesScreen({ navigation }) {
   } = useFinance();
 
   const defaultUserName =
-    loggedInUser?.name || members?.user1 || 'SEU NOME';
+    loggedInUser?.name || loggedInUser?.fullName || 'SEU NOME';
 
   const [selectedBankFilter, setSelectedBankFilter] = useState('Todos');
   const [focusedCardId, setFocusedCardId] = useState(cards[0]?.id || null);
@@ -240,17 +240,17 @@ export default function CardInvoicesScreen({ navigation }) {
       const promptNotes = `Fatura do cartão de crédito ${bankName}. Extraia o valor total da fatura e liste todas as compras/lançamentos detalhados.`;
 
       let aiResponse = '';
+      const uName = loggedInUser?.name || 'Você';
       if (isPdf) {
         aiResponse = await analyzeInvoicePdf({
           base64Pdf: base64OrText,
           userNotes: promptNotes,
-          members,
+          financialContext: { userName: uName },
         });
       } else {
         aiResponse = await sendTextMessageToGemini({
-          text: `Analise este extrato CSV da fatura do cartão ${bankName}:\n\n${base64OrText.slice(0, 10000)}`,
-          userNotes: promptNotes,
-          members,
+          message: `Analise este extrato CSV da fatura do cartão ${bankName}:\n\n${base64OrText.slice(0, 10000)}`,
+          financialContext: { userName: uName },
         });
       }
 
@@ -278,7 +278,7 @@ export default function CardInvoicesScreen({ navigation }) {
             cardId: activeCard?.id,
             cardName: bankName,
             paymentMethod: 'credit_card',
-            author: loggedInUser?.name || members?.user1 || 'Titular',
+            author: uName,
           });
         } catch (e) {}
       }

@@ -162,7 +162,7 @@ export default function HomeScreen({ navigation }) {
   const rawName =
     loggedInUser?.fullName ||
     loggedInUser?.name ||
-    (members?.user1 && members.user1 !== 'Principal' ? members.user1 : '');
+    '';
   const currentUserName = rawName.trim().split(' ')[0] || '';
 
   // Cálculos dinâmicos reais de progresso do mês e orçamento

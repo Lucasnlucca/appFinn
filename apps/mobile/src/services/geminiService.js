@@ -97,9 +97,9 @@ export async function callGeminiApi({
         {
           text:
             systemInstruction ||
-            `Você é o FINN AI, um consultor financeiro pessoal inteligente, acolhedor e parceiro do casal.
+            `Você é o FINN AI, um consultor financeiro pessoal inteligente, acolhedor e dedicado ao seu usuário.
 Converse com empatia, clareza e praticidade em português brasileiro.
-Ajude o casal a manter os gastos em dia, tomar decisões conscientes e economizar para seus sonhos conjuntos.`,
+Ajude o usuário a manter suas finanças em dia, tomar decisões conscientes e economizar para seus objetivos e sonhos.`,
         },
       ],
     },
@@ -171,10 +171,10 @@ export async function sendTextMessageToGemini({
   message,
   chatHistory = [],
   financialContext,
-  members = { user1: 'Titular', user2: 'Parceiro(a)' },
+  members = { user1: 'Titular' },
   aiSkinId = 'estrategista',
 }) {
-  const activeUser = financialContext?.activeMember || members.user1;
+  const activeUser = financialContext?.userName || financialContext?.activeMember || members?.user1 || 'Você';
   const currentSkin = AI_SKINS.find((s) => s.id === aiSkinId) || AI_SKINS[0];
 
   // Monta resumo das contas e das últimas movimentações
@@ -184,17 +184,16 @@ export async function sendTextMessageToGemini({
 
   const recentTxText = (financialContext?.recentTransactions || [])
     .slice(0, 5)
-    .map((t) => `• ${t.date || 'Hoje'}: R$ ${t.amount?.toFixed(2).replace('.', ',')} em ${t.description} (${t.category}, por ${t.author})`)
+    .map((t) => `• ${t.date || 'Hoje'}: R$ ${t.amount?.toFixed(2).replace('.', ',')} em ${t.description} (${t.category})`)
     .join('\n');
 
-  const systemInstruction = `Você é o FINN AI, o consultor financeiro pessoal inteligente e dedicado ao casal ${members.user1} e ${members.user2}.
-Quem está falando com você agora é o(a) ${activeUser}.
+  const systemInstruction = `Você é o FINN AI, o consultor financeiro pessoal inteligente e dedicado ao usuário ${activeUser}.
+Converse diretamente com ${activeUser} com empatia, clareza e praticidade em português brasileiro.
 
 ${currentSkin.systemTone}
 
-DADOS FINANCEIROS EM TEMPO REAL DO CASAL:
-• Membros: ${members.user1} e ${members.user2}
-• Quem está usando agora: ${activeUser}
+DADOS FINANCEIROS EM TEMPO REAL DE ${activeUser.toUpperCase()}:
+• Usuário: ${activeUser}
 • Saldo Total em Contas: R$ ${(financialContext?.totalBalance || 0).toFixed(2).replace('.', ',')}
 • Detalhes das Contas:
 ${accountsText || '• Nenhuma conta bancária sincronizada'}
@@ -214,7 +213,7 @@ Quando o usuário disser que gastou ou recebeu dinheiro (ex: "gastei 45 no merca
    [TRANSACTION: {"description": "Nome da despesa/receita", "amount": 45.00, "type": "expense", "category": "alimentacao", "author": "${activeUser}"}]
    Se houver mais de um gasto relatado, adicione uma linha de tag [TRANSACTION: ...] para cada um!
    (Categorias válidas: alimentacao, assinaturas, educacao, financiamento, lazer, moradia, outros, pets, presentes, receita, saude, transporte, vestuario, viagem).
-4. O aplicativo lerá a tag [TRANSACTION: ...] automaticamente para atualizar o extrato bancário do casal e ocultar a tag do chat.`;
+4. O aplicativo lerá a tag [TRANSACTION: ...] automaticamente para atualizar o extrato bancário e financeiro do usuário e ocultar a tag do chat.`;
 
   // Constrói o histórico multi-turn das últimas 8 mensagens para manter o contexto da conversa
   const contents = [];
@@ -252,10 +251,10 @@ export async function analyzeReceiptImage({
   mimeType = 'image/jpeg',
   userNotes = '',
   financialContext,
-  members = { user1: 'Titular', user2: 'Parceiro(a)' },
+  members = { user1: 'Titular' },
 }) {
-  const activeUser = financialContext?.activeMember || members.user1;
-  const prompt = `Analise atentamente esta foto/print de comprovante bancário, recibo ou cupom fiscal.
+  const activeUser = financialContext?.userName || financialContext?.activeMember || members?.user1 || 'Você';
+  const prompt = `Analise atentamente esta foto/print de comprovante bancário, recibo ou cupom fiscal de ${activeUser}.
 ${userNotes ? `Observação enviada pelo usuário: "${userNotes}"\nConsidere com prioridade essa informação para classificar a despesa/receita.\n` : ''}
 Responda de forma gentil e amigável em português explicando o que identificou.
 E no FINAL ABSOLUTO da mensagem, adicione a tag estruturada:
@@ -284,10 +283,10 @@ export async function analyzeInvoicePdf({
   base64Pdf,
   userNotes = '',
   financialContext,
-  members = { user1: 'Titular', user2: 'Parceiro(a)' },
+  members = { user1: 'Titular' },
 }) {
-  const activeUser = financialContext?.activeMember || members.user1;
-  const prompt = `Analise este documento PDF financeiro (boleto bancário, fatura de cartão de crédito ou nota de serviços).
+  const activeUser = financialContext?.userName || financialContext?.activeMember || members?.user1 || 'Você';
+  const prompt = `Analise este documento PDF financeiro (boleto bancário, fatura de cartão de crédito ou nota de serviços) de ${activeUser}.
 ${userNotes ? `Observação enviada pelo usuário: "${userNotes}"\nConsidere essa observação rigorosamente (ex: banco emissor, titular ou mês de referência).\n` : ''}
 Explique educadamente quem é o cedente/emissor e o valor principal.
 E no FINAL ABSOLUTO da mensagem, adicione a tag estruturada:
@@ -313,14 +312,14 @@ export async function analyzeVoiceAudio({
   base64Audio,
   mimeType = 'audio/m4a',
   financialContext,
-  members = { user1: 'Titular', user2: 'Parceiro(a)' },
+  members = { user1: 'Titular' },
   aiSkinId = 'estrategista',
 }) {
-  const activeUser = financialContext?.activeMember || members.user1;
+  const activeUser = financialContext?.userName || financialContext?.activeMember || members?.user1 || 'Você';
   const currentSkin = AI_SKINS.find((s) => s.id === aiSkinId) || AI_SKINS[0];
 
-  const prompt = `Você é o FINN, o assistente financeiro pessoal e inteligente do casal ${members.user1} e ${members.user2}.
-Quem enviou este áudio foi o(a) ${activeUser}.
+  const prompt = `Você é o FINN, o assistente financeiro pessoal e inteligente de ${activeUser}.
+Quem enviou este áudio foi ${activeUser}.
 
 ${currentSkin.systemTone}
 
@@ -328,7 +327,7 @@ REGRAS DE RESPOSTA AO ÁUDIO:
 1. OBJETIVIDADE TOTAL: NÃO transcreva e NÃO repita o que a pessoa disse no áudio (NUNCA coloque "Você disse:" nem repita as palavras do usuário). Responda diretamente ao que importa em no máximo 1 ou 2 frases curtas e práticas.
 2. REGISTRO DE GASTOS OU RECEITAS (INCLUINDO MÚLTIPLOS ITENS):
 Se a pessoa relatou um ou mais gastos ou receitas no áudio:
-- Confirme o lançamento de forma ultra direta e rápida (ex: "Anotado! Registrei o refrigerante de R$ 10 e o salgado de R$ 5 para vocês.").
+- Confirme o lançamento de forma ultra direta e rápida (ex: "Anotado! Registrei o refrigerante de R$ 10 e o salgado de R$ 5 para você.").
 - No FINAL ABSOLUTO da mensagem, adicione OBRIGATORIAMENTE UMA LINHA DE TAG [TRANSACTION: ...] PARA CADA GASTO OU RECEITA, sem quebras de linha dentro do JSON.
 Exemplo:
 [TRANSACTION: {"description": "Bolo", "amount": 45.00, "type": "expense", "category": "alimentacao", "author": "${activeUser}"}]
@@ -336,7 +335,7 @@ Exemplo:
 
 Categorias válidas: alimentacao, assinaturas, educacao, financiamento, lazer, moradia, outros, pets, presentes, receita, saude, transporte, vestuario, viagem.
 (Altere "type" para "income" se for entrada de dinheiro ou freelance).
-3. Se a pessoa apenas fez uma pergunta ou consulta financeira por voz, responda à dúvida dela com clareza, concisão e foco nos números do casal, sem nenhuma tag de transação.`;
+3. Se a pessoa apenas fez uma pergunta ou consulta financeira por voz, responda à dúvida dela com clareza, concisão e foco nas finanças pessoais de ${activeUser}, sem nenhuma tag de transação.`;
 
   return await callGeminiApi({
     parts: [

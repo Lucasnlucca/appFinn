@@ -15,12 +15,11 @@ import { COLORS } from '../theme/colors';
 import { useFinance, CATEGORIES } from '../context/FinanceContext';
 
 export default function EditTransactionModal({ visible, transaction, onClose, onSave, onDelete }) {
-  const { members } = useFinance();
+  const { loggedInUser } = useFinance();
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
   const [type, setType] = useState('expense');
   const [category, setCategory] = useState('outros');
-  const [author, setAuthor] = useState(members?.user1 || 'Titular');
   const [date, setDate] = useState('');
 
   useEffect(() => {
@@ -29,7 +28,6 @@ export default function EditTransactionModal({ visible, transaction, onClose, on
       setAmount(transaction.amount ? String(transaction.amount) : '');
       setType(transaction.type || 'expense');
       setCategory(transaction.category || 'outros');
-      setAuthor(transaction.author || members.user1);
       const formattedDate = transaction.date
         ? (transaction.date.includes('-')
             ? transaction.date.split('-').reverse().join('/')
@@ -37,7 +35,7 @@ export default function EditTransactionModal({ visible, transaction, onClose, on
         : new Date().toISOString().split('T')[0].split('-').reverse().join('/');
       setDate(formattedDate);
     }
-  }, [transaction, members]);
+  }, [transaction]);
 
   const handleSave = () => {
     if (!description.trim() || !amount) return;
@@ -65,7 +63,7 @@ export default function EditTransactionModal({ visible, transaction, onClose, on
       amount: num,
       type,
       category,
-      author,
+      author: transaction.author || loggedInUser?.name || 'Você',
       date: finalDate,
     });
     onClose();
@@ -187,21 +185,15 @@ export default function EditTransactionModal({ visible, transaction, onClose, on
               </View>
             </View>
 
-            {/* Responsável (Lucas vs Veronica) */}
-            <Text style={styles.label}>QUEM LANÇOU?</Text>
-            <View style={styles.authorRow}>
-              {[members.user1, members.user2, 'Casal'].map((m) => (
-                <TouchableOpacity
-                  key={m}
-                  style={[styles.authorBtn, author === m && styles.authorBtnActive]}
-                  onPress={() => setAuthor(m)}
-                >
-                  <Text style={[styles.authorText, author === m && styles.authorTextActive]}>
-                    {m}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+            {/* Informação de compartilhamento se houver */}
+            {(transaction.isShared || transaction.groupId) && (
+              <View style={styles.sharedInfoBox}>
+                <Ionicons name="people" size={14} color="#7C3AED" />
+                <Text style={styles.sharedInfoText}>
+                  Compartilhado {transaction.groupName ? `no grupo "${transaction.groupName}"` : 'em grupo'}
+                </Text>
+              </View>
+            )}
 
             {/* Categoria */}
             <Text style={styles.label}>CATEGORIA</Text>
@@ -406,6 +398,21 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     fontSize: 11,
     fontWeight: '700',
+  },
+  sharedInfoBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#EDE9FE',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    marginBottom: 12,
+  },
+  sharedInfoText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#7C3AED',
   },
   authorRow: {
     flexDirection: 'row',

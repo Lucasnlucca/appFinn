@@ -33,7 +33,7 @@ export default function TransactionsScreen() {
   const [search, setSearch] = useState('');
   const [filterType, setFilterType] = useState('all'); // 'all' | 'expense' | 'fixed' | 'variable' | 'income' | 'freelance'
   const [periodFilter, setPeriodFilter] = useState('all'); // 'all' | 'today' | '7days' | 'this_month' | 'last_month' | '30days'
-  const [authorFilter, setAuthorFilter] = useState('all'); // 'all' | members.user1 | members.user2 | 'Casal'
+  const [authorFilter, setAuthorFilter] = useState('all'); // 'all' | 'personal' | 'shared'
   const [categoryFilter, setCategoryFilter] = useState('all'); // 'all' | category.id
   const [sortBy, setSortBy] = useState('newest'); // 'newest' | 'oldest' | 'highest' | 'lowest'
 
@@ -155,8 +155,9 @@ export default function TransactionsScreen() {
           return false;
         }
 
-        // 3. Filtro de Autor
-        if (authorFilter !== 'all' && t.author !== authorFilter) return false;
+        // 3. Filtro de Origem (Pessoal vs Compartilhado em Grupo)
+        if (authorFilter === 'personal' && (t.isShared || t.groupId)) return false;
+        if (authorFilter === 'shared' && !t.isShared && !t.groupId) return false;
 
         // 4. Filtro de Categoria
         if (categoryFilter !== 'all' && t.category !== categoryFilter) return false;
@@ -494,11 +495,21 @@ export default function TransactionsScreen() {
                           </Text>
                         </View>
 
-                        {/* Linha de Metadados: Categoria, Responsável e Badges */}
+                        {/* Linha de Metadados: Categoria e Badges */}
                         <View style={styles.metaRow}>
                           <Text style={styles.catText}>{cat.label}</Text>
-                          <Text style={styles.metaDot}>•</Text>
-                          <Text style={styles.authorBadge}>{item.author}</Text>
+
+                          {(item.isShared || item.groupId) && (
+                            <>
+                              <Text style={styles.metaDot}>•</Text>
+                              <View style={styles.sharedBadge}>
+                                <Ionicons name="people" size={10} color="#7C3AED" />
+                                <Text style={styles.sharedBadgeText}>
+                                  {item.groupName || 'Compartilhado'}
+                                </Text>
+                              </View>
+                            </>
+                          )}
 
                           {item.incomeSource === 'freelance' && (
                             <View style={styles.freelaBadge}>
@@ -628,13 +639,13 @@ export default function TransactionsScreen() {
                 ))}
               </View>
 
-              {/* 3. QUEM REALIZOU (MEMBRO) */}
-              <Text style={styles.filterSectionTitle}>Quem Lançou?</Text>
+              {/* 3. ORIGEM DO LANÇAMENTO */}
+              <Text style={styles.filterSectionTitle}>Origem do Lançamento</Text>
               <View style={styles.filterChipsGrid}>
                 {[
-                  { id: 'all', label: 'Todos do Casal' },
-                  { id: members.user1, label: members.user1 },
-                  { id: members.user2, label: members.user2 },
+                  { id: 'all', label: 'Todas' },
+                  { id: 'personal', label: 'Apenas Pessoais' },
+                  { id: 'shared', label: 'Em Grupo' },
                 ].map((m) => (
                   <TouchableOpacity
                     key={m.id}
@@ -1030,6 +1041,20 @@ const styles = StyleSheet.create({
   authorBadge: {
     color: COLORS.primary,
     fontSize: 11,
+    fontWeight: '700',
+  },
+  sharedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: '#EDE9FE',
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 6,
+  },
+  sharedBadgeText: {
+    color: '#7C3AED',
+    fontSize: 9.5,
     fontWeight: '700',
   },
   freelaBadge: {

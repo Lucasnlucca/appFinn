@@ -22,6 +22,7 @@ import {
   clearAuthSession,
   getStoredUser,
   getStoredToken,
+  saveAuthUser,
   fetchCurrentHouseholdApi,
   createHouseholdApi,
   createHouseholdInvitationApi,
@@ -507,7 +508,10 @@ export function FinanceProvider({ children }) {
       category: txData.category || 'outros',
       expenseType: txData.expenseType || (txData.type === 'expense' ? 'variable' : undefined),
       incomeSource: txData.incomeSource || (txData.type === 'income' ? 'salary' : undefined),
-      author: txData.author || (loggedInUser?.name || members.user1 || 'Titular'),
+      author: txData.author || (loggedInUser?.name || 'Você'),
+      isShared: !!txData.isShared || !!txData.groupId,
+      groupId: txData.groupId || null,
+      groupName: txData.groupName || null,
       date: txData.date || new Date().toISOString().split('T')[0],
       createdAt: txData.createdAt || new Date().toISOString(),
       accountId: txData.accountId || defaultAccId,
@@ -771,6 +775,8 @@ export function FinanceProvider({ children }) {
     if (activeMember === loggedInUser.name || activeMember === 'Principal' || !activeMember) {
       setActiveMember(currentName);
     }
+    // Salva em ambas as chaves de storage para sincronização imediata
+    await saveAuthUser(updated);
     await AsyncStorage.setItem('@finn_auth_user', JSON.stringify(updated));
     await saveUserItem('user_profile', updated);
     return updated;
@@ -1013,30 +1019,30 @@ export function FinanceProvider({ children }) {
     const cof = cofrinhos.find((c) => c.id === cofrinhoId);
     if (!cof) return 'Cofrinho não encontrado.';
     const remaining = Math.max(cof.targetAmount - cof.currentAmount, 0);
+    const uName = loggedInUser?.name || 'Você';
 
-    const prompt = `Você é o FINN AI, consultor financeiro do casal ${members.user1} e ${members.user2}.
-Eles têm o objetivo/cofrinho: "${cof.title}"
+    const prompt = `Você é o FINN AI, consultor financeiro pessoal inteligente de ${uName}.
+${uName} tem o objetivo/cofrinho: "${cof.title}"
 - Valor total da meta: R$ ${cof.targetAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-- Já guardaram: R$ ${cof.currentAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+- Já guardou: R$ ${cof.currentAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
 - Falta atingir: R$ ${remaining.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
 - Prazo estimado: ${cof.deadline || 'Sem prazo'}
 
-Contexto financeiro atual do casal:
-- Saldo total que o casal tem em contas: R$ ${totalBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+Contexto financeiro atual de ${uName}:
+- Saldo total em contas: R$ ${totalBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
 - Gastos Fixos do mês (Aluguel, contas essenciais): R$ ${totalFixedExpenses.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
 - Gastos Variáveis do mês (Mercado, Lazer, etc): R$ ${totalVariableExpenses.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-- Receitas extras de Freelance / fora do serviço: R$ ${totalFreelanceIncome.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+- Receitas extras de Freelance: R$ ${totalFreelanceIncome.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
 
 Analise com muito carinho e precisão:
-1. Em quais categorias variáveis eles podem enxugar gastos este mês para acelerar essa meta?
-2. Como a renda de freelance ou bicos extras pode ser aproveitada para este cofrinho?
-3. Projeção realista: em quantos meses eles conseguem comprar/adquirir isso mantendo o padrão saudável de vida?
+1. Em quais categorias variáveis ${uName} pode enxugar gastos este mês para acelerar essa meta?
+2. Como a renda de freelance ou renda extra pode ser aproveitada para este cofrinho?
+3. Projeção realista: em quantos meses consegue alcançar isso mantendo um padrão financeiro saudável?
 Responda de forma clara, motivadora e estruturada em tópicos!`;
 
     return await sendTextMessageToGemini({
-      userMessage: prompt,
-      financialContext: { totalBalance, totalIncome, totalExpense, activeMember },
-      members,
+      message: prompt,
+      financialContext: { totalBalance, totalIncome, totalExpense, userName: uName },
     });
   };
 
@@ -1110,17 +1116,17 @@ Responda de forma clara, motivadora e estruturada em tópicos!`;
     let createdTxs = [];
 
     try {
+      const uName = loggedInUser?.name || 'Você';
       const rawResponse = await sendTextMessageToGemini({
         message: userText,
         chatHistory: aiChat,
-        financialContext: finContext,
-        members,
+        financialContext: { ...finContext, userName: uName },
         aiSkinId: aiSkin,
       });
 
       const parsedResult = await parseAndRegisterAiTransactions(
         rawResponse,
-        loggedInUser?.name || activeMember === 'Casal' ? members.user1 : activeMember
+        uName
       );
       createdTxs = parsedResult.transactions;
       aiReplyText = parsedResult.cleanText || rawResponse;
@@ -1168,17 +1174,17 @@ Responda de forma clara, motivadora e estruturada em tópicos!`;
     let createdTxs = [];
 
     try {
+      const uName = loggedInUser?.name || 'Você';
       const raw = await analyzeReceiptImage({
         base64Image,
         mimeType,
         userNotes,
-        financialContext: { totalBalance, totalIncome, totalExpense, activeMember },
-        members,
+        financialContext: { totalBalance, totalIncome, totalExpense, userName: uName },
       });
 
       const parsedResult = await parseAndRegisterAiTransactions(
         raw,
-        loggedInUser?.name || (activeMember === 'Casal' ? members.user1 : activeMember)
+        uName
       );
       createdTxs = parsedResult.transactions;
       aiReplyText = parsedResult.cleanText || raw;
@@ -1216,16 +1222,16 @@ Responda de forma clara, motivadora e estruturada em tópicos!`;
     let createdTxs = [];
 
     try {
+      const uName = loggedInUser?.name || 'Você';
       const raw = await analyzeInvoicePdf({
         base64Pdf,
         userNotes,
-        financialContext: { totalBalance, totalIncome, totalExpense, activeMember },
-        members,
+        financialContext: { totalBalance, totalIncome, totalExpense, userName: uName },
       });
 
       const parsedResult = await parseAndRegisterAiTransactions(
         raw,
-        loggedInUser?.name || (activeMember === 'Casal' ? members.user1 : activeMember)
+        uName
       );
       createdTxs = parsedResult.transactions;
       aiReplyText = parsedResult.cleanText || raw;
@@ -1263,17 +1269,17 @@ Responda de forma clara, motivadora e estruturada em tópicos!`;
     let createdTxs = [];
 
     try {
+      const uName = loggedInUser?.name || 'Você';
       const raw = await analyzeVoiceAudio({
         base64Audio,
         mimeType,
-        financialContext: { totalBalance, totalIncome, totalExpense, activeMember },
-        members,
+        financialContext: { totalBalance, totalIncome, totalExpense, userName: uName },
         aiSkinId: aiSkin,
       });
 
       const parsedResult = await parseAndRegisterAiTransactions(
         raw,
-        loggedInUser?.name || (activeMember === 'Casal' ? members.user1 : activeMember)
+        uName
       );
       createdTxs = parsedResult.transactions;
       aiReplyText = parsedResult.cleanText || raw;

@@ -64,7 +64,7 @@ export default function SharedFinancesScreen({ navigation }) {
   const [expDesc, setExpDesc] = useState('');
   const [expAmount, setExpAmount] = useState('');
   const [expCategory, setExpCategory] = useState('alimentacao');
-  const [expPaidBy, setExpPaidBy] = useState(loggedInUser?.name || members?.user1 || 'Você');
+  const [expPaidBy, setExpPaidBy] = useState(loggedInUser?.name || 'Você');
   const [expSplitMethod, setExpSplitMethod] = useState('equal'); // 'equal' | 'percentage' | 'exact'
   const [customSharePercent, setCustomSharePercent] = useState('50');
 
@@ -82,16 +82,16 @@ export default function SharedFinancesScreen({ navigation }) {
     if (activeGroup?.members && activeGroup.members.length > 0) {
       return activeGroup.members;
     }
+    const currentName = loggedInUser?.name || loggedInUser?.fullName || 'Você';
     return [
-      { id: 'm1', name: loggedInUser?.name || members?.user1 || 'Lucas', role: 'ADMIN' },
-      { id: 'm2', name: members?.user2 || 'Veronica', role: 'MEMBER' },
+      { id: loggedInUser?.id || 'm1', name: currentName, role: 'ADMIN' },
     ];
-  }, [activeGroup, loggedInUser, members]);
+  }, [activeGroup, loggedInUser]);
 
   // Transações compartilhadas do grupo
   const sharedTxs = useMemo(() => {
-    return transactions.filter((t) => t.isShared);
-  }, [transactions]);
+    return transactions.filter((t) => t.isShared && (!activeGroup?.id || !t.groupId || t.groupId === activeGroup.id));
+  }, [transactions, activeGroup?.id]);
 
   // Total gasto compartilhado no mês
   const totalSharedSpent = useMemo(() => {
@@ -100,8 +100,8 @@ export default function SharedFinancesScreen({ navigation }) {
 
   // Cálculo de Acerto de Contas (Quem deve para quem)
   const debtsCalculation = useMemo(() => {
-    const member1 = groupMembers[0]?.name || 'Lucas';
-    const member2 = groupMembers[1]?.name || 'Veronica';
+    const member1 = groupMembers[0]?.name || (loggedInUser?.name || 'Você');
+    const member2 = groupMembers[1]?.name || 'Participante';
 
     let netOwed = 0; // Se positivo: member2 deve para member1. Se negativo: member1 deve para member2.
 

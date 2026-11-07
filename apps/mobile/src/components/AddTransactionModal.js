@@ -17,7 +17,7 @@ import { COLORS } from '../theme/colors';
 import { useFinance, CATEGORIES } from '../context/FinanceContext';
 
 export default function AddTransactionModal({ visible, onClose }) {
-  const { addTransaction, addBill, accounts, members, activeMember } = useFinance();
+  const { addTransaction, addBill, accounts, loggedInUser, sharedGroups = [] } = useFinance();
 
   // Modo: 'variable' (Gasto Variável) | 'fixed' (Gasto Fixo - Print 3) | 'income' (Novo Recebimento - Print 2)
   const [mode, setMode] = useState('variable');
@@ -26,7 +26,8 @@ export default function AddTransactionModal({ visible, onClose }) {
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
   const [category, setCategory] = useState('alimentacao');
-  const [author, setAuthor] = useState(activeMember === 'Casal' ? members.user1 : activeMember);
+  const [selectedGroupId, setSelectedGroupId] = useState(null);
+  const currentAuthor = loggedInUser?.name || loggedInUser?.fullName || 'Você';
   const [accountId, setAccountId] = useState(accounts[0]?.id || '');
   const [notes, setNotes] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
@@ -91,6 +92,10 @@ export default function AddTransactionModal({ visible, onClose }) {
           accountId,
         });
 
+        const targetGroup = (sharedGroups || []).find((g) => g.id === selectedGroupId);
+        const isShared = !!selectedGroupId;
+        const groupName = targetGroup?.name || null;
+
         if (billStatus === 'paid') {
           await addTransaction({
             description: description.trim(),
@@ -98,33 +103,50 @@ export default function AddTransactionModal({ visible, onClose }) {
             type: 'expense',
             expenseType: 'fixed',
             category,
-            author,
+            author: currentAuthor,
+            isShared,
+            groupId: selectedGroupId || null,
+            groupName,
             accountId,
             notes: notes.trim(),
           });
         }
       } else if (mode === 'income') {
         // Novo Recebimento (Salário ou Freelance / Renda Extra)
+        const targetGroup = (sharedGroups || []).find((g) => g.id === selectedGroupId);
+        const isShared = !!selectedGroupId;
+        const groupName = targetGroup?.name || null;
+
         await addTransaction({
           description: description.trim(),
           amount: num,
           type: 'income',
           incomeSource,
           category: category === 'alimentacao' ? 'receita' : category,
-          author,
+          author: currentAuthor,
+          isShared,
+          groupId: selectedGroupId || null,
+          groupName,
           accountId,
           date,
           notes: notes.trim(),
         });
       } else {
         // Gasto Variável do dia a dia
+        const targetGroup = (sharedGroups || []).find((g) => g.id === selectedGroupId);
+        const isShared = !!selectedGroupId;
+        const groupName = targetGroup?.name || null;
+
         await addTransaction({
           description: description.trim(),
           amount: num,
           type: 'expense',
           expenseType: 'variable',
           category,
-          author,
+          author: currentAuthor,
+          isShared,
+          groupId: selectedGroupId || null,
+          groupName,
           accountId,
           date,
           notes: notes.trim(),
@@ -135,6 +157,7 @@ export default function AddTransactionModal({ visible, onClose }) {
       setDescription('');
       setAmount('');
       setNotes('');
+      setSelectedGroupId(null);
       onClose();
     } catch (e) {
       Alert.alert('Erro ao salvar', e.message);
@@ -447,28 +470,49 @@ export default function AddTransactionModal({ visible, onClose }) {
               ))}
             </View>
 
-            {/* RESPONSÁVEL */}
-            <Text style={styles.fieldLabel}>Quem realizou?</Text>
-            <View style={styles.authorRow}>
-              {[members.user1, members.user2].map((name) => (
-                <TouchableOpacity
-                  key={name}
-                  style={[styles.authorChip, author === name && styles.authorChipActive]}
-                  onPress={() => setAuthor(name)}
-                >
-                  <Ionicons
-                    name="person-outline"
-                    size={14}
-                    color={author === name ? '#7C3AED' : COLORS.textSecondary}
-                  />
-                  <Text
-                    style={[styles.authorText, author === name && styles.authorTextActive]}
+            {/* DESTINO: PESSOAL OU GRUPO COMPARTILHADO (OPCIONAL) */}
+            {sharedGroups && sharedGroups.length > 0 && (
+              <>
+                <Text style={styles.fieldLabel}>Destino do Lançamento</Text>
+                <View style={styles.authorRow}>
+                  <TouchableOpacity
+                    style={[styles.authorChip, !selectedGroupId && styles.authorChipActive]}
+                    onPress={() => setSelectedGroupId(null)}
                   >
-                    {name}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+                    <Ionicons
+                      name="person-outline"
+                      size={14}
+                      color={!selectedGroupId ? '#7C3AED' : COLORS.textSecondary}
+                    />
+                    <Text
+                      style={[styles.authorText, !selectedGroupId && styles.authorTextActive]}
+                    >
+                      Pessoal (Individual)
+                    </Text>
+                  </TouchableOpacity>
+
+                  {sharedGroups.map((g) => (
+                    <TouchableOpacity
+                      key={g.id}
+                      style={[styles.authorChip, selectedGroupId === g.id && styles.authorChipActive]}
+                      onPress={() => setSelectedGroupId(g.id)}
+                    >
+                      <Ionicons
+                        name="people-outline"
+                        size={14}
+                        color={selectedGroupId === g.id ? '#7C3AED' : COLORS.textSecondary}
+                      />
+                      <Text
+                        style={[styles.authorText, selectedGroupId === g.id && styles.authorTextActive]}
+                        numberOfLines={1}
+                      >
+                        {g.name}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </>
+            )}
 
             {/* OBSERVAÇÃO (OPCIONAL) */}
             <Text style={styles.fieldLabel}>Observação (opcional)</Text>

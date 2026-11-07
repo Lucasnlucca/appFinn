@@ -59,9 +59,16 @@ export default function SettingsScreen({ navigation }) {
   const [openSection, setOpenSection] = useState(null);
 
   // Estados dos formulários internos
-  const [user1, setUser1] = useState(members?.user1 || loggedInUser?.name || 'Titular');
-  const [user2, setUser2] = useState(members?.user2 || 'Parceiro(a)');
+  const [displayName, setDisplayName] = useState(
+    loggedInUser?.fullName || loggedInUser?.name || members?.user1 || ''
+  );
   const [savedNotice, setSavedNotice] = useState(false);
+
+  useEffect(() => {
+    if (loggedInUser?.fullName || loggedInUser?.name) {
+      setDisplayName(loggedInUser?.fullName || loggedInUser?.name);
+    }
+  }, [loggedInUser?.fullName, loggedInUser?.name]);
 
   // VPS Appwrite
   const [appwriteConfig, setAppwriteConfigState] = useState(null);
@@ -119,17 +126,16 @@ export default function SettingsScreen({ navigation }) {
     setOpenSection((prev) => (prev === sectionId ? null : sectionId));
   };
 
-  const handleSaveNames = async () => {
-    const trimmedUser1 = user1.trim() || 'Principal';
-    const trimmedUser2 = user2.trim() || 'Veronica';
-    updateMembersNames({
-      user1: trimmedUser1,
-      user2: trimmedUser2,
-    });
+  const handleSaveProfile = async () => {
+    const trimmed = displayName.trim();
+    if (!trimmed) {
+      Alert.alert('Nome inválido', 'Por favor, informe seu nome de exibição.');
+      return;
+    }
     if (updateUserProfile) {
       await updateUserProfile({
-        fullName: trimmedUser1,
-        name: trimmedUser1,
+        fullName: trimmed,
+        name: trimmed,
       });
     }
     setSavedNotice(true);
@@ -261,12 +267,12 @@ export default function SettingsScreen({ navigation }) {
               onPress={() => toggleSection('perfil')}
             >
               <View style={[styles.accordionIconBox, { backgroundColor: '#EDE9FE' }]}>
-                <Ionicons name="people" size={20} color="#7C3AED" />
+                <Ionicons name="person" size={20} color="#7C3AED" />
               </View>
               <View style={styles.accordionHeaderInfo}>
-                <Text style={styles.accordionTitle}>Perfil e Conta</Text>
+                <Text style={styles.accordionTitle}>Meu Perfil e Conta</Text>
                 <Text style={styles.accordionSubtitle}>
-                  Minha conta, nomes do casal e identificações
+                  Nome de exibição, biometria e dados de acesso
                 </Text>
               </View>
               <Ionicons
@@ -286,7 +292,7 @@ export default function SettingsScreen({ navigation }) {
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={styles.userNameText}>
-                        {loggedInUser.name} (Conectado)
+                        {loggedInUser.name || loggedInUser.fullName || 'Usuário'} (Conectado)
                       </Text>
                       <Text style={styles.userEmailText}>{loggedInUser.email}</Text>
                     </View>
@@ -331,59 +337,27 @@ export default function SettingsScreen({ navigation }) {
                   </TouchableOpacity>
                 </View>
 
-                {/* Alternador de Membro Ativo */}
-                <Text style={styles.inputLabel}>VISUALIZAÇÃO ATIVA NO APP</Text>
-                <View style={styles.memberPillsRow}>
-                  {['Casal', members?.user1 || 'Lucas', members?.user2 || 'Veronica'].map(
-                    (m) => {
-                      const isActive = activeMember === m;
-                      return (
-                        <TouchableOpacity
-                          key={m}
-                          style={[
-                            styles.memberPill,
-                            isActive && styles.memberPillActive,
-                          ]}
-                          onPress={() => switchActiveMember?.(m)}
-                        >
-                          <Text
-                            style={[
-                              styles.memberPillText,
-                              isActive && styles.memberPillTextActive,
-                            ]}
-                          >
-                            {m}
-                          </Text>
-                        </TouchableOpacity>
-                      );
-                    }
-                  )}
-                </View>
-
-                {/* Edição de Nomes do Casal */}
-                <Text style={styles.inputLabel}>NOMES DO CASAL</Text>
+                {/* Edição do Nome de Exibição */}
+                <Text style={styles.inputLabel}>SEU NOME DE EXIBIÇÃO NO APP</Text>
                 <TextInput
                   style={styles.input}
-                  value={user1}
-                  onChangeText={setUser1}
-                  placeholder="Nome do usuário 1"
+                  value={displayName}
+                  onChangeText={setDisplayName}
+                  placeholder="Seu nome (ex: Lucas)"
                   placeholderTextColor="#9CA3AF"
+                  autoCapitalize="words"
                 />
-                <TextInput
-                  style={styles.input}
-                  value={user2}
-                  onChangeText={setUser2}
-                  placeholder="Nome da esposa/parceira"
-                  placeholderTextColor="#9CA3AF"
-                />
+                <Text style={styles.inputHelpText}>
+                  Esse nome é exibido no topo da tela inicial ("Olá, {displayName.trim() ? displayName.trim().split(' ')[0] : 'Usuário'} 👋") e usado pelo FINN AI ao conversar com você.
+                </Text>
 
                 <TouchableOpacity
                   style={styles.primaryBtn}
-                  onPress={handleSaveNames}
+                  onPress={handleSaveProfile}
                   activeOpacity={0.8}
                 >
                   <Text style={styles.primaryBtnText}>
-                    {savedNotice ? '✓ Salvo com sucesso!' : 'Salvar Nomes'}
+                    {savedNotice ? '✓ Nome atualizado com sucesso!' : 'Salvar Alterações'}
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -852,6 +826,13 @@ const styles = StyleSheet.create({
     letterSpacing: 0.6,
     marginBottom: 6,
     marginTop: 8,
+  },
+  inputHelpText: {
+    color: '#6B7280',
+    fontSize: 11.5,
+    lineHeight: 16,
+    marginBottom: 12,
+    marginTop: -2,
   },
   memberPillsRow: {
     flexDirection: 'row',
