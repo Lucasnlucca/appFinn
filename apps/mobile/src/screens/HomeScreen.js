@@ -555,35 +555,6 @@ export default function HomeScreen({ navigation }) {
           </View>
         </View>
 
-        {/* CARD DO MASCOTE / GAMIFICAÇÃO (IDÊNTICO À IMAGEM 2) */}
-        <View style={styles.mascotCard}>
-          <View style={styles.mascotAvatar}>
-            <Text style={styles.mascotEmoji}>🐶🕶️</Text>
-          </View>
-
-          <View style={styles.mascotContent}>
-            <Text style={styles.mascotTitle}>
-              Mandou bem este mês, {currentUserName}!
-            </Text>
-            <Text style={styles.mascotDesc}>
-              {totalExpense === 0 && totalIncome === 0
-                ? 'Tudo pronto para começar! Adicione seus saldos reais ou envie comprovantes para a IA FINN.'
-                : totalBudget > 0
-                ? `Você usou ${budgetProgress}% do orçamento previsto com ${monthProgress}% do mês decorrido.`
-                : totalIncome > 0
-                ? `Você já recebeu ${formatMoney(totalIncome)} este mês e não teve despesas. Defina um teto de gastos no Planejamento!`
-                : `Você gastou ${formatMoney(totalExpense)} este mês.`}
-            </Text>
-
-            <TouchableOpacity
-              style={styles.mascotBtn}
-              onPress={() => navigation.navigate('Planning')}
-            >
-              <Text style={styles.mascotBtnText}>Ver planejamento →</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
         {/* SEÇÃO COFRINHOS & METAS (PRINT 1 DO USUÁRIO) */}
         <View style={styles.cofrinhosHomeCard}>
           <View style={styles.cofrinhosHomeTop}>
