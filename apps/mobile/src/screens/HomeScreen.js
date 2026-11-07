@@ -247,9 +247,17 @@ export default function HomeScreen({ navigation }) {
 
           <TouchableOpacity
             style={styles.avatarCircle}
-            onPress={() => navigation.navigate('Mais')}
+            onPress={() => navigation.navigate('Profile')}
+            activeOpacity={0.8}
           >
-            <Ionicons name="person" size={17} color="#7C3AED" />
+            {loggedInUser?.avatarUri ? (
+              <Image
+                source={{ uri: loggedInUser.avatarUri }}
+                style={styles.avatarTopImage}
+              />
+            ) : (
+              <Ionicons name="person" size={17} color="#7C3AED" />
+            )}
           </TouchableOpacity>
         </View>
       </View>
@@ -1000,6 +1008,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#EDE9FE',
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
     borderWidth: 1,
     borderColor: 'rgba(124, 58, 237, 0.25)',
     shadowColor: '#4C1D95',
@@ -1007,6 +1016,11 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 6,
     elevation: 2,
+  },
+  avatarTopImage: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
   },
   greetingWrap: {
     paddingHorizontal: 4,

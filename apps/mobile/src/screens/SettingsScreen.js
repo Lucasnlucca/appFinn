@@ -24,11 +24,6 @@ import {
   DEFAULT_API_URL,
 } from '../services/apiService';
 import {
-  checkBiometricSupport,
-  isBiometricLoginEnabled,
-  setBiometricLoginEnabled,
-} from '../services/biometricService';
-import {
   getGeminiApiKey,
   setGeminiApiKey,
   getGeminiModel,
@@ -58,27 +53,10 @@ export default function SettingsScreen({ navigation }) {
   // Estado dos accordions: inicialmente TODOS FECHADOS (null)
   const [openSection, setOpenSection] = useState(null);
 
-  // Estados dos formulários internos
-  const [displayName, setDisplayName] = useState(
-    loggedInUser?.fullName || loggedInUser?.name || members?.user1 || ''
-  );
-  const [savedNotice, setSavedNotice] = useState(false);
-
-  useEffect(() => {
-    if (loggedInUser?.fullName || loggedInUser?.name) {
-      setDisplayName(loggedInUser?.fullName || loggedInUser?.name);
-    }
-  }, [loggedInUser?.fullName, loggedInUser?.name]);
-
   // VPS Appwrite
   const [appwriteConfig, setAppwriteConfigState] = useState(null);
   const [testingVps, setTestingVps] = useState(false);
   const [vpsPingStatus, setVpsPingStatus] = useState(null);
-
-  // Biometria
-  const [biometricsSupported, setBiometricsSupported] = useState(false);
-  const [biometricType, setBiometricType] = useState('Digital');
-  const [biometricActive, setBiometricActive] = useState(false);
 
   // Google Gemini
   const [geminiKey, setGeminiKeyState] = useState('');
@@ -92,54 +70,21 @@ export default function SettingsScreen({ navigation }) {
 
   const loadSettings = async () => {
     try {
-      const [cfg, key, model, bioSupport, isBioOn] = await Promise.all([
+      const [cfg, key, model] = await Promise.all([
         getAppwriteConfig(),
         getGeminiApiKey(),
         getGeminiModel(),
-        checkBiometricSupport(),
-        isBiometricLoginEnabled(),
       ]);
       setAppwriteConfigState(cfg);
       if (key) setGeminiKeyState(key);
       if (model) setGeminiModelState(model);
-      setBiometricsSupported(bioSupport.available);
-      setBiometricType(bioSupport.biometricType || 'Digital');
-      setBiometricActive(isBioOn);
     } catch (e) {
       console.warn('Erro ao carregar configurações:', e);
     }
   };
 
-  const handleToggleBiometric = async () => {
-    const nextVal = !biometricActive;
-    await setBiometricLoginEnabled(nextVal, loggedInUser);
-    setBiometricActive(nextVal);
-    Alert.alert(
-      `Login com ${biometricType}`,
-      nextVal
-        ? `O acesso com ${biometricType.toLowerCase()} está ativo para os próximos logins!`
-        : `O acesso com ${biometricType.toLowerCase()} foi desativado.`
-    );
-  };
-
   const toggleSection = (sectionId) => {
     setOpenSection((prev) => (prev === sectionId ? null : sectionId));
-  };
-
-  const handleSaveProfile = async () => {
-    const trimmed = displayName.trim();
-    if (!trimmed) {
-      Alert.alert('Nome inválido', 'Por favor, informe seu nome de exibição.');
-      return;
-    }
-    if (updateUserProfile) {
-      await updateUserProfile({
-        fullName: trimmed,
-        name: trimmed,
-      });
-    }
-    setSavedNotice(true);
-    setTimeout(() => setSavedNotice(false), 2500);
   };
 
   const handleTestPostgres = async () => {
@@ -255,114 +200,43 @@ export default function SettingsScreen({ navigation }) {
         {/* LISTA DE ACCORDIONS (TODOS FECHADOS POR PADRÃO) */}
         <View style={styles.accordionList}>
           {/* ================================================================= */}
-          {/* 1. PERFIL E CONTA */}
+          {/* 1. MEU PERFIL (PÁGINA ISOLADA CONFORME SOLICITADO) */}
           {/* ================================================================= */}
-          <View style={styles.accordionCard}>
-            <TouchableOpacity
-              style={[
-                styles.accordionHeader,
-                openSection === 'perfil' && styles.accordionHeaderOpen,
-              ]}
-              activeOpacity={0.8}
-              onPress={() => toggleSection('perfil')}
-            >
-              <View style={[styles.accordionIconBox, { backgroundColor: '#EDE9FE' }]}>
-                <Ionicons name="person" size={20} color="#7C3AED" />
-              </View>
-              <View style={styles.accordionHeaderInfo}>
-                <Text style={styles.accordionTitle}>Meu Perfil e Conta</Text>
-                <Text style={styles.accordionSubtitle}>
-                  Nome de exibição, biometria e dados de acesso
-                </Text>
-              </View>
-              <Ionicons
-                name={openSection === 'perfil' ? 'chevron-up' : 'chevron-down'}
-                size={20}
-                color={openSection === 'perfil' ? '#7C3AED' : '#71717A'}
-              />
-            </TouchableOpacity>
-
-            {openSection === 'perfil' && (
-              <View style={styles.accordionBody}>
-                {/* Banner do Usuário */}
-                {loggedInUser && (
-                  <View style={styles.userBanner}>
-                    <View style={styles.userAvatar}>
-                      <Ionicons name="person" size={20} color="#7C3AED" />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.userNameText}>
-                        {loggedInUser.name || loggedInUser.fullName || 'Usuário'} (Conectado)
-                      </Text>
-                      <Text style={styles.userEmailText}>{loggedInUser.email}</Text>
-                    </View>
-                    <View style={styles.statusPill}>
-                      <View style={styles.statusPillDot} />
-                      <Text style={styles.statusPillText}>Ativo</Text>
-                    </View>
-                  </View>
-                )}
-
-                {/* Configuração de Biometria / Digital */}
-                <View style={styles.biometricSettingBox}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
-                    <View style={styles.biometricIconCircle}>
-                      <Ionicons name="finger-print-outline" size={20} color="#7C3AED" />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.biometricSettingTitle}>Acesso com {biometricType}</Text>
-                      <Text style={styles.biometricSettingSubtitle}>
-                        {biometricActive
-                          ? `Ativado para entrar no FINN com sua ${biometricType.toLowerCase()}`
-                          : `Desativado • Ative para entrar com sua ${biometricType.toLowerCase()}`}
-                      </Text>
-                    </View>
-                  </View>
-                  <TouchableOpacity
-                    style={[
-                      styles.biometricToggleBtn,
-                      biometricActive && styles.biometricToggleBtnActive,
-                    ]}
-                    onPress={handleToggleBiometric}
-                    activeOpacity={0.8}
-                  >
-                    <Text
-                      style={[
-                        styles.biometricToggleBtnText,
-                        biometricActive && styles.biometricToggleBtnTextActive,
-                      ]}
-                    >
-                      {biometricActive ? 'Ativo' : 'Ativar'}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-
-                {/* Edição do Nome de Exibição */}
-                <Text style={styles.inputLabel}>SEU NOME DE EXIBIÇÃO NO APP</Text>
-                <TextInput
-                  style={styles.input}
-                  value={displayName}
-                  onChangeText={setDisplayName}
-                  placeholder="Seu nome (ex: Lucas)"
-                  placeholderTextColor="#9CA3AF"
-                  autoCapitalize="words"
+          <TouchableOpacity
+            style={styles.profileNavCard}
+            activeOpacity={0.8}
+            onPress={() => navigation.navigate('Profile')}
+          >
+            <View style={styles.profileNavAvatarWrapper}>
+              {loggedInUser?.avatarUri ? (
+                <Image
+                  source={{ uri: loggedInUser.avatarUri }}
+                  style={styles.profileNavAvatarImg}
                 />
-                <Text style={styles.inputHelpText}>
-                  Esse nome é exibido no topo da tela inicial ("Olá, {displayName.trim() ? displayName.trim().split(' ')[0] : 'Usuário'} 👋") e usado pelo FINN AI ao conversar com você.
-                </Text>
+              ) : (
+                <View style={styles.profileNavAvatarPlaceholder}>
+                  <Ionicons name="person" size={24} color="#7C3AED" />
+                </View>
+              )}
+            </View>
 
-                <TouchableOpacity
-                  style={styles.primaryBtn}
-                  onPress={handleSaveProfile}
-                  activeOpacity={0.8}
-                >
-                  <Text style={styles.primaryBtnText}>
-                    {savedNotice ? '✓ Nome atualizado com sucesso!' : 'Salvar Alterações'}
-                  </Text>
-                </TouchableOpacity>
+            <View style={styles.profileNavInfo}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Text style={styles.profileNavName} numberOfLines={1}>
+                  {loggedInUser?.fullName || loggedInUser?.name || 'Meu Perfil'}
+                </Text>
+                <View style={styles.profileActiveDot} />
               </View>
-            )}
-          </View>
+              <Text style={styles.profileNavEmail} numberOfLines={1}>
+                {loggedInUser?.email || 'Ver e editar dados pessoais'}
+              </Text>
+            </View>
+
+            <View style={styles.profileNavActionPill}>
+              <Text style={styles.profileNavActionText}>Editar</Text>
+              <Ionicons name="chevron-forward" size={15} color="#7C3AED" />
+            </View>
+          </TouchableOpacity>
 
           {/* ================================================================= */}
           {/* 2. MÓDULOS FINANCEIROS */}
@@ -1049,53 +923,73 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#7C3AED',
   },
-  biometricSettingBox: {
+  profileNavCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#F8F7FF',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    padding: 14,
+    marginBottom: 14,
     borderWidth: 1,
-    borderColor: '#DDD6FE',
-    borderRadius: 14,
-    padding: 12,
-    marginBottom: 16,
+    borderColor: '#F1F5F9',
+    shadowColor: '#64748B',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 2,
   },
-  biometricIconCircle: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+  profileNavAvatarWrapper: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    overflow: 'hidden',
+  },
+  profileNavAvatarImg: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+  },
+  profileNavAvatarPlaceholder: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     backgroundColor: '#EDE9FE',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  biometricSettingTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#18181B',
+  profileNavInfo: {
+    flex: 1,
+    marginLeft: 12,
+    marginRight: 8,
   },
-  biometricSettingSubtitle: {
-    fontSize: 11,
-    color: '#6B7280',
+  profileNavName: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  profileActiveDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    backgroundColor: '#10B981',
+  },
+  profileNavEmail: {
+    fontSize: 12,
+    color: '#64748B',
     marginTop: 2,
   },
-  biometricToggleBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+  profileNavActionPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: '#F3E8FF',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
     borderRadius: 10,
-    backgroundColor: '#F3F4F6',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
   },
-  biometricToggleBtnActive: {
-    backgroundColor: '#7C3AED',
-    borderColor: '#7C3AED',
-  },
-  biometricToggleBtnText: {
+  profileNavActionText: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#6B7280',
-  },
-  biometricToggleBtnTextActive: {
-    color: '#FFFFFF',
+    color: '#7C3AED',
   },
 });
