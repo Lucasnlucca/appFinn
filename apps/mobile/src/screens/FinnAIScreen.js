@@ -195,6 +195,24 @@ export default function FinnAIScreen({ navigation }) {
 
   const scrollViewRef = useRef();
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+  const [showHero, setShowHero] = useState(true);
+
+  // Ao abrir ou focar a tela da IA, ela sempre inicia com o boneco (Print 2)
+  useEffect(() => {
+    const unsubscribe = navigation?.addListener?.('focus', () => {
+      setShowHero(true);
+    });
+    return unsubscribe;
+  }, [navigation]);
+
+  // Se o histórico de mensagens for aberto, rola suavemente até o final
+  useEffect(() => {
+    if (!showHero) {
+      setTimeout(() => {
+        scrollViewRef.current?.scrollToEnd({ animated: true });
+      }, 100);
+    }
+  }, [showHero]);
 
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
@@ -318,6 +336,8 @@ export default function FinnAIScreen({ navigation }) {
     const text = textToSend || inputText;
     if ((!text.trim() && !attachedFile) || analyzing) return;
 
+    // Sai a tela inicial do boneco e volta o histórico do chat do cliente
+    setShowHero(false);
     setInputText('');
     setAnalyzing(true);
 
@@ -516,6 +536,7 @@ export default function FinnAIScreen({ navigation }) {
     try {
       if (recordTimerRef.current) clearInterval(recordTimerRef.current);
       setIsRecording(false);
+      setShowHero(false); // Sai a tela do boneco e volta o histórico do chat
 
       setAnalyzing(true);
       setAnalyzingStatus('FINN ouvindo seu áudio...');
@@ -668,7 +689,11 @@ export default function FinnAIScreen({ navigation }) {
           <Ionicons name="arrow-back" size={22} color="#18181B" />
         </TouchableOpacity>
 
-        <View style={styles.headerCenter}>
+        <TouchableOpacity
+          style={styles.headerCenter}
+          onPress={() => setShowHero((prev) => !prev)}
+          activeOpacity={0.75}
+        >
           <View style={styles.headerTitleRow}>
             {/* FOTINHA DO ROBÔ FINN NO LUGAR DA FOTO COM 3 ESTRELAS */}
             <Image
@@ -678,8 +703,10 @@ export default function FinnAIScreen({ navigation }) {
             />
             <Text style={styles.headerTitle}>FINN AI</Text>
           </View>
-          <Text style={styles.headerSubtitle}>Seu assistente financeiro</Text>
-        </View>
+          <Text style={styles.headerSubtitle}>
+            {showHero ? 'Seu assistente financeiro' : 'Histórico da conversa • Toque p/ início'}
+          </Text>
+        </TouchableOpacity>
 
         <TouchableOpacity
           style={styles.headerCircleBtn}
@@ -706,8 +733,9 @@ export default function FinnAIScreen({ navigation }) {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          {/* SEÇÃO HERO CENTRAL (DESIGN FIEL AO PRINT 1) */}
-          <View style={styles.heroSection}>
+          {/* SEÇÃO HERO CENTRAL (COM O BONECO DO SEGUNDO PRINT) */}
+          {showHero ? (
+            <View style={styles.heroSection}>
             {/* Robô 3D com a aura luminosa */}
             <View style={styles.robotImageWrapper}>
               <Image
@@ -839,11 +867,34 @@ export default function FinnAIScreen({ navigation }) {
                 </TouchableOpacity>
               ))}
             </View>
-          </View>
 
-          {/* HISTÓRICO DE MENSAGENS COM O NOVO AVATAR DO FINN */}
-          {aiChat.length > 0 && (
+            {/* BOTÃO PARA ACESSAR O HISTÓRICO SE JÁ HOUVER MENSAGENS */}
+            {aiChat.length > 0 && (
+              <TouchableOpacity
+                style={styles.viewHistoryButton}
+                activeOpacity={0.8}
+                onPress={() => setShowHero(false)}
+              >
+                <Ionicons name="chatbubbles-outline" size={16} color="#7C3AED" />
+                <Text style={styles.viewHistoryText}>
+                  Ver histórico da conversa ({aiChat.length}) →
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        ) : (
+            /* HISTÓRICO DE MENSAGENS DO CLIENTE (PRINT 1) */
             <View style={styles.chatMessagesContainer}>
+              {/* Botão no topo do chat para retornar às sugestões e boneco */}
+              <TouchableOpacity
+                style={styles.backToHeroBtn}
+                onPress={() => setShowHero(true)}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="sparkles" size={14} color="#7C3AED" />
+                <Text style={styles.backToHeroText}>Início & Sugestões da IA</Text>
+              </TouchableOpacity>
+
               {aiChat.map((msg) => {
                 const isUser = msg.sender === 'user';
                 return (
@@ -934,6 +985,14 @@ export default function FinnAIScreen({ navigation }) {
                   </View>
                 );
               })}
+
+              {aiChat.length === 0 && (
+                <View style={styles.emptyChatWrap}>
+                  <Text style={styles.emptyChatText}>
+                    Nenhuma mensagem ainda. Envie uma mensagem para começar!
+                  </Text>
+                </View>
+              )}
             </View>
           )}
 
@@ -1158,6 +1217,40 @@ export default function FinnAIScreen({ navigation }) {
         >
           <View style={styles.menuModalCard}>
             <Text style={styles.attachModalTitle}>Opções do Assistente</Text>
+
+            <TouchableOpacity
+              style={styles.attachOptionRow}
+              onPress={() => {
+                setShowHero(true);
+                setMenuModalVisible(false);
+              }}
+            >
+              <View style={[styles.attachOptionIcon, { backgroundColor: '#EDE9FE' }]}>
+                <Ionicons name="sparkles" size={20} color="#7C3AED" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.attachOptionName}>Tela Inicial da IA (Boneco)</Text>
+                <Text style={styles.attachOptionSub}>Ver sugestões, atalhos e novo início</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.attachOptionRow}
+              onPress={() => {
+                setShowHero(false);
+                setMenuModalVisible(false);
+              }}
+            >
+              <View style={[styles.attachOptionIcon, { backgroundColor: '#F3EEFF' }]}>
+                <Ionicons name="chatbubbles-outline" size={20} color="#7C3AED" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.attachOptionName}>Histórico do Chat</Text>
+                <Text style={styles.attachOptionSub}>Ver todas as mensagens trocadas</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
+            </TouchableOpacity>
 
             <TouchableOpacity
               style={styles.attachOptionRow}
@@ -1487,8 +1580,57 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#18181B',
   },
+  viewHistoryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#EDE9FE',
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    marginTop: 18,
+    borderWidth: 1,
+    borderColor: '#DDD6FE',
+    width: '100%',
+  },
+  viewHistoryText: {
+    color: '#7C3AED',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  backToHeroBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#F3EEFF',
+    paddingVertical: 7,
+    paddingHorizontal: 14,
+    borderRadius: 20,
+    alignSelf: 'center',
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#E9D5FF',
+  },
+  backToHeroText: {
+    color: '#7C3AED',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  emptyChatWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 40,
+    paddingHorizontal: 20,
+  },
+  emptyChatText: {
+    color: '#71717A',
+    fontSize: 13,
+    textAlign: 'center',
+  },
   chatMessagesContainer: {
-    marginTop: 10,
+    marginTop: 6,
     marginBottom: 10,
   },
   messageBubbleWrap: {
