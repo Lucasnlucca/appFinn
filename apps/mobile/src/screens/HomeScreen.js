@@ -428,6 +428,49 @@ export default function HomeScreen({ navigation }) {
           </View>
         </View>
 
+        {/* SEÇÃO "VISÃO GERAL" (3 MINI CARDS - FATURAS, FALTA PAGAR, ECONOMIZADO) */}
+        <View style={{ gap: 8 }}>
+          <Text style={styles.sectionHeaderTitle}>Visão geral</Text>
+          <View style={styles.overviewGrid}>
+            {/* CARD 1: NAS CONTAS / FATURAS DOS CARTÕES */}
+            <TouchableOpacity
+              style={styles.overviewCard}
+              onPress={() => navigation.navigate('CardInvoices')}
+            >
+              <Ionicons name="card-outline" size={18} color={COLORS.textSecondary} />
+              <Text style={styles.overviewLabel}>Faturas</Text>
+              <Text style={styles.overviewValue} numberOfLines={1}>
+                {formatMoney(totalBalance)}
+              </Text>
+            </TouchableOpacity>
+
+            {/* CARD 2: AGENDA DO MÊS / FALTA PAGAR (TUDO PAGO) */}
+            <TouchableOpacity
+              style={styles.overviewCard}
+              onPress={() => navigation.navigate('MonthlyAgenda')}
+            >
+              <Ionicons name="calendar-outline" size={18} color={COLORS.textSecondary} />
+              <Text style={styles.overviewLabel}>Falta pagar</Text>
+              <Text
+                style={[
+                  styles.overviewValue,
+                  allBillsPaid && styles.overviewValueGreen,
+                ]}
+                numberOfLines={1}
+              >
+                {allBillsPaid ? 'Tudo pago' : formatMoney(pendingBillsAmount)}
+              </Text>
+            </TouchableOpacity>
+
+            {/* CARD 3: ECONOMIZADO */}
+            <View style={styles.overviewCard}>
+              <Ionicons name="pie-chart-outline" size={18} color={COLORS.textSecondary} />
+              <Text style={styles.overviewLabel}>Economizado</Text>
+              <Text style={styles.overviewValue}>{economizadoPercent}%</Text>
+            </View>
+          </View>
+        </View>
+
         {/* CARD RESUMO DO MÊS (COM DONUT CHART E LEGENDA) */}
         <View style={styles.resumoCard}>
           <View style={styles.resumoHeader}>
@@ -513,47 +556,6 @@ export default function HomeScreen({ navigation }) {
             </View>
           </LinearGradient>
         </TouchableOpacity>
-
-        {/* SEÇÃO "VISÃO GERAL" (3 MINI CARDS - IMAGEM 3 & 2) */}
-        <Text style={styles.sectionHeaderTitle}>Visão geral</Text>
-        <View style={styles.overviewGrid}>
-          {/* CARD 1: NAS CONTAS / FATURAS DOS CARTÕES */}
-          <TouchableOpacity
-            style={styles.overviewCard}
-            onPress={() => navigation.navigate('CardInvoices')}
-          >
-            <Ionicons name="card-outline" size={18} color={COLORS.textSecondary} />
-            <Text style={styles.overviewLabel}>Faturas</Text>
-            <Text style={styles.overviewValue} numberOfLines={1}>
-              {formatMoney(totalBalance)}
-            </Text>
-          </TouchableOpacity>
-
-          {/* CARD 2: AGENDA DO MÊS / FALTA PAGAR (TUDO PAGO) */}
-          <TouchableOpacity
-            style={styles.overviewCard}
-            onPress={() => navigation.navigate('MonthlyAgenda')}
-          >
-            <Ionicons name="calendar-outline" size={18} color={COLORS.textSecondary} />
-            <Text style={styles.overviewLabel}>Falta pagar</Text>
-            <Text
-              style={[
-                styles.overviewValue,
-                allBillsPaid && styles.overviewValueGreen,
-              ]}
-              numberOfLines={1}
-            >
-              {allBillsPaid ? 'Tudo pago' : formatMoney(pendingBillsAmount)}
-            </Text>
-          </TouchableOpacity>
-
-          {/* CARD 3: ECONOMIZADO */}
-          <View style={styles.overviewCard}>
-            <Ionicons name="pie-chart-outline" size={18} color={COLORS.textSecondary} />
-            <Text style={styles.overviewLabel}>Economizado</Text>
-            <Text style={styles.overviewValue}>{economizadoPercent}%</Text>
-          </View>
-        </View>
 
         {/* SEÇÃO COFRINHOS & METAS (PRINT 1 DO USUÁRIO) */}
         <View style={styles.cofrinhosHomeCard}>
