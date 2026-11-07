@@ -949,7 +949,7 @@ export function FinanceProvider({ children }) {
     return t.author === activeMember || t.isShared;
   });
 
-  const totalIncome = filteredTransactions
+  const txIncome = filteredTransactions
     .filter((t) => t.type === 'income')
     .reduce((sum, t) => sum + t.amount, 0);
 
@@ -963,13 +963,20 @@ export function FinanceProvider({ children }) {
       return sum + t.amount;
     }, 0);
 
-  const resultadoDoMes = totalIncome - totalExpense;
   const accountsBalance = accounts.reduce((sum, a) => sum + (a.balance || 0), 0);
+
+  // A entrada deve ser referente ao saldo das contas quando há contas cadastradas
+  const totalIncome = accounts.length > 0
+    ? (accountsBalance > 0 ? accountsBalance : (txIncome || 0))
+    : txIncome;
+
   const totalBalance = viewMode === 'shared'
     ? -totalExpense
     : accounts.length > 0
     ? accountsBalance
-    : resultadoDoMes;
+    : (totalIncome - totalExpense);
+
+  const resultadoDoMes = accounts.length > 0 ? totalBalance : (totalIncome - totalExpense);
 
   // Cálculos de gastos fixos vs variáveis
   const fixedExpensesList = filteredTransactions.filter((t) => t.type === 'expense' && t.expenseType === 'fixed');

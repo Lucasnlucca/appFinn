@@ -67,7 +67,13 @@ export default function HomeScreen({ navigation }) {
     viewMode,
     setViewMode,
     sharedGroups,
+    cards = [],
   } = useFinance();
+
+  const totalOpenInvoices = useMemo(
+    () => (cards || []).reduce((sum, c) => sum + (c.currentInvoice || 0), 0),
+    [cards]
+  );
 
   const [modalVisible, setModalVisible] = useState(false);
   const [modalCofrinhos, setModalCofrinhos] = useState(false);
@@ -448,7 +454,7 @@ export default function HomeScreen({ navigation }) {
               <Ionicons name="card-outline" size={18} color={COLORS.textSecondary} />
               <Text style={styles.overviewLabel}>Faturas</Text>
               <Text style={styles.overviewValue} numberOfLines={1}>
-                {formatMoney(totalBalance)}
+                {formatMoney(totalOpenInvoices)}
               </Text>
             </TouchableOpacity>
 
