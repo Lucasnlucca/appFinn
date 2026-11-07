@@ -15,6 +15,7 @@ import {
   Animated,
   Image,
   Dimensions,
+  Keyboard,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -193,6 +194,28 @@ export default function FinnAIScreen({ navigation }) {
   ];
 
   const scrollViewRef = useRef();
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+    const showSub = Keyboard.addListener(showEvent, () => {
+      setIsKeyboardVisible(true);
+      setTimeout(() => {
+        scrollViewRef.current?.scrollToEnd({ animated: true });
+      }, 100);
+    });
+
+    const hideSub = Keyboard.addListener(hideEvent, () => {
+      setIsKeyboardVisible(false);
+    });
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   useEffect(() => {
     scrollViewRef.current?.scrollToEnd({ animated: true });
@@ -669,7 +692,7 @@ export default function FinnAIScreen({ navigation }) {
 
       {/* ÁREA DE ROLAGEM COM O NOVO DESIGN */}
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior="padding"
         style={{ flex: 1 }}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 10 : 0}
       >
@@ -961,7 +984,7 @@ export default function FinnAIScreen({ navigation }) {
           <View
             style={[
               styles.inputBarOuter,
-              { paddingBottom: Math.max(insets.bottom, 14) },
+              { paddingBottom: isKeyboardVisible ? 8 : Math.max(insets.bottom, 14) },
             ]}
           >
             {/* PRÉVIA DO ARQUIVO ANEXADO ANTES DO ENVIO */}
@@ -1017,6 +1040,11 @@ export default function FinnAIScreen({ navigation }) {
                 onChangeText={setInputText}
                 onSubmitEditing={() => handleSend()}
                 returnKeyType="send"
+                onFocus={() => {
+                  setTimeout(() => {
+                    scrollViewRef.current?.scrollToEnd({ animated: true });
+                  }, 120);
+                }}
               />
 
               {/* Botão de Gravação por Voz */}
