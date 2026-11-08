@@ -1443,12 +1443,12 @@ export default function HomeScreen({ navigation }) {
                   <Ionicons name="key" size={18} color="#7C3AED" style={{ marginLeft: 12 }} />
                   <TextInput
                     style={styles.quickCodeTextInput}
-                    placeholder="Ex: ABC123"
+                    placeholder="Ex: 50FNH, ABC123 ou cole o código"
                     placeholderTextColor="#94A3B8"
                     value={quickJoinCode}
-                    onChangeText={(val) => setQuickJoinCode(val.toUpperCase())}
+                    onChangeText={(val) => setQuickJoinCode(val.trim())}
                     autoCapitalize="characters"
-                    maxLength={10}
+                    maxLength={80}
                   />
                   <TouchableOpacity
                     style={styles.quickPasteCodeBtn}
@@ -1456,8 +1456,15 @@ export default function HomeScreen({ navigation }) {
                       try {
                         const clip = await Clipboard.getStringAsync();
                         if (clip) {
-                          const match = clip.match(/[A-Z0-9]{5,8}/i);
-                          const clean = (match ? match[0] : clip).trim().toUpperCase();
+                          // Se tiver token hex de 64 chars
+                          const hexMatch = clip.match(/[a-f0-9]{64}/i);
+                          if (hexMatch) {
+                            setQuickJoinCode(hexMatch[0]);
+                            return;
+                          }
+                          // Se tiver código curto
+                          const slugMatch = clip.match(/[a-zA-Z0-9_-]{4,16}/i);
+                          const clean = (slugMatch ? slugMatch[0] : clip).trim();
                           setQuickJoinCode(clean);
                         }
                       } catch (e) {

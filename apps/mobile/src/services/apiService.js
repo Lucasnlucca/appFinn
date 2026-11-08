@@ -470,11 +470,11 @@ export async function createHouseholdApi(name, currency = 'BRL') {
   });
 }
 
-export async function createHouseholdInvitationApi(email, role = 'MEMBER') {
+export async function createHouseholdInvitationApi(email) {
   await ensureAuthenticated();
   return apiRequest('households/invitations', {
     method: 'POST',
-    body: { email, role },
+    body: { email: (email || '').trim().toLowerCase() },
   });
 }
 

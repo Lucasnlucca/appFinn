@@ -1974,12 +1974,12 @@ export default function SharedFinancesScreen({ navigation, route }) {
                   <Ionicons name="key" size={20} color="#7C3AED" style={{ marginLeft: 14 }} />
                   <TextInput
                     style={styles.codeTextInput}
-                    placeholder="Ex: ABC123"
+                    placeholder="Ex: 50FNH, ABC123 ou cole o código"
                     placeholderTextColor="#94A3B8"
                     value={joinCode}
-                    onChangeText={(val) => setJoinCode(val.toUpperCase())}
+                    onChangeText={(val) => setJoinCode(val.trim())}
                     autoCapitalize="characters"
-                    maxLength={10}
+                    maxLength={80}
                   />
                   <TouchableOpacity
                     style={styles.pasteCodeBtn}
@@ -1987,8 +1987,13 @@ export default function SharedFinancesScreen({ navigation, route }) {
                       try {
                         const clipText = await Clipboard.getStringAsync();
                         if (clipText) {
-                          const match = clipText.match(/[A-Z0-9]{5,8}/i);
-                          const clean = (match ? match[0] : clipText).trim().toUpperCase();
+                          const hexMatch = clipText.match(/[a-f0-9]{64}/i);
+                          if (hexMatch) {
+                            setJoinCode(hexMatch[0]);
+                            return;
+                          }
+                          const slugMatch = clipText.match(/[a-zA-Z0-9_-]{4,16}/i);
+                          const clean = (slugMatch ? slugMatch[0] : clipText).trim();
                           setJoinCode(clean);
                         }
                       } catch (e) {
@@ -2138,12 +2143,12 @@ export default function SharedFinancesScreen({ navigation, route }) {
               placeholder="ABC123"
               placeholderTextColor="#CBD5E1"
               autoCapitalize="characters"
-              maxLength={10}
+              maxLength={80}
               value={joinCode}
               onChangeText={setJoinCode}
             />
             <Text style={{ fontSize: 11.5, color: '#64748B', marginTop: 8, textAlign: 'center' }}>
-              Insira o código único de 6 dígitos gerado pelo organizador do grupo (válido por 30 minutos).
+              Insira ou cole o código único de convite gerado pelo organizador do grupo (válido por 30 minutos).
             </Text>
 
             <TouchableOpacity style={styles.btnModalPrimary} onPress={handleJoin}>
