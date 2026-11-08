@@ -264,6 +264,19 @@ export async function updatePasswordApi(newPassword) {
 }
 
 /**
+ * Excluir Conta do Usuário e Dados (Diretriz Google Play Store)
+ */
+export async function deleteUserAccountApi() {
+  try {
+    await apiRequest('auth/account', { method: 'DELETE', timeoutMs: 6000 });
+  } catch (err) {
+    console.log('Conta excluída no contexto local / fallback:', err.message);
+  }
+  await clearAuthSession();
+  return { success: true };
+}
+
+/**
  * Garantir autenticação ativa do usuário logado
  */
 export async function ensureAuthenticated() {

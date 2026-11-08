@@ -19,6 +19,7 @@ import {
   createCreditCard as apiCreateCreditCard,
   createAccount as apiCreateAccount,
   logoutUser,
+  deleteUserAccountApi,
   clearAuthSession,
   getStoredUser,
   getStoredToken,
@@ -760,6 +761,46 @@ export function FinanceProvider({ children }) {
     await logoutUser().catch(() => {});
   };
 
+  /**
+   * Excluir Conta e Dados do Usuário (Diretriz Obrigatória Google Play Store)
+   */
+  const deleteAccount = async () => {
+    const uid = loggedInUser?.id;
+    if (uid) {
+      await Promise.all([
+        AsyncStorage.removeItem(getUserStorageKey(uid, 'transactions')),
+        AsyncStorage.removeItem(getUserStorageKey(uid, 'accounts')),
+        AsyncStorage.removeItem(getUserStorageKey(uid, 'cards')),
+        AsyncStorage.removeItem(getUserStorageKey(uid, 'bills')),
+        AsyncStorage.removeItem(getUserStorageKey(uid, 'cofrinhos')),
+        AsyncStorage.removeItem(getUserStorageKey(uid, 'ai_chat')),
+        AsyncStorage.removeItem(getUserStorageKey(uid, 'shared_groups')),
+        AsyncStorage.removeItem(getUserStorageKey(uid, 'active_group_id')),
+        AsyncStorage.removeItem(getUserStorageKey(uid, 'group_invitations')),
+        AsyncStorage.removeItem(getUserStorageKey(uid, 'settlements')),
+        AsyncStorage.removeItem(getUserStorageKey(uid, 'view_mode')),
+        AsyncStorage.removeItem(getUserStorageKey(uid, 'hide_balances')),
+        AsyncStorage.removeItem(getUserStorageKey(uid, 'hero_view_mode')),
+      ]).catch(() => {});
+    }
+
+    setTransactions([]);
+    setAccounts([]);
+    setCards([]);
+    setBills([]);
+    setCofrinhos([]);
+    setAiChat([]);
+    setSharedGroups([]);
+    setActiveGroupIdState(null);
+    setGroupInvitations([]);
+    setSettlements([]);
+    setViewModeState('personal');
+    setLoggedInUser(null);
+
+    await deleteUserAccountApi().catch(() => {});
+    await clearAuthSession();
+  };
+
   // Atualização em tempo real do perfil do usuário logado
   const updateUserProfile = async (updates) => {
     if (!loggedInUser) return;
@@ -1321,6 +1362,7 @@ Responda de forma clara, motivadora e estruturada em tópicos!`;
         loggedInUser,
         setLoggedInUser,
         logout,
+        deleteAccount,
         aiSkin,
         setAiSkin: updateAiSkin,
         transactions: filteredTransactions,

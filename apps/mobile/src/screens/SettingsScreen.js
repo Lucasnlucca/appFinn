@@ -483,6 +483,24 @@ export default function SettingsScreen({ navigation }) {
                       <Text style={styles.aboutTagText}>Gemini AI 3.5</Text>
                     </View>
                   </View>
+
+                  <TouchableOpacity
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      marginTop: 12,
+                      paddingTop: 10,
+                      borderTopWidth: 1,
+                      borderTopColor: '#E5E7EB',
+                    }}
+                    onPress={() => navigation.navigate('Profile')}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={{ fontSize: 12, color: '#7C3AED', fontWeight: '700' }}>
+                      Política de Privacidade e Exclusão de Conta →
+                    </Text>
+                  </TouchableOpacity>
                 </View>
               </View>
             )}

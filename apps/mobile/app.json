@@ -2,26 +2,32 @@
   "expo": {
     "name": "FINN AI",
     "slug": "finn-ai",
+    "scheme": "finnai",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "dark",
-    "primaryColor": "#10B981",
-    "backgroundColor": "#0B0F19",
+    "userInterfaceStyle": "light",
+    "primaryColor": "#7C3AED",
+    "backgroundColor": "#F8FAFC",
     "ios": {
       "supportsTablet": true,
+      "bundleIdentifier": "com.finnai.app",
       "infoPlist": {
-        "NSMicrophoneUsageDescription": "FINN precisa do microfone para gravar áudios estilo WhatsApp e conversar por voz com a IA financeira."
+        "NSMicrophoneUsageDescription": "FINN precisa do microfone para gravar áudios e conversar por voz com seu assistente financeiro de IA.",
+        "NSPhotoLibraryUsageDescription": "FINN precisa acessar suas fotos para você escolher sua imagem de perfil."
       }
     },
     "android": {
       "package": "com.finnai.app",
+      "versionCode": 1,
       "adaptiveIcon": {
         "backgroundColor": "#0B0F19",
         "foregroundImage": "./assets/android-icon-foreground.png"
       },
       "permissions": [
-        "RECORD_AUDIO"
+        "RECORD_AUDIO",
+        "READ_MEDIA_IMAGES",
+        "READ_EXTERNAL_STORAGE"
       ]
     },
     "web": {
@@ -31,7 +37,14 @@
       "expo-audio",
       "expo-video",
       "expo-font",
-      "expo-asset"
+      "expo-asset",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "FINN precisa acessar suas fotos para você escolher sua imagem de perfil."
+        }
+      ],
+      "expo-document-picker"
     ]
   }
 }

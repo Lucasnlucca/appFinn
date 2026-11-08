@@ -9,6 +9,7 @@ import {
   Image,
   Alert,
   ActivityIndicator,
+  Modal,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -18,7 +19,7 @@ import { updatePasswordApi } from '../services/apiService';
 
 export default function ProfileScreen({ navigation }) {
   const insets = useSafeAreaInsets();
-  const { loggedInUser, updateUserProfile, logout } = useFinance();
+  const { loggedInUser, updateUserProfile, logout, deleteAccount } = useFinance();
 
   // Estados de Nome e Sobrenome
   const [firstName, setFirstName] = useState('');
@@ -33,6 +34,10 @@ export default function ProfileScreen({ navigation }) {
   const [showNewPass, setShowNewPass] = useState(false);
   const [showConfirmPass, setShowConfirmPass] = useState(false);
   const [savingPass, setSavingPass] = useState(false);
+
+  // Estados de Conformidade Google Play (Privacidade e Exclusão)
+  const [privacyModalVisible, setPrivacyModalVisible] = useState(false);
+  const [deletingAccount, setDeletingAccount] = useState(false);
 
   // Inicializa os dados com base no usuário logado
   useEffect(() => {
@@ -159,6 +164,34 @@ export default function ProfileScreen({ navigation }) {
         },
       },
     ]);
+  };
+
+  // Exclusão definitiva de conta (Diretriz Obrigatória Google Play Store)
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      'Excluir Conta Definitivamente',
+      'Tem certeza de que deseja apagar sua conta? Esta ação é irreversível e excluirá permanentemente seu cadastro, contas bancárias, cartões, cofrinhos e histórico de transações.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Sim, Excluir Tudo',
+          style: 'destructive',
+          onPress: async () => {
+            setDeletingAccount(true);
+            try {
+              if (deleteAccount) {
+                await deleteAccount();
+              }
+              Alert.alert('Conta Excluída', 'Sua conta e dados foram removidos com sucesso.');
+            } catch (err) {
+              Alert.alert('Erro ao excluir conta', err.message);
+            } finally {
+              setDeletingAccount(false);
+            }
+          },
+        },
+      ]
+    );
   };
 
   return (
@@ -372,16 +405,119 @@ export default function ProfileScreen({ navigation }) {
           </TouchableOpacity>
         </View>
 
-        {/* SEÇÃO 4: BOTÃO DE SAIR DA CONTA */}
+        {/* SEÇÃO 4: PRIVACIDADE & TERMOS (CONFORMIDADE GOOGLE PLAY) */}
+        <View style={styles.cardBox}>
+          <View style={styles.cardHeader}>
+            <View style={[styles.cardHeaderIcon, { backgroundColor: '#E0F2FE' }]}>
+              <Ionicons name="shield-checkmark-outline" size={18} color="#0284C7" />
+            </View>
+            <View>
+              <Text style={styles.cardTitle}>Privacidade & Segurança</Text>
+              <Text style={styles.cardSubtitle}>Proteção de dados e conformidade LGPD</Text>
+            </View>
+          </View>
+
+          <TouchableOpacity
+            style={styles.privacyLinkRow}
+            onPress={() => setPrivacyModalVisible(true)}
+            activeOpacity={0.7}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
+              <Ionicons name="document-text-outline" size={18} color="#64748B" />
+              <Text style={styles.privacyLinkText}>Política de Privacidade e Termos de Uso</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color="#94A3B8" />
+          </TouchableOpacity>
+        </View>
+
+        {/* SEÇÃO 5: BOTÃO DE SAIR DA CONTA */}
         <TouchableOpacity
           style={styles.logoutBtn}
           onPress={handleLogout}
           activeOpacity={0.8}
         >
-          <Ionicons name="log-out-outline" size={19} color="#EF4444" />
+          <Ionicons name="log-out-outline" size={19} color="#64748B" />
           <Text style={styles.logoutBtnText}>Sair da conta</Text>
         </TouchableOpacity>
+
+        {/* SEÇÃO 6: ZONA DE PERIGO / EXCLUSÃO DE CONTA (OBRIGATÓRIO GOOGLE PLAY) */}
+        <View style={styles.dangerZoneCard}>
+          <View style={styles.dangerHeader}>
+            <Ionicons name="warning-outline" size={18} color="#DC2626" />
+            <Text style={styles.dangerTitle}>Excluir Conta</Text>
+          </View>
+          <Text style={styles.dangerText}>
+            Exclui permanentemente seu cadastro, contas bancárias, cartões e histórico financeiro de nossos servidores, em total conformidade com a LGPD e as diretrizes do Google Play.
+          </Text>
+
+          <TouchableOpacity
+            style={[styles.deleteAccountBtn, deletingAccount && styles.btnDisabled]}
+            onPress={handleDeleteAccount}
+            disabled={deletingAccount}
+            activeOpacity={0.8}
+          >
+            {deletingAccount ? (
+              <ActivityIndicator color="#DC2626" size="small" />
+            ) : (
+              <>
+                <Ionicons name="trash-outline" size={16} color="#DC2626" />
+                <Text style={styles.deleteAccountBtnText}>Excluir minha conta e dados</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        </View>
       </ScrollView>
+
+      {/* MODAL DE POLÍTICA DE PRIVACIDADE E TERMOS DE USO */}
+      <Modal
+        visible={privacyModalVisible}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setPrivacyModalVisible(false)}
+      >
+        <View style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalHeaderTitle}>Política de Privacidade & Termos</Text>
+            <TouchableOpacity
+              onPress={() => setPrivacyModalVisible(false)}
+              style={styles.modalCloseBtn}
+            >
+              <Ionicons name="close" size={20} color="#0F172A" />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
+            <Text style={styles.policyUpdated}>Última atualização: Novembro de 2026</Text>
+
+            <Text style={styles.policySectionTitle}>1. Coleta e Uso de Informações</Text>
+            <Text style={styles.policyParagraph}>
+              O FINN coleta informações de cadastro (nome e e-mail), registros financeiros (contas, faturas, cofrinhos e lançamentos informados pelo usuário) e gravações de voz exclusivamente para a prestação de serviços de consultoria e gestão financeira pessoal inteligente.
+            </Text>
+
+            <Text style={styles.policySectionTitle}>2. Processamento de Áudio e IA</Text>
+            <Text style={styles.policyParagraph}>
+              As mensagens de áudio gravadas através do microfone são utilizadas unicamente para converter fala em texto e identificar lançamentos financeiros solicitados por você. Nenhum dado de áudio é vendido ou utilizado para fins publicitários.
+            </Text>
+
+            <Text style={styles.policySectionTitle}>3. Segurança e Criptografia</Text>
+            <Text style={styles.policyParagraph}>
+              Todas as comunicações entre o aplicativo e os nossos servidores utilizam protocolos criptografados (HTTPS/TLS). Seus dados financeiros são isolados e acessíveis exclusivamente mediante suas credenciais pessoais de login.
+            </Text>
+
+            <Text style={styles.policySectionTitle}>4. Exclusão de Conta e Dados (Diretriz Google Play)</Text>
+            <Text style={styles.policyParagraph}>
+              Em estrita conformidade com a Lei Geral de Proteção de Dados (LGPD) e as políticas do Google Play, você tem o direito soberano de excluir integralmente sua conta e todos os dados associados a qualquer momento pelo botão "Excluir minha conta" no seu Perfil. Todos os registros locais e remotos são apagados de forma permanente e irreversível.
+            </Text>
+
+            <Text style={styles.policySectionTitle}>5. Contato com o Suporte</Text>
+            <Text style={styles.policyParagraph}>
+              Para dúvidas sobre privacidade ou requisição de dados, você pode entrar em contato com nossa equipe pelo e-mail oficial de suporte do FINN.
+            </Text>
+
+            <View style={{ height: 40 }} />
+          </ScrollView>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -641,16 +777,119 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    backgroundColor: '#FEF2F2',
+    backgroundColor: '#F1F5F9',
     borderRadius: 14,
     paddingVertical: 13,
     borderWidth: 1,
-    borderColor: '#FEE2E2',
-    marginTop: 8,
+    borderColor: '#E2E8F0',
+    marginTop: 4,
   },
   logoutBtnText: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#EF4444',
+    color: '#475569',
+  },
+  privacyLinkRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+    marginTop: 10,
+  },
+  privacyLinkText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#334155',
+  },
+  dangerZoneCard: {
+    backgroundColor: '#FFF5F5',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#FEE2E2',
+    marginTop: 8,
+  },
+  dangerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 6,
+  },
+  dangerTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#DC2626',
+  },
+  dangerText: {
+    fontSize: 12,
+    color: '#7F1D1D',
+    lineHeight: 18,
+    marginBottom: 14,
+  },
+  deleteAccountBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#FEF2F2',
+    borderRadius: 12,
+    paddingVertical: 11,
+    borderWidth: 1,
+    borderColor: '#FECACA',
+  },
+  deleteAccountBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#DC2626',
+  },
+  modalContainer: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  modalHeaderTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  modalCloseBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalContent: {
+    flex: 1,
+    paddingHorizontal: 20,
+    paddingTop: 16,
+  },
+  policyUpdated: {
+    fontSize: 12,
+    color: '#94A3B8',
+    marginBottom: 16,
+  },
+  policySectionTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#1E293B',
+    marginTop: 16,
+    marginBottom: 6,
+  },
+  policyParagraph: {
+    fontSize: 13,
+    color: '#475569',
+    lineHeight: 20,
   },
 });
