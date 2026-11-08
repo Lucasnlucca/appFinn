@@ -155,6 +155,53 @@ export default function SharedFinancesScreen({ navigation, route }) {
     return sharedTxs.reduce((sum, t) => sum + (t.amount || 0), 0);
   }, [sharedTxs]);
 
+  // 1. Auto-preenche o valor da divisão com o total gasto pelo grupo se estiver zerado/vazio
+  useEffect(() => {
+    if (activeTab === 'divisao') {
+      const rawTotal = parseFloat(String(splitTotal).replace(',', '.')) || 0;
+      if (rawTotal === 0 && totalSharedSpent > 0) {
+        setSplitTotal(totalSharedSpent.toFixed(2));
+      }
+      if (!splitDesc.trim() && activeGroup?.name) {
+        setSplitDesc(`Gastos do grupo ${activeGroup.name}`);
+      }
+    }
+  }, [activeTab, totalSharedSpent, activeGroup?.id, activeGroup?.name]);
+
+  // 2. Auto-puxa as despesas adicionadas no grupo como itens da divisão
+  useEffect(() => {
+    if (activeTab === 'divisao' && sharedTxs.length > 0) {
+      setSplitItems((prev) => {
+        const customItems = prev.filter((it) => !it.fromGroupExpense);
+        const existingGroupItemsMap = {};
+        prev.filter((it) => it.fromGroupExpense).forEach((it) => {
+          existingGroupItemsMap[it.txId] = it;
+        });
+
+        const allPresent = sharedTxs.every((tx) => existingGroupItemsMap[tx.id]);
+        if (allPresent && prev.some((it) => it.fromGroupExpense)) {
+          return prev;
+        }
+
+        const pulledGroupItems = sharedTxs.map((tx) => {
+          const existing = existingGroupItemsMap[tx.id];
+          return {
+            id: existing?.id || `tx-${tx.id}`,
+            txId: tx.id,
+            name: tx.description || tx.category || 'Despesa',
+            amount: Number(tx.amount) || 0,
+            payer: tx.paidBy || 'Você',
+            assignedTo: existing ? existing.assignedTo : [],
+            fromGroupExpense: true,
+            category: tx.category,
+          };
+        });
+
+        return [...pulledGroupItems, ...customItems];
+      });
+    }
+  }, [activeTab, sharedTxs, activeGroup?.id]);
+
   // ==============================================================
   // CÁLCULO REATIVO DA DIVISÃO DE CONTAS (IGUALITÁRIA OU POR ITENS)
   // ==============================================================
@@ -353,7 +400,7 @@ export default function SharedFinancesScreen({ navigation, route }) {
   const handleAddSplitItem = () => {
     const amt = parseFloat(String(newItemAmount).replace(',', '.')) || 0;
     if (!newItemName.trim()) {
-      Alert.alert('Item sem descrição', 'Informe o nome do item consumido.');
+      Alert.alert('Item sem descrição', 'Informe o nome do item que deseja adicionar apenas escrevendo.');
       return;
     }
     if (amt <= 0) {
@@ -361,15 +408,14 @@ export default function SharedFinancesScreen({ navigation, route }) {
       return;
     }
 
-    const assigned = newItemAssigned.length > 0
-      ? newItemAssigned
-      : splitSelectedMembers;
+    const assigned = newItemAssigned.length > 0 ? newItemAssigned : [];
 
     const newItem = {
-      id: 'item-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4),
+      id: 'manual-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4),
       name: newItemName.trim(),
       amount: amt,
       assignedTo: assigned,
+      fromGroupExpense: false,
     };
 
     setSplitItems((prev) => [...prev, newItem]);
@@ -380,6 +426,47 @@ export default function SharedFinancesScreen({ navigation, route }) {
 
   const handleRemoveSplitItem = (itemId) => {
     setSplitItems((prev) => prev.filter((it) => it.id !== itemId));
+  };
+
+  const toggleItemMember = (itemId, memberId) => {
+    setSplitItems((prev) =>
+      prev.map((it) => {
+        if (it.id !== itemId) return it;
+        const current = it.assignedTo || [];
+        const next = current.includes(memberId)
+          ? current.filter((id) => id !== memberId)
+          : [...current, memberId];
+        return { ...it, assignedTo: next };
+      })
+    );
+  };
+
+  const handlePullGroupExpensesAsItems = () => {
+    const customItems = splitItems.filter((it) => !it.fromGroupExpense);
+    const existingGroupItemsMap = {};
+    splitItems.filter((it) => it.fromGroupExpense).forEach((it) => {
+      existingGroupItemsMap[it.txId] = it;
+    });
+
+    const pulled = sharedTxs.map((tx) => {
+      const existing = existingGroupItemsMap[tx.id];
+      return {
+        id: existing?.id || `tx-${tx.id}`,
+        txId: tx.id,
+        name: tx.description || tx.category || 'Despesa',
+        amount: Number(tx.amount) || 0,
+        payer: tx.paidBy || 'Você',
+        assignedTo: existing ? existing.assignedTo : [],
+        fromGroupExpense: true,
+        category: tx.category,
+      };
+    });
+
+    setSplitItems([...pulled, ...customItems]);
+    Alert.alert(
+      'Itens Atualizados',
+      `${pulled.length} ${pulled.length === 1 ? 'item puxado' : 'itens puxados'} das despesas do grupo.`
+    );
   };
 
   const toggleMemberSelection = (memberId) => {
@@ -966,54 +1053,73 @@ export default function SharedFinancesScreen({ navigation, route }) {
       ) : (
         <>
           {/* ABAS DO MÓDULO: DASHBOARD | DIVIDIR CONTA | ACERTO DE CONTAS | MEMBROS */}
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.tabsRow}
-          >
-            <TouchableOpacity
-              style={[styles.tabBtn, activeTab === 'dashboard' && styles.tabBtnActive]}
-              onPress={() => setActiveTab('dashboard')}
+          <View style={styles.tabsContainer}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.tabsRow}
             >
-              <Text style={[styles.tabBtnText, activeTab === 'dashboard' && styles.tabBtnTextActive]}>
-                Painel
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.tabBtn, activeTab === 'divisao' && styles.tabBtnActive]}
-              onPress={() => setActiveTab('divisao')}
-            >
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <TouchableOpacity
+                style={[styles.tabBtn, activeTab === 'dashboard' && styles.tabBtnActive]}
+                onPress={() => setActiveTab('dashboard')}
+                activeOpacity={0.8}
+              >
                 <Ionicons
-                  name="pie-chart"
-                  size={13}
-                  color={activeTab === 'divisao' ? '#7C3AED' : '#64748B'}
+                  name={activeTab === 'dashboard' ? 'grid' : 'grid-outline'}
+                  size={14}
+                  color={activeTab === 'dashboard' ? '#FFFFFF' : '#64748B'}
+                />
+                <Text style={[styles.tabBtnText, activeTab === 'dashboard' && styles.tabBtnTextActive]}>
+                  Painel
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.tabBtn, activeTab === 'divisao' && styles.tabBtnActive]}
+                onPress={() => setActiveTab('divisao')}
+                activeOpacity={0.8}
+              >
+                <Ionicons
+                  name={activeTab === 'divisao' ? 'pie-chart' : 'pie-chart-outline'}
+                  size={14}
+                  color={activeTab === 'divisao' ? '#FFFFFF' : '#64748B'}
                 />
                 <Text style={[styles.tabBtnText, activeTab === 'divisao' && styles.tabBtnTextActive]}>
                   Dividir Conta
                 </Text>
-              </View>
-            </TouchableOpacity>
+              </TouchableOpacity>
 
-            <TouchableOpacity
-              style={[styles.tabBtn, activeTab === 'acertos' && styles.tabBtnActive]}
-              onPress={() => setActiveTab('acertos')}
-            >
-              <Text style={[styles.tabBtnText, activeTab === 'acertos' && styles.tabBtnTextActive]}>
-                Acertos
-              </Text>
-            </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.tabBtn, activeTab === 'acertos' && styles.tabBtnActive]}
+                onPress={() => setActiveTab('acertos')}
+                activeOpacity={0.8}
+              >
+                <Ionicons
+                  name={activeTab === 'acertos' ? 'swap-horizontal' : 'swap-horizontal-outline'}
+                  size={15}
+                  color={activeTab === 'acertos' ? '#FFFFFF' : '#64748B'}
+                />
+                <Text style={[styles.tabBtnText, activeTab === 'acertos' && styles.tabBtnTextActive]}>
+                  Acertos
+                </Text>
+              </TouchableOpacity>
 
-            <TouchableOpacity
-              style={[styles.tabBtn, activeTab === 'membros' && styles.tabBtnActive]}
-              onPress={() => setActiveTab('membros')}
-            >
-              <Text style={[styles.tabBtnText, activeTab === 'membros' && styles.tabBtnTextActive]}>
-                Membros ({groupMembers.length})
-              </Text>
-            </TouchableOpacity>
-          </ScrollView>
+              <TouchableOpacity
+                style={[styles.tabBtn, activeTab === 'membros' && styles.tabBtnActive]}
+                onPress={() => setActiveTab('membros')}
+                activeOpacity={0.8}
+              >
+                <Ionicons
+                  name={activeTab === 'membros' ? 'people' : 'people-outline'}
+                  size={14}
+                  color={activeTab === 'membros' ? '#FFFFFF' : '#64748B'}
+                />
+                <Text style={[styles.tabBtnText, activeTab === 'membros' && styles.tabBtnTextActive]}>
+                  Membros ({groupMembers.length})
+                </Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
 
           <ScrollView
             showsVerticalScrollIndicator={false}
@@ -1185,13 +1291,28 @@ export default function SharedFinancesScreen({ navigation, route }) {
                   <Text style={styles.splitFieldLabel}>DESCRIÇÃO DA CONTA</Text>
                   <TextInput
                     style={styles.splitInputDesc}
-                    placeholder="Ex: Restaurante Outback, Pizzaria, Mercado..."
+                    placeholder="Ex: Gastos do grupo, Restaurante, Mercado..."
                     placeholderTextColor="#94A3B8"
                     value={splitDesc}
                     onChangeText={setSplitDesc}
                   />
 
-                  <Text style={[styles.splitFieldLabel, { marginTop: 14 }]}>VALOR TOTAL DA CONTA</Text>
+                  <View style={styles.splitFieldHeaderRow}>
+                    <Text style={styles.splitFieldLabel}>VALOR TOTAL DA CONTA</Text>
+                    {totalSharedSpent > 0 && (
+                      <TouchableOpacity
+                        style={styles.splitPullGroupBtn}
+                        onPress={() => setSplitTotal(totalSharedSpent.toFixed(2))}
+                        activeOpacity={0.8}
+                      >
+                        <Ionicons name="flash" size={12} color="#7C3AED" />
+                        <Text style={styles.splitPullGroupBtnText}>
+                          Puxar total do grupo ({formatMoney(totalSharedSpent)})
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+
                   <View style={styles.splitInputTotalRow}>
                     <Text style={styles.splitInputCurrency}>R$</Text>
                     <TextInput
@@ -1202,7 +1323,22 @@ export default function SharedFinancesScreen({ navigation, route }) {
                       value={splitTotal}
                       onChangeText={setSplitTotal}
                     />
+                    {totalSharedSpent > 0 && parseFloat(String(splitTotal).replace(',', '.')) !== totalSharedSpent && (
+                      <TouchableOpacity
+                        style={styles.splitResetToGroupBtn}
+                        onPress={() => setSplitTotal(totalSharedSpent.toFixed(2))}
+                        activeOpacity={0.8}
+                      >
+                        <Ionicons name="refresh" size={12} color="#7C3AED" />
+                        <Text style={styles.splitResetToGroupText}>Usar R$ {totalSharedSpent.toFixed(2)}</Text>
+                      </TouchableOpacity>
+                    )}
                   </View>
+                  <Text style={styles.splitInputHint}>
+                    {totalSharedSpent > 0
+                      ? `Valor puxado das despesas do grupo: ${formatMoney(totalSharedSpent)}. Você pode ajustar livremente se desejar.`
+                      : 'Nenhuma despesa compartilhada registrada ainda neste grupo.'}
+                  </Text>
 
                   {/* Taxa de serviço / Gorjeta */}
                   <View style={styles.splitTipRow}>
@@ -1325,7 +1461,7 @@ export default function SharedFinancesScreen({ navigation, route }) {
                   </View>
                 </View>
 
-                {/* 4. Seção Expansível de Itens Consumidos (Opcional) */}
+                {/* 4. Seção Expansível de Itens Consumidos (Puxados do Grupo e Avulsos) */}
                 <View style={styles.splitItemsContainer}>
                   <TouchableOpacity
                     style={styles.splitItemsToggleCard}
@@ -1337,12 +1473,12 @@ export default function SharedFinancesScreen({ navigation, route }) {
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={styles.splitItemsToggleTitle}>
-                        Itens e Consumo Individual (Opcional)
+                        Itens e Consumo Individual
                       </Text>
                       <Text style={styles.splitItemsToggleSub}>
                         {splitItems.length === 0
-                          ? 'Toque para discriminar o que membros específicos consumiram'
-                          : `${splitItems.length} ${splitItems.length === 1 ? 'item cadastrado' : 'itens cadastrados'} (${formatMoney(billSplitCalculation.itemsTotal)})`}
+                          ? 'Toque para discriminar itens ou adicionar consumos avulsos'
+                          : `${splitItems.length} ${splitItems.length === 1 ? 'item' : 'itens'} (${formatMoney(billSplitCalculation.itemsTotal)}) • ${splitItems.filter((i) => i.fromGroupExpense).length} do grupo, ${splitItems.filter((i) => !i.fromGroupExpense).length} avulsos`}
                       </Text>
                     </View>
                     <Ionicons
@@ -1355,31 +1491,41 @@ export default function SharedFinancesScreen({ navigation, route }) {
                   {splitShowItems && (
                     <View style={styles.splitItemsBox}>
                       <Text style={styles.splitItemsBoxHint}>
-                        💡 Adicione itens consumidos exclusivamente por certos participantes. A diferença restante da conta ({formatMoney(billSplitCalculation.commonAmount)}) será dividida igualmente entre os participantes selecionados.
+                        💡 Os gastos do grupo foram puxados automaticamente como itens. Você pode tocar nos participantes para atribuir quem consumiu cada item, ou adicionar novos itens avulsos apenas escrevendo. A diferença restante ({formatMoney(billSplitCalculation.commonAmount)}) será dividida igualmente entre todos.
                       </Text>
 
-                      {/* Formulário Novo Item */}
+                      {/* FORMULÁRIO PARA ADICIONAR ITEM AVULSO APENAS ESCREVENDO */}
                       <View style={styles.newItemCard}>
-                        <Text style={styles.newItemLabel}>NOVO ITEM CONSUMIDO</Text>
+                        <View style={styles.newItemHeader}>
+                          <Ionicons name="create" size={16} color="#7C3AED" />
+                          <Text style={styles.newItemTitle}>Adicionar item avulso (apenas escrevendo)</Text>
+                        </View>
+                        <Text style={styles.newItemSub}>
+                          Escreva qualquer item que ainda não foi lançado nas despesas do grupo:
+                        </Text>
+
                         <View style={styles.newItemInputRow}>
                           <TextInput
-                            style={[styles.modalInput, { flex: 2, marginBottom: 0 }]}
-                            placeholder="Ex: Hambúrguer, Vinho..."
+                            style={[styles.modalInput, styles.newItemDescInput]}
+                            placeholder="Nome do item (ex: Sobremesa, Chopp, Uber...)"
                             placeholderTextColor="#94A3B8"
                             value={newItemName}
                             onChangeText={setNewItemName}
                           />
-                          <TextInput
-                            style={[styles.modalInput, { flex: 1, marginBottom: 0 }]}
-                            placeholder="R$ 0,00"
-                            placeholderTextColor="#94A3B8"
-                            keyboardType="numeric"
-                            value={newItemAmount}
-                            onChangeText={setNewItemAmount}
-                          />
+                          <View style={styles.newItemAmountContainer}>
+                            <Text style={styles.newItemCurrency}>R$</Text>
+                            <TextInput
+                              style={styles.newItemAmountInput}
+                              placeholder="0,00"
+                              placeholderTextColor="#94A3B8"
+                              keyboardType="numeric"
+                              value={newItemAmount}
+                              onChangeText={setNewItemAmount}
+                            />
+                          </View>
                         </View>
 
-                        <Text style={[styles.newItemLabel, { marginTop: 10 }]}>QUEM CONSUMIU ESTE ITEM?</Text>
+                        <Text style={[styles.newItemLabel, { marginTop: 10 }]}>QUEM CONSUMIU ESSE ITEM?</Text>
                         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 4 }}>
                           <View style={{ flexDirection: 'row', gap: 6 }}>
                             {billSplitCalculation.activeMembers.map((m) => {
@@ -1389,6 +1535,7 @@ export default function SharedFinancesScreen({ navigation, route }) {
                                   key={m.id || m.name}
                                   style={[styles.itemMemberChip, isAssigned && styles.itemMemberChipActive]}
                                   onPress={() => toggleNewItemMember(m.id || m.name)}
+                                  activeOpacity={0.8}
                                 >
                                   <Text style={[styles.itemMemberChipText, isAssigned && styles.itemMemberChipTextActive]}>
                                     {m.name}
@@ -1401,8 +1548,8 @@ export default function SharedFinancesScreen({ navigation, route }) {
                         </ScrollView>
                         <Text style={styles.itemAssignHelp}>
                           {newItemAssigned.length === 0
-                            ? 'Se não selecionar ninguém, o item é rateado entre todos os membros da conta.'
-                            : `${newItemAssigned.length} ${newItemAssigned.length === 1 ? 'pessoa dividirá' : 'pessoas dividirão'} o item.`}
+                            ? 'Se não selecionar ninguém, o item é rateado entre todos os participantes da conta.'
+                            : `${newItemAssigned.length} ${newItemAssigned.length === 1 ? 'pessoa dividirá' : 'pessoas dividirão'} esse item.`}
                         </Text>
 
                         <TouchableOpacity
@@ -1410,42 +1557,129 @@ export default function SharedFinancesScreen({ navigation, route }) {
                           onPress={handleAddSplitItem}
                           activeOpacity={0.8}
                         >
-                          <Ionicons name="add" size={18} color="#FFFFFF" />
-                          <Text style={styles.btnAddItemBtnText}>Adicionar Item</Text>
+                          <Ionicons name="add-circle" size={18} color="#FFFFFF" />
+                          <Text style={styles.btnAddItemBtnText}>Adicionar Item à Divisão</Text>
                         </TouchableOpacity>
                       </View>
 
-                      {/* Lista de Itens Já Adicionados */}
-                      {splitItems.length > 0 && (
-                        <View style={{ marginTop: 12 }}>
-                          <Text style={styles.itemsListTitle}>Itens Cadastrados ({splitItems.length})</Text>
-                          {splitItems.map((item) => {
-                            const assignedNames = (item.assignedTo || [])
-                              .map((id) => groupMembers.find((m) => (m.id || m.name) === id)?.name || id)
-                              .join(', ');
+                      {/* LISTA DE ITENS PUXADOS E ADICIONADOS */}
+                      <View style={{ marginTop: 14 }}>
+                        <View style={styles.itemListSectionHeader}>
+                          <Text style={styles.itemsListTitle}>
+                            Itens da Divisão ({splitItems.length})
+                          </Text>
+                          {sharedTxs.length > 0 && (
+                            <TouchableOpacity
+                              style={styles.miniRefreshBtn}
+                              onPress={handlePullGroupExpensesAsItems}
+                              activeOpacity={0.7}
+                            >
+                              <Ionicons name="refresh" size={12} color="#7C3AED" />
+                              <Text style={styles.miniRefreshBtnText}>Sincronizar Gastos do Grupo</Text>
+                            </TouchableOpacity>
+                          )}
+                        </View>
+
+                        {splitItems.length === 0 ? (
+                          <View style={styles.emptyItemsBox}>
+                            <Ionicons name="receipt-outline" size={28} color="#CBD5E1" />
+                            <Text style={styles.emptyItemsText}>
+                              Nenhum item adicionado ainda. Escreva acima para incluir um item avulso ou lance despesas no grupo.
+                            </Text>
+                          </View>
+                        ) : (
+                          splitItems.map((item) => {
+                            const isGroupItem = !!item.fromGroupExpense;
                             return (
                               <View key={item.id} style={styles.splitItemRow}>
-                                <View style={{ flex: 1 }}>
+                                <View style={styles.splitItemTopRow}>
+                                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+                                    <View
+                                      style={[
+                                        styles.itemOriginBadge,
+                                        isGroupItem ? styles.itemOriginBadgeGroup : styles.itemOriginBadgeCustom,
+                                      ]}
+                                    >
+                                      <Ionicons
+                                        name={isGroupItem ? 'receipt' : 'create'}
+                                        size={10}
+                                        color={isGroupItem ? '#7C3AED' : '#059669'}
+                                      />
+                                      <Text
+                                        style={[
+                                          styles.itemOriginBadgeText,
+                                          isGroupItem ? styles.itemOriginBadgeTextGroup : styles.itemOriginBadgeTextCustom,
+                                        ]}
+                                      >
+                                        {isGroupItem ? 'Gasto do Grupo' : 'Item Avulso'}
+                                      </Text>
+                                    </View>
+                                    {item.payer && (
+                                      <Text style={styles.itemPayerHint} numberOfLines={1}>
+                                        • Pago por {item.payer}
+                                      </Text>
+                                    )}
+                                  </View>
+                                  <TouchableOpacity
+                                    onPress={() => handleRemoveSplitItem(item.id)}
+                                    style={styles.splitItemRemoveBtn}
+                                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                                  >
+                                    <Ionicons name="trash-outline" size={16} color="#EF4444" />
+                                  </TouchableOpacity>
+                                </View>
+
+                                <View style={styles.splitItemMainRow}>
                                   <Text style={styles.splitItemRowName}>{item.name}</Text>
-                                  <Text style={styles.splitItemRowAssigned}>
-                                    Consumido por: {assignedNames || 'Todos os selecionados'}
+                                  <Text style={styles.splitItemRowAmount}>{formatMoney(item.amount)}</Text>
+                                </View>
+
+                                {/* Seleção interativa de membros que consumiram este item */}
+                                <View style={styles.itemConsumersWrap}>
+                                  <Text style={styles.itemConsumersLabel}>Quem consumiu?</Text>
+                                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 4 }}>
+                                    <View style={{ flexDirection: 'row', gap: 6 }}>
+                                      {billSplitCalculation.activeMembers.map((m) => {
+                                        const isAssigned = (item.assignedTo || []).includes(m.id || m.name);
+                                        return (
+                                          <TouchableOpacity
+                                            key={m.id || m.name}
+                                            style={[styles.itemConsumerPill, isAssigned && styles.itemConsumerPillActive]}
+                                            onPress={() => toggleItemMember(item.id, m.id || m.name)}
+                                            activeOpacity={0.8}
+                                          >
+                                            <Text
+                                              style={[
+                                                styles.itemConsumerPillText,
+                                                isAssigned && styles.itemConsumerPillTextActive,
+                                              ]}
+                                            >
+                                              {m.name}
+                                            </Text>
+                                            {isAssigned && <Ionicons name="checkmark" size={11} color="#FFFFFF" />}
+                                          </TouchableOpacity>
+                                        );
+                                      })}
+                                    </View>
+                                  </ScrollView>
+                                  <Text style={styles.itemConsumerSummary}>
+                                    {(item.assignedTo || []).length === 0
+                                      ? 'Rateado entre todos da conta'
+                                      : (item.assignedTo || []).length === 1
+                                      ? `Consumo exclusivo de ${(item.assignedTo || [])[0]}`
+                                      : `Dividido entre ${(item.assignedTo || []).length} pessoas (${formatMoney(item.amount / (item.assignedTo || []).length)} cada)`}
                                   </Text>
                                 </View>
-                                <Text style={styles.splitItemRowAmount}>{formatMoney(item.amount)}</Text>
-                                <TouchableOpacity
-                                  onPress={() => handleRemoveSplitItem(item.id)}
-                                  style={styles.splitItemRemoveBtn}
-                                >
-                                  <Ionicons name="trash-outline" size={16} color="#EF4444" />
-                                </TouchableOpacity>
                               </View>
                             );
-                          })}
+                          })
+                        )}
 
-                          {/* Banner da Diferença Restante */}
+                        {/* Banner da Diferença Restante */}
+                        {splitItems.length > 0 && (
                           <View style={styles.diffBanner}>
                             <View style={{ flex: 1 }}>
-                              <Text style={styles.diffBannerTitle}>Diferença Restante (Comum)</Text>
+                              <Text style={styles.diffBannerTitle}>Diferença Restante (Despesa Comum)</Text>
                               <Text style={styles.diffBannerSub}>
                                 {formatMoney(billSplitCalculation.commonAmount)} ÷ {billSplitCalculation.activeMembers.length} pessoas = {formatMoney(billSplitCalculation.commonPerMember)}/cada
                               </Text>
@@ -1454,28 +1688,28 @@ export default function SharedFinancesScreen({ navigation, route }) {
                               <Text style={styles.diffBadgeText}>{formatMoney(billSplitCalculation.commonAmount)}</Text>
                             </View>
                           </View>
+                        )}
 
-                          {billSplitCalculation.itemsExceedTotal && (
-                            <View style={styles.exceedBanner}>
-                              <Ionicons name="warning-outline" size={18} color="#B45309" />
-                              <View style={{ flex: 1 }}>
-                                <Text style={styles.exceedTitle}>Itens superam o total da conta</Text>
-                                <Text style={styles.exceedSub}>
-                                  A soma dos itens ({formatMoney(billSplitCalculation.itemsTotal)}) é maior que o valor total ({formatMoney(billSplitCalculation.rawTotal)}).
+                        {billSplitCalculation.itemsExceedTotal && (
+                          <View style={styles.exceedBanner}>
+                            <Ionicons name="warning-outline" size={18} color="#B45309" />
+                            <View style={{ flex: 1 }}>
+                              <Text style={styles.exceedTitle}>Itens superam o total da conta</Text>
+                              <Text style={styles.exceedSub}>
+                                A soma dos itens ({formatMoney(billSplitCalculation.itemsTotal)}) é maior que o valor total ({formatMoney(billSplitCalculation.rawTotal)}).
+                              </Text>
+                              <TouchableOpacity
+                                style={styles.btnAjustarTotal}
+                                onPress={handleSyncTotalWithItems}
+                              >
+                                <Text style={styles.btnAjustarTotalText}>
+                                  Ajustar Total para {formatMoney(billSplitCalculation.itemsTotal)}
                                 </Text>
-                                <TouchableOpacity
-                                  style={styles.btnAjustarTotal}
-                                  onPress={handleSyncTotalWithItems}
-                                >
-                                  <Text style={styles.btnAjustarTotalText}>
-                                    Ajustar Total para {formatMoney(billSplitCalculation.itemsTotal)}
-                                  </Text>
-                                </TouchableOpacity>
-                              </View>
+                              </TouchableOpacity>
                             </View>
-                          )}
-                        </View>
-                      )}
+                          </View>
+                        )}
+                      </View>
                     </View>
                   )}
                 </View>
@@ -2474,28 +2708,43 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#7C3AED',
   },
+  tabsContainer: {
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+    paddingVertical: 8,
+  },
   tabsRow: {
     flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: 16,
-    paddingBottom: 8,
     gap: 8,
   },
   tabBtn: {
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 20,
-    backgroundColor: '#FFFFFF',
+    height: 38,
+    paddingHorizontal: 16,
+    borderRadius: 19,
+    backgroundColor: '#F8FAFC',
     borderWidth: 1,
-    borderColor: '#EFEAF8',
+    borderColor: '#E2E8F0',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
   },
   tabBtnActive: {
     backgroundColor: '#7C3AED',
     borderColor: '#7C3AED',
+    shadowColor: '#7C3AED',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 3,
   },
   tabBtnText: {
-    fontSize: 12.5,
+    fontSize: 13,
     fontWeight: '600',
-    color: '#71717A',
+    color: '#64748B',
   },
   tabBtnTextActive: {
     color: '#FFFFFF',
@@ -3171,7 +3420,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
     borderBottomColor: '#F1F5F9',
-    paddingVertical: 10,
+    paddingVertical: 8,
   },
   groupsSelectorScroll: {
     paddingHorizontal: 16,
@@ -3180,25 +3429,30 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   groupChip: {
+    height: 36,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
     backgroundColor: '#F8FAFC',
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    paddingVertical: 7,
-    paddingHorizontal: 12,
-    borderRadius: 20,
+    paddingHorizontal: 14,
+    borderRadius: 18,
   },
   groupChipActive: {
     backgroundColor: '#7C3AED',
-    borderColor: '#6D28D9',
+    borderColor: '#7C3AED',
+    shadowColor: '#7C3AED',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+    elevation: 2,
   },
   groupChipText: {
     fontSize: 12.5,
     fontWeight: '600',
     color: '#475569',
-    maxWidth: 130,
+    maxWidth: 140,
   },
   groupChipTextActive: {
     color: '#FFFFFF',
@@ -3222,6 +3476,7 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
   addGroupChip: {
+    height: 36,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
@@ -3229,9 +3484,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#C084FC',
     borderStyle: 'dashed',
-    paddingVertical: 7,
     paddingHorizontal: 12,
-    borderRadius: 20,
+    borderRadius: 18,
   },
   addGroupChipText: {
     fontSize: 12,
@@ -3481,6 +3735,50 @@ const styles = StyleSheet.create({
     color: '#6D28D9',
     letterSpacing: 0.8,
   },
+  splitFieldHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 14,
+    marginBottom: 4,
+  },
+  splitPullGroupBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#EDE9FE',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#DDD6FE',
+  },
+  splitPullGroupBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#7C3AED',
+  },
+  splitResetToGroupBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#EDE9FE',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    marginLeft: 6,
+  },
+  splitResetToGroupText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#7C3AED',
+  },
+  splitInputHint: {
+    fontSize: 11.5,
+    color: '#64748B',
+    marginTop: 6,
+    lineHeight: 16,
+  },
   splitInputDesc: {
     backgroundColor: '#FAF7FD',
     borderWidth: 1,
@@ -3725,10 +4023,28 @@ const styles = StyleSheet.create({
   },
   newItemCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    padding: 12,
+    borderRadius: 16,
+    padding: 14,
     borderWidth: 1,
     borderColor: '#E9D5FF',
+  },
+  newItemHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 2,
+  },
+  newItemTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#7C3AED',
+    letterSpacing: 0.5,
+  },
+  newItemSub: {
+    fontSize: 11,
+    color: '#64748B',
+    marginBottom: 10,
+    lineHeight: 15,
   },
   newItemLabel: {
     fontSize: 10,
@@ -3740,6 +4056,32 @@ const styles = StyleSheet.create({
   newItemInputRow: {
     flexDirection: 'row',
     gap: 8,
+  },
+  newItemDescInput: {
+    flex: 2,
+    marginBottom: 0,
+  },
+  newItemAmountContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F7F5FC',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#EFEAF8',
+    paddingHorizontal: 10,
+  },
+  newItemCurrency: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#7C3AED',
+    marginRight: 4,
+  },
+  newItemAmountInput: {
+    flex: 1,
+    fontSize: 14,
+    color: '#18181B',
+    paddingVertical: 10,
   },
   itemMemberChip: {
     flexDirection: 'row',
@@ -3773,45 +4115,154 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 6,
     backgroundColor: '#7C3AED',
-    paddingVertical: 8,
-    borderRadius: 10,
+    paddingVertical: 10,
+    borderRadius: 12,
   },
   btnAddItemBtnText: {
-    fontSize: 12,
+    fontSize: 12.5,
     fontWeight: '700',
     color: '#FFFFFF',
+  },
+  itemListSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  miniRefreshBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#EDE9FE',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  miniRefreshBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#7C3AED',
+  },
+  emptyItemsBox: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginVertical: 6,
+  },
+  emptyItemsText: {
+    fontSize: 12,
+    color: '#94A3B8',
+    textAlign: 'center',
+    marginTop: 6,
+    lineHeight: 17,
   },
   itemsListTitle: {
     fontSize: 12.5,
     fontWeight: '800',
     color: '#334155',
-    marginBottom: 8,
   },
   splitItemRow: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 10,
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#EFEAF8',
+    marginBottom: 8,
+  },
+  splitItemTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    borderWidth: 1,
-    borderColor: '#F1F5F9',
-    marginBottom: 6,
+    justifyContent: 'space-between',
+    marginBottom: 4,
   },
-  splitItemRowName: {
-    fontSize: 13,
+  itemOriginBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  itemOriginBadgeGroup: {
+    backgroundColor: '#EDE9FE',
+  },
+  itemOriginBadgeCustom: {
+    backgroundColor: '#D1FAE5',
+  },
+  itemOriginBadgeText: {
+    fontSize: 10,
     fontWeight: '700',
-    color: '#1E293B',
   },
-  splitItemRowAssigned: {
+  itemOriginBadgeTextGroup: {
+    color: '#7C3AED',
+  },
+  itemOriginBadgeTextCustom: {
+    color: '#059669',
+  },
+  itemPayerHint: {
     fontSize: 11,
     color: '#64748B',
-    marginTop: 1,
+    fontWeight: '500',
+    flex: 1,
+  },
+  splitItemMainRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginVertical: 4,
+  },
+  splitItemRowName: {
+    fontSize: 13.5,
+    fontWeight: '700',
+    color: '#1E293B',
+    flex: 1,
   },
   splitItemRowAmount: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '800',
     color: '#7C3AED',
+    marginLeft: 8,
+  },
+  itemConsumersWrap: {
+    marginTop: 6,
+    paddingTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+  },
+  itemConsumersLabel: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#6D28D9',
+    letterSpacing: 0.5,
+  },
+  itemConsumerPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 10,
+    backgroundColor: '#F1F5F9',
+  },
+  itemConsumerPillActive: {
+    backgroundColor: '#7C3AED',
+  },
+  itemConsumerPillText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#475569',
+  },
+  itemConsumerPillTextActive: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+  itemConsumerSummary: {
+    fontSize: 10.5,
+    color: '#64748B',
+    marginTop: 4,
   },
   splitItemRemoveBtn: {
     padding: 4,
