@@ -507,3 +507,10 @@ export async function leaveHouseholdApi(householdId) {
   });
 }
 
+export async function kickHouseholdMemberApi(householdId, memberId) {
+  await ensureAuthenticated();
+  return apiRequest(`households/${encodeURIComponent(householdId)}/members/${encodeURIComponent(memberId)}`, {
+    method: 'DELETE',
+  });
+}
+

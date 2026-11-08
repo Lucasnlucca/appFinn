@@ -87,5 +87,15 @@ export class HouseholdsController {
   ) {
     return this.householdsService.leaveHousehold(user.id, id);
   }
+
+  @Delete(':id/members/:memberId')
+  @ApiOperation({ summary: 'Expulsar participante do grupo financeiro (apenas o criador/dono)' })
+  async kickMember(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Param('memberId') memberId: string,
+  ) {
+    return this.householdsService.kickMember(user.id, id, memberId);
+  }
 }
 

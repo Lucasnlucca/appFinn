@@ -479,5 +479,112 @@ export class HouseholdsService {
       ownerNotified: !!ownerMembership,
     };
   }
+
+  /**
+   * Expulsa um participante do grupo financeiro.
+   * Apenas o criador/dono (OWNER) pode expulsar membros.
+   * O dono não pode expulsar a si mesmo.
+   * Notifica o participante que ele foi expulso do grupo.
+   */
+  async kickMember(ownerUserId: string, householdId: string, targetMemberIdOrEmail: string) {
+    const ownerMembership = await this.prisma.householdMember.findUnique({
+      where: {
+        householdId_userId: {
+          householdId,
+          userId: ownerUserId,
+        },
+      },
+      include: {
+        household: true,
+      },
+    });
+
+    if (!ownerMembership) {
+      throw new NotFoundException('Grupo ou vínculo do criador não encontrado.');
+    }
+
+    if (ownerMembership.role !== 'OWNER' && ownerMembership.role !== 'ADMIN') {
+      throw new ForbiddenException('Apenas o criador ou administrador do grupo tem permissão para expulsar participantes.');
+    }
+
+    // Localiza o membro alvo por ID ou por E-mail
+    let targetMembership = await this.prisma.householdMember.findFirst({
+      where: {
+        householdId,
+        userId: targetMemberIdOrEmail,
+      },
+      include: {
+        user: true,
+      },
+    });
+
+    if (!targetMembership) {
+      targetMembership = await this.prisma.householdMember.findFirst({
+        where: {
+          householdId,
+          user: {
+            email: {
+              equals: targetMemberIdOrEmail.toLowerCase().trim(),
+              mode: 'insensitive',
+            },
+          },
+        },
+        include: {
+          user: true,
+        },
+      });
+    }
+
+    if (!targetMembership) {
+      throw new NotFoundException('Participante não encontrado neste grupo.');
+    }
+
+    // Bloqueia expulsão de si mesmo ou do criador
+    if (targetMembership.userId === ownerUserId || targetMembership.role === 'OWNER') {
+      throw new BadRequestException('O criador/dono do grupo não pode ser expulso.');
+    }
+
+    const memberName = targetMembership.user.fullName || targetMembership.user.email || 'Participante';
+    const groupName = ownerMembership.household.name;
+
+    await this.prisma.$transaction(async (tx) => {
+      // 1. Remove a participação do membro no grupo
+      await tx.householdMember.delete({
+        where: {
+          householdId_userId: {
+            householdId,
+            userId: targetMembership.userId,
+          },
+        },
+      });
+
+      // 2. Revoga convites pendentes que este membro possa ter
+      await tx.householdInvitation.updateMany({
+        where: {
+          householdId,
+          email: targetMembership.user.email,
+          status: 'PENDING',
+        },
+        data: {
+          status: 'REVOKED',
+        },
+      });
+
+      // 3. Notifica o participante sobre a expulsão
+      await tx.notification.create({
+        data: {
+          userId: targetMembership.userId,
+          title: 'Você foi removido do grupo',
+          message: `Você foi removido do grupo compartilhado '${groupName}' pelo administrador.`,
+          type: 'HOUSEHOLD_MEMBER_KICKED',
+        },
+      });
+    });
+
+    return {
+      message: `${memberName} foi expulso do grupo '${groupName}' com sucesso.`,
+      kickedUserId: targetMembership.userId,
+    };
+  }
 }
 

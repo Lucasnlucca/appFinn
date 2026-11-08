@@ -31,6 +31,7 @@ import {
   generateHouseholdInviteCodeApi,
   deleteHouseholdApi,
   leaveHouseholdApi,
+  kickHouseholdMemberApi,
 } from '../services/apiService';
 import { getBankTheme } from '../constants/BankThemeRegistry';
 
@@ -1113,6 +1114,103 @@ export function FinanceProvider({ children }) {
     };
   };
 
+  // Expulsar Membro do Grupo Compartilhado (Apenas o Criador/Dono tem permissão)
+  const kickMemberFromGroup = async (groupId, targetMemberIdOrEmail) => {
+    const targetGroupId = groupId || activeGroupId || sharedGroups[0]?.id;
+    const targetGroup = sharedGroups.find((g) => g.id === targetGroupId);
+    if (!targetGroup) {
+      throw new Error('Grupo não encontrado.');
+    }
+
+    if (!isGroupCreator(targetGroup)) {
+      throw new Error('Apenas o criador do grupo tem permissão para expulsar participantes.');
+    }
+
+    // Identifica o membro que será expulso
+    const targetMember = (targetGroup.members || []).find((m) => {
+      const matchId = m.id && String(m.id) === String(targetMemberIdOrEmail);
+      const matchEmail = m.email && targetMemberIdOrEmail && m.email.toLowerCase().trim() === String(targetMemberIdOrEmail).toLowerCase().trim();
+      const matchName = m.name && String(m.name) === String(targetMemberIdOrEmail);
+      return matchId || matchEmail || matchName;
+    });
+
+    if (!targetMember) {
+      throw new Error('Participante não encontrado no grupo.');
+    }
+
+    // Não permite expulsar o criador / dono ou o próprio usuário logado
+    if (
+      targetMember.isCreator ||
+      targetMember.role === 'OWNER' ||
+      (targetGroup.creatorId && String(targetMember.id) === String(targetGroup.creatorId))
+    ) {
+      throw new Error('O criador/dono do grupo não pode ser expulso.');
+    }
+
+    const myId = loggedInUser?.id ? String(loggedInUser.id) : null;
+    const myEmail = loggedInUser?.email ? loggedInUser.email.toLowerCase().trim() : null;
+    if (
+      (myId && String(targetMember.id) === myId) ||
+      (myEmail && targetMember.email && targetMember.email.toLowerCase().trim() === myEmail)
+    ) {
+      throw new Error('Você não pode expulsar a si mesmo do grupo.');
+    }
+
+    // 1. Tenta expulsar via API backend se houver vínculo remoto
+    try {
+      if (targetGroup.remoteId && targetMember.id) {
+        await kickHouseholdMemberApi(targetGroup.remoteId, targetMember.id);
+      }
+    } catch (e) {
+      console.log('Expulsão de membro via API offline:', e.message);
+    }
+
+    // 2. Remove o membro da lista de membros do grupo local
+    const updatedMembers = (targetGroup.members || []).filter((m) => {
+      if (targetMember.id && m.id && String(m.id) === String(targetMember.id)) return false;
+      if (targetMember.email && m.email && m.email.toLowerCase().trim() === targetMember.email.toLowerCase().trim()) return false;
+      if (!targetMember.id && !targetMember.email && m.name === targetMember.name) return false;
+      return true;
+    });
+
+    const updatedGroups = sharedGroups.map((g) => {
+      if (g.id === targetGroupId) {
+        return {
+          ...g,
+          members: updatedMembers,
+        };
+      }
+      return g;
+    });
+
+    setSharedGroups(updatedGroups);
+    await saveUserItem('shared_groups', updatedGroups);
+
+    // 3. Atualiza também no registro global de convites do dispositivo se presente
+    if (targetGroup.inviteCode) {
+      try {
+        const regRaw = await AsyncStorage.getItem('@finn_shared_invites_registry');
+        const reg = regRaw ? JSON.parse(regRaw) : {};
+        const codeKey = targetGroup.inviteCode.toUpperCase();
+        if (reg[codeKey]) {
+          reg[codeKey] = {
+            ...reg[codeKey],
+            members: updatedMembers,
+          };
+          await AsyncStorage.setItem('@finn_shared_invites_registry', JSON.stringify(reg));
+        }
+      } catch (err) {
+        console.warn('Erro ao atualizar registro global após expulsão:', err);
+      }
+    }
+
+    return {
+      success: true,
+      memberName: targetMember.name || 'Participante',
+      message: `${targetMember.name || 'Participante'} foi expulso do grupo com sucesso.`,
+    };
+  };
+
   // Convidar Pessoa para o Grupo Compartilhado
   const invitePersonToGroup = async ({ groupId, email, type = 'Casal', message = '' }) => {
     const code = generateGroupInviteCode();
@@ -1830,6 +1928,7 @@ Responda de forma clara, motivadora e estruturada em tópicos!`;
         generateNewGroupInviteCode,
         deleteSharedGroup,
         leaveSharedGroup,
+        kickMemberFromGroup,
         isGroupCreator,
         invitePersonToGroup,
         acceptGroupInvitation,

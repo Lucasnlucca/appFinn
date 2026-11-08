@@ -30,6 +30,7 @@ export default function SharedFinancesScreen({ navigation, route }) {
     generateNewGroupInviteCode,
     deleteSharedGroup,
     leaveSharedGroup,
+    kickMemberFromGroup,
     isGroupCreator,
     invitePersonToGroup,
     acceptGroupInvitation,
@@ -57,6 +58,9 @@ export default function SharedFinancesScreen({ navigation, route }) {
   const [modalJoin, setModalJoin] = useState(false);
   const [modalNewExpense, setModalNewExpense] = useState(false);
   const [modalSettlement, setModalSettlement] = useState(false);
+  const [modalKick, setModalKick] = useState(false);
+  const [memberToKick, setMemberToKick] = useState(null);
+  const [isKicking, setIsKicking] = useState(false);
 
   // Formulário Novo Grupo
   const [newGroupTab, setNewGroupTab] = useState('create'); // 'create' | 'join'
@@ -755,6 +759,37 @@ export default function SharedFinancesScreen({ navigation, route }) {
         },
       ]
     );
+  };
+
+  // Solicitar expulsão de membro (Apenas Criador/Dono)
+  const handleRequestKick = (member) => {
+    setMemberToKick(member);
+    setModalKick(true);
+  };
+
+  // Confirmar expulsão de membro
+  const handleConfirmKick = async () => {
+    if (!memberToKick) return;
+    setIsKicking(true);
+    try {
+      if (kickMemberFromGroup) {
+        const res = await kickMemberFromGroup(
+          activeGroup?.id,
+          memberToKick.id || memberToKick.email || memberToKick.name
+        );
+        setModalKick(false);
+        const kickedName = memberToKick.name;
+        setMemberToKick(null);
+        Alert.alert(
+          'Membro Removido 👋',
+          res?.message || `${kickedName} foi expulso do grupo com sucesso.`
+        );
+      }
+    } catch (e) {
+      Alert.alert('Erro ao expulsar membro', e.message);
+    } finally {
+      setIsKicking(false);
+    }
   };
 
   // 5. Salvar Acerto de Contas
@@ -1745,24 +1780,54 @@ export default function SharedFinancesScreen({ navigation, route }) {
                 </View>
 
                 <Text style={styles.sectionTitle}>Membros ativos ({groupMembers.length})</Text>
-                {groupMembers.map((m, idx) => (
-                  <View key={m.id || idx} style={styles.memberCardRow}>
-                    <View style={styles.memberAvatar}>
-                      <Text style={styles.memberAvatarText}>{m.name.charAt(0)}</Text>
+                {groupMembers.map((m, idx) => {
+                  const isTargetCreator =
+                    m.isCreator ||
+                    m.role === 'OWNER' ||
+                    (activeGroup?.creatorId && String(m.id) === String(activeGroup.creatorId));
+                  const isMe =
+                    loggedInUser &&
+                    ((loggedInUser.id && String(m.id) === String(loggedInUser.id)) ||
+                      (loggedInUser.email &&
+                        m.email &&
+                        m.email.toLowerCase().trim() === loggedInUser.email.toLowerCase().trim()) ||
+                      (!m.email && m.name === (loggedInUser.fullName || loggedInUser.name)));
+                  const canKick = isOwner && !isTargetCreator && !isMe;
+
+                  return (
+                    <View key={m.id || idx} style={styles.memberCardRow}>
+                      <View style={styles.memberAvatar}>
+                        <Text style={styles.memberAvatarText}>{m.name.charAt(0)}</Text>
+                      </View>
+                      <View style={{ flex: 1, marginHorizontal: 12 }}>
+                        <Text style={styles.memberName}>{m.name}</Text>
+                        <Text style={styles.memberRole}>
+                          {isTargetCreator
+                            ? '👑 Criador(a)'
+                            : isMe
+                            ? 'Você'
+                            : 'Participante'}
+                        </Text>
+                      </View>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <View style={styles.memberBadgeActive}>
+                          <Text style={styles.memberBadgeActiveText}>Ativo</Text>
+                        </View>
+                        {canKick && (
+                          <TouchableOpacity
+                            style={styles.btnKickMember}
+                            onPress={() => handleRequestKick(m)}
+                            activeOpacity={0.7}
+                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                          >
+                            <Ionicons name="person-remove-outline" size={13} color="#DC2626" />
+                            <Text style={styles.btnKickMemberText}>Expulsar</Text>
+                          </TouchableOpacity>
+                        )}
+                      </View>
                     </View>
-                    <View style={{ flex: 1, marginHorizontal: 12 }}>
-                      <Text style={styles.memberName}>{m.name}</Text>
-                      <Text style={styles.memberRole}>
-                        {m.isCreator || m.role === 'OWNER' || m.role === 'ADMIN'
-                          ? '👑 Criador(a)'
-                          : 'Participante'}
-                      </Text>
-                    </View>
-                    <View style={styles.memberBadgeActive}>
-                      <Text style={styles.memberBadgeActiveText}>Ativo</Text>
-                    </View>
-                  </View>
-                ))}
+                  );
+                })}
 
                 {/* CONVITES PENDENTES */}
                 <Text style={[styles.sectionTitle, { marginTop: 24 }]}>
@@ -2207,6 +2272,71 @@ export default function SharedFinancesScreen({ navigation, route }) {
             </TouchableOpacity>
           </View>
         </View>
+      </Modal>
+
+      {/* ============================================================== */}
+      {/* MODAL 6: CONFIRMAÇÃO DE EXPULSÃO DE PARTICIPANTE               */}
+      {/* ============================================================== */}
+      <Modal
+        visible={modalKick}
+        transparent
+        animationType="fade"
+        onRequestClose={() => !isKicking && setModalKick(false)}
+      >
+        <TouchableOpacity
+          style={styles.kickModalOverlay}
+          activeOpacity={1}
+          onPress={() => !isKicking && setModalKick(false)}
+        >
+          <View style={styles.kickModalCard} onStartShouldSetResponder={() => true}>
+            <View style={styles.kickModalIconCircle}>
+              <Ionicons name="person-remove" size={28} color="#DC2626" />
+            </View>
+
+            <Text style={styles.kickModalTitle}>Expulsar Membro</Text>
+            <Text style={styles.kickModalSubtitle}>
+              Tem certeza que deseja expulsar{' '}
+              <Text style={{ fontWeight: '800', color: '#0F172A' }}>
+                {memberToKick?.name}
+              </Text>{' '}
+              do grupo{' '}
+              <Text style={{ fontWeight: '800', color: '#7C3AED' }}>
+                "{activeGroup?.name}"
+              </Text>
+              ?
+            </Text>
+
+            <View style={styles.kickModalWarningBox}>
+              <Ionicons name="alert-circle-outline" size={17} color="#DC2626" style={{ marginTop: 1 }} />
+              <Text style={styles.kickModalWarningText}>
+                Este participante perderá o acesso a todas as movimentações, despesas e acertos deste grupo compartilhado.
+              </Text>
+            </View>
+
+            <View style={styles.kickModalActionsRow}>
+              <TouchableOpacity
+                style={styles.kickModalCancelBtn}
+                onPress={() => setModalKick(false)}
+                disabled={isKicking}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.kickModalCancelBtnText}>Cancelar</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.kickModalConfirmBtn, isKicking && { opacity: 0.6 }]}
+                onPress={handleConfirmKick}
+                disabled={isKicking}
+                activeOpacity={0.85}
+              >
+                <Ionicons name="trash-outline" size={15} color="#FFFFFF" style={{ marginRight: 6 }} />
+                <Text style={styles.kickModalConfirmBtnText}>
+                  {isKicking ? 'Expulsando...' : 'Sim, Expulsar'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </TouchableOpacity>
       </Modal>
     </View>
   );
@@ -2699,6 +2829,22 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#16A34A',
   },
+  btnKickMember: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#FEE2E2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  btnKickMemberText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#DC2626',
+  },
   emptySimpleText: {
     fontSize: 12.5,
     color: '#71717A',
@@ -2738,6 +2884,101 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.45)',
     justifyContent: 'flex-end',
+  },
+  kickModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.65)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  kickModalCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 24,
+    alignItems: 'center',
+    width: '100%',
+    maxWidth: 340,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.15,
+    shadowRadius: 20,
+    elevation: 8,
+  },
+  kickModalIconCircle: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#FEE2E2',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  kickModalTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  kickModalSubtitle: {
+    fontSize: 13.5,
+    color: '#475569',
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 16,
+  },
+  kickModalWarningBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FCA5A5',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 20,
+    width: '100%',
+  },
+  kickModalWarningText: {
+    flex: 1,
+    fontSize: 12,
+    color: '#991B1B',
+    lineHeight: 16,
+  },
+  kickModalActionsRow: {
+    flexDirection: 'row',
+    gap: 12,
+    width: '100%',
+  },
+  kickModalCancelBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#F8FAFC',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  kickModalCancelBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+  kickModalConfirmBtn: {
+    flex: 1.3,
+    flexDirection: 'row',
+    paddingVertical: 12,
+    borderRadius: 14,
+    backgroundColor: '#EF4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  kickModalConfirmBtnText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#FFFFFF',
   },
   modalContent: {
     backgroundColor: '#FFFFFF',
