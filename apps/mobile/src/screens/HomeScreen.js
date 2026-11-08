@@ -70,10 +70,14 @@ export default function HomeScreen({ navigation }) {
     sharedGroups,
     activeGroupId,
     setActiveGroupId,
+    createSharedGroup,
     cards = [],
   } = useFinance();
 
   const [groupModalVisible, setGroupModalVisible] = useState(false);
+  const [modalQuickNewGroup, setModalQuickNewGroup] = useState(false);
+  const [quickGroupName, setQuickGroupName] = useState('');
+  const [quickGroupType, setQuickGroupType] = useState('Casal');
 
   const activeSharedGroup = useMemo(() => {
     if (sharedGroups && sharedGroups.length > 0) {
@@ -107,9 +111,11 @@ export default function HomeScreen({ navigation }) {
     ];
   }, [sharedGroups, loggedInUser]);
 
+  // Saldo 100% isolado do grupo ativo: apenas receitas e despesas vinculadas a este grupo
   const sharedGroupBalance = useMemo(() => {
+    if (!activeSharedGroup?.id) return 0;
     const groupTxs = transactions.filter(
-      (t) => t.isShared && (!activeSharedGroup?.id || !t.groupId || t.groupId === activeSharedGroup.id)
+      (t) => t.isShared && (t.groupId === activeSharedGroup.id || t.sharedGroupId === activeSharedGroup.id)
     );
     const totalExp = groupTxs
       .filter((t) => t.type === 'expense')
@@ -118,10 +124,50 @@ export default function HomeScreen({ navigation }) {
       .filter((t) => t.type === 'income')
       .reduce((sum, t) => sum + (t.amount || 0), 0);
 
-    if (totalInc > 0) return totalInc - totalExp;
-    if (totalExp > 0) return totalExp;
-    return totalBalance > 0 ? totalBalance : 2968.0;
-  }, [transactions, activeSharedGroup, totalBalance]);
+    return totalInc - totalExp;
+  }, [transactions, activeSharedGroup]);
+
+  const sharedGroupIncome = useMemo(() => {
+    if (!activeSharedGroup?.id) return 0;
+    return transactions
+      .filter(
+        (t) =>
+          t.isShared &&
+          (t.groupId === activeSharedGroup.id || t.sharedGroupId === activeSharedGroup.id) &&
+          t.type === 'income'
+      )
+      .reduce((sum, t) => sum + (t.amount || 0), 0);
+  }, [transactions, activeSharedGroup]);
+
+  const sharedGroupExpense = useMemo(() => {
+    if (!activeSharedGroup?.id) return 0;
+    return transactions
+      .filter(
+        (t) =>
+          t.isShared &&
+          (t.groupId === activeSharedGroup.id || t.sharedGroupId === activeSharedGroup.id) &&
+          t.type === 'expense'
+      )
+      .reduce((sum, t) => sum + (t.amount || 0), 0);
+  }, [transactions, activeSharedGroup]);
+
+  const handleQuickCreateGroup = async () => {
+    if (!quickGroupName.trim()) {
+      Alert.alert('Atenção', 'Informe o nome do grupo.');
+      return;
+    }
+    try {
+      await createSharedGroup({
+        name: quickGroupName.trim(),
+        type: quickGroupType,
+      });
+      setQuickGroupName('');
+      setModalQuickNewGroup(false);
+      Alert.alert('Sucesso', 'Novo grupo compartilhado criado com sucesso!');
+    } catch (e) {
+      Alert.alert('Erro', e.message);
+    }
+  };
 
   const totalOpenInvoices = useMemo(
     () => (cards || []).reduce((sum, c) => sum + (c.currentInvoice || 0), 0),
@@ -416,15 +462,15 @@ export default function HomeScreen({ navigation }) {
           {viewMode === 'shared' ? (
             /* Overlay quando selecionado Compartilhadas: Fiel ao print fornecido */
             <View style={styles.heroSharedOverlay}>
-              {/* 1. Pill superior: [ 👥 Finanças compartilhadas ⌵ ] */}
+              {/* 1. Pill superior: [ 👥 Nome do Grupo ⌵ ] */}
               <TouchableOpacity
                 style={styles.heroSharedTopPill}
                 onPress={() => setGroupModalVisible(true)}
                 activeOpacity={0.8}
               >
                 <Ionicons name="people" size={17} color="#FFFFFF" />
-                <Text style={styles.heroSharedTopPillText}>
-                  Finanças compartilhadas
+                <Text style={styles.heroSharedTopPillText} numberOfLines={1}>
+                  {activeSharedGroup?.name || 'Finanças compartilhadas'}
                 </Text>
                 <Ionicons name="chevron-down" size={15} color="#FFFFFF" />
               </TouchableOpacity>
@@ -445,7 +491,7 @@ export default function HomeScreen({ navigation }) {
               >
                 <Ionicons name="people" size={15} color="#D8B4FE" />
                 <Text style={styles.heroSharedBottomPillText}>
-                  {activeSharedGroup?.members?.length || 2} participantes
+                  {activeSharedGroup?.members?.length || 1} participante{activeSharedGroup?.members?.length !== 1 ? 's' : ''}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -529,7 +575,9 @@ export default function HomeScreen({ navigation }) {
             </View>
             <View style={styles.metricCardInfo}>
               <Text style={styles.metricCardLabel}>Entradas</Text>
-              <Text style={styles.metricCardValue}>{formatMoney(totalIncome)}</Text>
+              <Text style={styles.metricCardValue}>
+                {formatMoney(viewMode === 'shared' ? sharedGroupIncome : totalIncome)}
+              </Text>
             </View>
           </View>
 
@@ -540,7 +588,9 @@ export default function HomeScreen({ navigation }) {
             </View>
             <View style={styles.metricCardInfo}>
               <Text style={styles.metricCardLabel}>Saídas</Text>
-              <Text style={styles.metricCardValue}>{formatMoney(totalExpense)}</Text>
+              <Text style={styles.metricCardValue}>
+                {formatMoney(viewMode === 'shared' ? sharedGroupExpense : totalExpense)}
+              </Text>
             </View>
           </View>
         </View>
@@ -1125,17 +1175,130 @@ export default function HomeScreen({ navigation }) {
               })}
             </ScrollView>
 
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
+              <TouchableOpacity
+                style={styles.quickNewGroupBtn}
+                onPress={() => {
+                  setModalQuickNewGroup(true);
+                }}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="add-circle" size={18} color="#FFFFFF" />
+                <Text style={styles.quickNewGroupBtnText}>Criar grupo</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.manageGroupsBtn}
+                onPress={() => {
+                  setGroupModalVisible(false);
+                  navigation.navigate('SharedFinances');
+                }}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="settings-outline" size={16} color="#7C3AED" />
+                <Text style={styles.manageGroupsBtnText}>Gerenciar</Text>
+                <Ionicons name="arrow-forward" size={14} color="#7C3AED" />
+              </TouchableOpacity>
+            </View>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* MODAL RÁPIDO CRIAR NOVO GRUPO */}
+      <Modal
+        visible={modalQuickNewGroup}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setModalQuickNewGroup(false)}
+      >
+        <TouchableOpacity
+          style={styles.groupModalOverlay}
+          activeOpacity={1}
+          onPress={() => setModalQuickNewGroup(false)}
+        >
+          <View style={styles.groupModalCard} onStartShouldSetResponder={() => true}>
+            <View style={styles.groupModalHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <View style={styles.groupModalIconBox}>
+                  <Ionicons name="people" size={20} color="#7C3AED" />
+                </View>
+                <View>
+                  <Text style={styles.groupModalTitle}>Criar Novo Grupo</Text>
+                  <Text style={styles.groupModalSub}>Adicione um espaço isolado de finanças</Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                onPress={() => setModalQuickNewGroup(false)}
+                style={styles.groupModalCloseBtn}
+              >
+                <Ionicons name="close" size={20} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            <View style={{ marginVertical: 16 }}>
+              <Text style={{ fontSize: 13, fontWeight: '700', color: '#334155', marginBottom: 6 }}>
+                Nome do Grupo
+              </Text>
+              <TextInput
+                style={{
+                  backgroundColor: '#F8FAFC',
+                  borderWidth: 1,
+                  borderColor: '#E2E8F0',
+                  borderRadius: 12,
+                  paddingHorizontal: 14,
+                  paddingVertical: 10,
+                  fontSize: 14,
+                  color: '#0F172A',
+                }}
+                placeholder="Ex: Viagem de Férias, Família, República..."
+                placeholderTextColor="#94A3B8"
+                value={quickGroupName}
+                onChangeText={setQuickGroupName}
+              />
+
+              <Text style={{ fontSize: 13, fontWeight: '700', color: '#334155', marginTop: 14, marginBottom: 8 }}>
+                Tipo de Grupo
+              </Text>
+              <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+                {['Casal', 'Família', 'Viagem', 'Amigos', 'Trabalho'].map((t) => (
+                  <TouchableOpacity
+                    key={t}
+                    style={{
+                      paddingVertical: 6,
+                      paddingHorizontal: 12,
+                      borderRadius: 10,
+                      backgroundColor: quickGroupType === t ? '#7C3AED' : '#F1F5F9',
+                    }}
+                    onPress={() => setQuickGroupType(t)}
+                  >
+                    <Text
+                      style={{
+                        fontSize: 12,
+                        fontWeight: '700',
+                        color: quickGroupType === t ? '#FFFFFF' : '#64748B',
+                      }}
+                    >
+                      {t}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
             <TouchableOpacity
-              style={styles.manageGroupsBtn}
-              onPress={() => {
-                setGroupModalVisible(false);
-                navigation.navigate('SharedFinances');
+              style={{
+                backgroundColor: '#7C3AED',
+                borderRadius: 14,
+                paddingVertical: 13,
+                alignItems: 'center',
+                justifyContent: 'center',
               }}
-              activeOpacity={0.8}
+              onPress={handleQuickCreateGroup}
+              activeOpacity={0.85}
             >
-              <Ionicons name="settings-outline" size={16} color="#7C3AED" />
-              <Text style={styles.manageGroupsBtnText}>Gerenciar ou criar novos grupos</Text>
-              <Ionicons name="arrow-forward" size={15} color="#7C3AED" />
+              <Text style={{ color: '#FFFFFF', fontSize: 14, fontWeight: '800' }}>
+                Salvar e Ativar Grupo
+              </Text>
             </TouchableOpacity>
           </View>
         </TouchableOpacity>
@@ -2384,11 +2547,28 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  manageGroupsBtn: {
+  quickNewGroupBtn: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    gap: 6,
+    backgroundColor: '#7C3AED',
+    paddingVertical: 12,
+    borderRadius: 14,
+    marginTop: 4,
+  },
+  quickNewGroupBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  manageGroupsBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
     backgroundColor: '#F3E8FF',
     paddingVertical: 12,
     borderRadius: 14,

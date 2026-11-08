@@ -15,16 +15,9 @@ export class HouseholdsService {
 
   /**
    * Cria um novo núcleo familiar (Household) e vincula o usuário como OWNER.
+   * Suporta múltiplos grupos por usuário.
    */
   async createHousehold(userId: string, dto: CreateHouseholdDto) {
-    const existingMembership = await this.prisma.householdMember.findFirst({
-      where: { userId },
-    });
-
-    if (existingMembership) {
-      throw new ConflictException('O usuário já pertence a um núcleo familiar');
-    }
-
     return this.prisma.$transaction(async (tx) => {
       const household = await tx.household.create({
         data: {
@@ -100,6 +93,60 @@ export class HouseholdsService {
       })),
       pendingInvitations: membership.household.invitations,
     };
+  }
+
+  /**
+   * Lista todos os núcleos familiares/grupos que o usuário participa.
+   */
+  async getUserHouseholds(userId: string) {
+    const memberships = await this.prisma.householdMember.findMany({
+      where: { userId },
+      include: {
+        household: {
+          include: {
+            members: {
+              include: {
+                user: {
+                  select: {
+                    id: true,
+                    fullName: true,
+                    email: true,
+                    avatarUrl: true,
+                  },
+                },
+              },
+            },
+            invitations: {
+              where: { status: 'PENDING', expiresAt: { gt: new Date() } },
+              select: {
+                id: true,
+                email: true,
+                role: true,
+                expiresAt: true,
+                createdAt: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: { joinedAt: 'desc' },
+    });
+
+    return memberships.map((m) => ({
+      id: m.household.id,
+      name: m.household.name,
+      currency: m.household.currency,
+      currentUserRole: m.role,
+      members: m.household.members.map((mem) => ({
+        id: mem.user.id,
+        fullName: mem.user.fullName,
+        email: mem.user.email,
+        avatarUrl: mem.user.avatarUrl,
+        role: mem.role,
+        joinedAt: mem.joinedAt,
+      })),
+      pendingInvitations: m.household.invitations,
+    }));
   }
 
   /**
@@ -181,12 +228,17 @@ export class HouseholdsService {
       throw new BadRequestException('Convite inválido ou expirado');
     }
 
-    const existingMembership = await this.prisma.householdMember.findFirst({
-      where: { userId },
+    const existingMembership = await this.prisma.householdMember.findUnique({
+      where: {
+        householdId_userId: {
+          householdId: invitation.householdId,
+          userId,
+        },
+      },
     });
 
     if (existingMembership) {
-      throw new ConflictException('Você já pertence a um núcleo familiar. Saia do atual antes de aceitar um novo.');
+      throw new ConflictException('Você já é membro deste grupo financeiro compartilhado.');
     }
 
     await this.prisma.$transaction([

@@ -35,6 +35,12 @@ export class HouseholdsController {
     return this.householdsService.getCurrentHousehold(user.id);
   }
 
+  @Get('my-groups')
+  @ApiOperation({ summary: 'Consultar todos os grupos/núcleos familiares do usuário' })
+  async getUserHouseholds(@CurrentUser() user: AuthenticatedUser) {
+    return this.householdsService.getUserHouseholds(user.id);
+  }
+
   @Post('invitations')
   @ApiOperation({ summary: 'Convidar cônjuge ou membro para a família via token seguro' })
   async createInvitation(

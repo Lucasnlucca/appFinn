@@ -457,6 +457,11 @@ export async function fetchCurrentHouseholdApi() {
   return apiRequest('households/current');
 }
 
+export async function fetchUserHouseholdsApi() {
+  await ensureAuthenticated();
+  return apiRequest('households/my-groups');
+}
+
 export async function createHouseholdApi(name, currency = 'BRL') {
   await ensureAuthenticated();
   return apiRequest('households', {

@@ -227,8 +227,32 @@ export function FinanceProvider({ children }) {
         if (savedHide) setHideBalances(JSON.parse(savedHide));
         if (savedHeroMode) setHeroCardMode(JSON.parse(savedHeroMode));
         if (savedSkin) setAiSkin(savedSkin);
-        if (savedGroups) setSharedGroups(JSON.parse(savedGroups));
-        if (savedActiveGrpId) setActiveGroupIdState(savedActiveGrpId);
+
+        let parsedGroups = savedGroups ? JSON.parse(savedGroups) : [];
+        if (!parsedGroups || parsedGroups.length === 0) {
+          const ownerName = loggedInUser?.fullName || loggedInUser?.name || 'Você';
+          const defaultGroup = {
+            id: 'grp-casal-default',
+            name: 'Finanças do Casal',
+            type: 'Casal',
+            description: 'Espaço compartilhado do casal',
+            createdAt: new Date().toISOString(),
+            inviteCode: 'CASAL1',
+            members: [
+              { id: loggedInUser?.id || 'admin', name: ownerName, email: loggedInUser?.email || '', role: 'ADMIN' },
+              { id: 'partner', name: 'Parceiro(a)', email: '', role: 'MEMBER' },
+            ],
+          };
+          parsedGroups = [defaultGroup];
+          saveUserItem('shared_groups', parsedGroups);
+        }
+        setSharedGroups(parsedGroups);
+        const resolvedActiveId = savedActiveGrpId && parsedGroups.some((g) => g.id === savedActiveGrpId)
+          ? savedActiveGrpId
+          : parsedGroups[0]?.id;
+        setActiveGroupIdState(resolvedActiveId);
+        if (resolvedActiveId) saveUserItem('active_group_id', resolvedActiveId);
+
         if (savedInvs) setGroupInvitations(JSON.parse(savedInvs));
         if (savedSettles) setSettlements(JSON.parse(savedSettles));
         if (savedMode) setViewModeState(savedMode);
@@ -837,11 +861,12 @@ export function FinanceProvider({ children }) {
   // Módulo Finanças Compartilhadas: Criar Grupo
   const createSharedGroup = async ({ name, type = 'Casal', description = '' }) => {
     const ownerName = loggedInUser?.fullName || loggedInUser?.name || 'Você';
+    const cleanName = (name || '').trim() || 'Novo Grupo';
     const newGroup = {
       id: 'grp-' + Date.now(),
-      name: name || 'Finanças do Casal',
-      type: type || 'Casal',
-      description: description || '',
+      name: cleanName,
+      type: type || 'Outros',
+      description: (description || '').trim(),
       createdAt: new Date().toISOString(),
       inviteCode: Math.random().toString(36).substring(2, 8).toUpperCase(),
       members: [
@@ -855,7 +880,7 @@ export function FinanceProvider({ children }) {
     };
 
     try {
-      const apiRes = await createHouseholdApi(name);
+      const apiRes = await createHouseholdApi(cleanName);
       if (apiRes?.id) {
         newGroup.remoteId = apiRes.id;
       }
@@ -863,7 +888,7 @@ export function FinanceProvider({ children }) {
       console.log('Grupo criado offline/localmente:', e.message);
     }
 
-    const nextGroups = [newGroup, ...sharedGroups];
+    const nextGroups = [newGroup, ...sharedGroups.filter((g) => g.id !== newGroup.id)];
     setSharedGroups(nextGroups);
     setActiveGroupIdState(newGroup.id);
     await saveUserItem('shared_groups', nextGroups);
@@ -871,12 +896,25 @@ export function FinanceProvider({ children }) {
     return newGroup;
   };
 
+  // Excluir Grupo Compartilhado
+  const deleteSharedGroup = async (groupId) => {
+    const updated = sharedGroups.filter((g) => g.id !== groupId);
+    setSharedGroups(updated);
+    await saveUserItem('shared_groups', updated);
+    if (activeGroupId === groupId) {
+      const nextId = updated[0]?.id || null;
+      setActiveGroupIdState(nextId);
+      await saveUserItem('active_group_id', nextId);
+    }
+  };
+
   // Convidar Pessoa para o Grupo Compartilhado
   const invitePersonToGroup = async ({ groupId, email, type = 'Casal', message = '' }) => {
     const code = Math.random().toString(36).substring(2, 8).toUpperCase();
+    const targetGroupId = groupId || activeGroupId || sharedGroups[0]?.id;
     const inv = {
       id: 'inv-' + Date.now(),
-      groupId: groupId || activeGroupId,
+      groupId: targetGroupId,
       email: email.trim().toLowerCase(),
       type,
       message,
@@ -910,18 +948,18 @@ export function FinanceProvider({ children }) {
 
     const joinedGroup = {
       id: 'grp-joined-' + Date.now(),
-      name: 'Finanças do Casal',
+      name: 'Grupo Compartilhado',
       type: 'Casal',
       description: 'Convite aceito',
       createdAt: new Date().toISOString(),
       inviteCode: code,
       members: [
-        { id: 'partner', name: 'Veronica', email: '', role: 'ADMIN' },
+        { id: 'partner', name: 'Participante', email: '', role: 'ADMIN' },
         { id: loggedInUser?.id || 'me', name: loggedInUser?.name || 'Você', email: loggedInUser?.email || '', role: 'MEMBER' },
       ],
     };
 
-    const nextGroups = [joinedGroup, ...sharedGroups];
+    const nextGroups = [joinedGroup, ...sharedGroups.filter((g) => g.id !== joinedGroup.id)];
     setSharedGroups(nextGroups);
     setActiveGroupIdState(joinedGroup.id);
     await saveUserItem('shared_groups', nextGroups);
@@ -933,19 +971,25 @@ export function FinanceProvider({ children }) {
   const addSharedExpense = async (expData) => {
     const payer = expData.paidBy || loggedInUser?.name || 'Você';
     const splitRatio = expData.splitMethod === 'equal' ? 0.5 : parseFloat(expData.splitRatio) || 0.5;
+    const targetGroupId = expData.groupId || activeGroupId || sharedGroups[0]?.id;
+    const targetGroup = sharedGroups.find((g) => g.id === targetGroupId);
+
     const newTx = {
       id: 'tx-shared-' + Date.now(),
+      description: expData.description,
       title: expData.description,
       amount: parseFloat(expData.amount) || 0,
-      type: 'expense',
+      type: expData.type || 'expense',
       category: expData.category || 'alimentacao',
-      date: new Date().toISOString().split('T')[0],
+      date: expData.date || new Date().toISOString().split('T')[0],
       author: payer,
       paidBy: payer,
       isShared: true,
+      groupId: targetGroupId,
+      sharedGroupId: targetGroupId,
+      groupName: targetGroup?.name || null,
       splitMethod: expData.splitMethod || 'equal',
       splitRatio: splitRatio,
-      sharedGroupId: expData.groupId || activeGroupId,
       notes: expData.notes || '',
     };
 
@@ -980,44 +1024,50 @@ export function FinanceProvider({ children }) {
 
   const filteredTransactions = transactions.filter((t) => {
     if (viewMode === 'shared') {
-      return !!t.isShared;
+      const gId = t.groupId || t.sharedGroupId;
+      if (!gId) {
+        return !!t.isShared && (!activeGroupId || !sharedGroups.length || activeGroupId === sharedGroups[0]?.id);
+      }
+      return !!t.isShared && gId === activeGroupId;
     }
     if (viewMode === 'personal') {
-      return !t.isShared || t.author === currentUserName || t.paidBy === currentUserName;
+      return !t.isShared && !t.groupId;
     }
     // 'consolidated'
-    if (activeMember === 'Casal') return true;
-    return t.author === activeMember || t.isShared;
+    return true;
   });
 
   const txIncome = filteredTransactions
     .filter((t) => t.type === 'income')
-    .reduce((sum, t) => sum + t.amount, 0);
+    .reduce((sum, t) => sum + (t.amount || 0), 0);
 
   const totalExpense = filteredTransactions
     .filter((t) => t.type === 'expense')
     .reduce((sum, t) => {
       if (viewMode === 'consolidated' && t.isShared) {
         const ratio = t.splitRatio !== undefined ? t.splitRatio : 0.5;
-        return sum + (t.amount * ratio);
+        return sum + ((t.amount || 0) * ratio);
       }
-      return sum + t.amount;
+      return sum + (t.amount || 0);
     }, 0);
 
   const accountsBalance = accounts.reduce((sum, a) => sum + (a.balance || 0), 0);
 
-  // A entrada deve ser referente ao saldo das contas quando há contas cadastradas
-  const totalIncome = accounts.length > 0
+  // A entrada deve ser referente ao saldo das contas quando há contas cadastradas (no modo pessoal)
+  const totalIncome = viewMode === 'shared'
+    ? txIncome
+    : accounts.length > 0
     ? (accountsBalance > 0 ? accountsBalance : (txIncome || 0))
     : txIncome;
 
+  // Saldo totalmente isolado: no modo compartilhado é estritamente o resultado do grupo ativo
   const totalBalance = viewMode === 'shared'
-    ? -totalExpense
+    ? (txIncome - totalExpense)
     : accounts.length > 0
     ? accountsBalance
     : (totalIncome - totalExpense);
 
-  const resultadoDoMes = accounts.length > 0 ? totalBalance : (totalIncome - totalExpense);
+  const resultadoDoMes = accounts.length > 0 && viewMode !== 'shared' ? totalBalance : (totalIncome - totalExpense);
 
   // Cálculos de gastos fixos vs variáveis
   const fixedExpensesList = filteredTransactions.filter((t) => t.type === 'expense' && t.expenseType === 'fixed');
@@ -1437,6 +1487,7 @@ Responda de forma clara, motivadora e estruturada em tópicos!`;
         groupInvitations,
         settlements,
         createSharedGroup,
+        deleteSharedGroup,
         invitePersonToGroup,
         acceptGroupInvitation,
         addSharedExpense,

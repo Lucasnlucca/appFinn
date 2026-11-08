@@ -26,6 +26,7 @@ export default function SharedFinancesScreen({ navigation }) {
     activeGroupId,
     setActiveGroupId,
     createSharedGroup,
+    deleteSharedGroup,
     invitePersonToGroup,
     acceptGroupInvitation,
     groupInvitations,
@@ -88,9 +89,12 @@ export default function SharedFinancesScreen({ navigation }) {
     ];
   }, [activeGroup, loggedInUser]);
 
-  // Transações compartilhadas do grupo
+  // Transações compartilhadas do grupo (100% isoladas para o grupo ativo)
   const sharedTxs = useMemo(() => {
-    return transactions.filter((t) => t.isShared && (!activeGroup?.id || !t.groupId || t.groupId === activeGroup.id));
+    if (!activeGroup?.id) return [];
+    return transactions.filter(
+      (t) => t.isShared && (t.groupId === activeGroup.id || t.sharedGroupId === activeGroup.id)
+    );
   }, [transactions, activeGroup?.id]);
 
   // Total gasto compartilhado no mês
@@ -233,6 +237,7 @@ export default function SharedFinancesScreen({ navigation }) {
         category: expCategory,
         paidBy: expPaidBy,
         splitMethod: expSplitMethod,
+        groupId: activeGroup?.id,
       });
 
       setModalNewExpense(false);
@@ -242,6 +247,31 @@ export default function SharedFinancesScreen({ navigation }) {
     } catch (e) {
       Alert.alert('Erro', e.message);
     }
+  };
+
+  // Excluir Grupo
+  const handleDeleteGroup = (groupId) => {
+    if (sharedGroups.length <= 1) {
+      Alert.alert('Atenção', 'Você precisa manter pelo menos um grupo ativo.');
+      return;
+    }
+    Alert.alert(
+      'Excluir Grupo',
+      `Tem certeza que deseja excluir o grupo "${activeGroup?.name}"? Esta ação removerá o grupo da sua conta.`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Excluir',
+          style: 'destructive',
+          onPress: async () => {
+            if (deleteSharedGroup) {
+              await deleteSharedGroup(groupId);
+              Alert.alert('Sucesso', 'Grupo excluído com sucesso.');
+            }
+          },
+        },
+      ]
+    );
   };
 
   // 5. Salvar Acerto de Contas
@@ -272,7 +302,7 @@ export default function SharedFinancesScreen({ navigation }) {
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <StatusBar barStyle="dark-content" backgroundColor="#F7F5FC" />
 
-      {/* CABEÇALHO COM VOLTAR, TÍTULO E AÇÃO DE CONVIDAR */}
+      {/* CABEÇALHO COM VOLTAR, TÍTULO E AÇÃO DE CRIAR / CONVIDAR */}
       <View style={styles.topHeader}>
         <TouchableOpacity
           style={styles.backBtn}
@@ -283,22 +313,83 @@ export default function SharedFinancesScreen({ navigation }) {
         </TouchableOpacity>
 
         <View style={styles.headerTitleWrap}>
-          <Text style={styles.headerTitle}>
+          <Text style={styles.headerTitle} numberOfLines={1}>
             {activeGroup?.name || 'Finanças Compartilhadas'}
           </Text>
           <Text style={styles.headerSubtitle}>
-            {activeGroup ? `${groupMembers.length} participantes • ${activeGroup.type}` : 'Gestão conjunta'}
+            {activeGroup ? `${groupMembers.length} participante${groupMembers.length > 1 ? 's' : ''} • ${activeGroup.type}` : 'Gestão conjunta'}
           </Text>
         </View>
 
-        <TouchableOpacity
-          style={styles.inviteHeaderBtn}
-          onPress={() => setModalInvite(true)}
-          activeOpacity={0.8}
-        >
-          <Ionicons name="person-add" size={17} color="#7C3AED" />
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <TouchableOpacity
+            style={styles.headerActionPill}
+            onPress={() => setModalNewGroup(true)}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="add" size={17} color="#7C3AED" />
+            <Text style={styles.headerActionPillText}>Novo</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.inviteHeaderBtn}
+            onPress={() => setModalInvite(true)}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="person-add" size={16} color="#7C3AED" />
+          </TouchableOpacity>
+        </View>
       </View>
+
+      {/* SELETOR HORIZONTAL DE TODOS OS GRUPOS (PERMITE TROCAR E ADICIONAR MAIS GRUPOS) */}
+      {sharedGroups.length > 0 && (
+        <View style={styles.groupsSelectorWrap}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.groupsSelectorScroll}
+          >
+            {sharedGroups.map((grp) => {
+              const isSelected = grp.id === activeGroup?.id;
+              const count = grp.members?.length || 1;
+              return (
+                <TouchableOpacity
+                  key={grp.id}
+                  style={[styles.groupChip, isSelected && styles.groupChipActive]}
+                  onPress={() => setActiveGroupId(grp.id)}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons
+                    name={grp.type === 'Casal' ? 'heart' : 'people'}
+                    size={14}
+                    color={isSelected ? '#FFFFFF' : '#7C3AED'}
+                  />
+                  <Text
+                    style={[styles.groupChipText, isSelected && styles.groupChipTextActive]}
+                    numberOfLines={1}
+                  >
+                    {grp.name}
+                  </Text>
+                  <View style={[styles.groupChipBadge, isSelected && styles.groupChipBadgeActive]}>
+                    <Text style={[styles.groupChipBadgeText, isSelected && styles.groupChipBadgeTextActive]}>
+                      {count}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+
+            <TouchableOpacity
+              style={styles.addGroupChip}
+              onPress={() => setModalNewGroup(true)}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="add-circle-outline" size={16} color="#7C3AED" />
+              <Text style={styles.addGroupChipText}>+ Criar grupo</Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </View>
+      )}
 
       {/* SE O USUÁRIO AINDA NÃO TEM GRUPO: TELA DE PRIMEIRO ACESSO */}
       {sharedGroups.length === 0 ? (
@@ -566,13 +657,25 @@ export default function SharedFinancesScreen({ navigation }) {
                 <View style={styles.groupInfoCard}>
                   <Text style={styles.groupInfoTitle}>{activeGroup?.name}</Text>
                   <Text style={styles.groupInfoSub}>{activeGroup?.description || 'Espaço de finanças compartilhadas'}</Text>
-                  <TouchableOpacity
-                    style={styles.btnConvidarNovo}
-                    onPress={() => setModalInvite(true)}
-                  >
-                    <Ionicons name="mail-outline" size={16} color="#7C3AED" />
-                    <Text style={styles.btnConvidarNovoText}>Convidar outra pessoa</Text>
-                  </TouchableOpacity>
+                  <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
+                    <TouchableOpacity
+                      style={styles.btnConvidarNovo}
+                      onPress={() => setModalInvite(true)}
+                    >
+                      <Ionicons name="mail-outline" size={16} color="#7C3AED" />
+                      <Text style={styles.btnConvidarNovoText}>Convidar membro</Text>
+                    </TouchableOpacity>
+
+                    {sharedGroups.length > 1 && (
+                      <TouchableOpacity
+                        style={styles.btnExcluirGrupo}
+                        onPress={() => handleDeleteGroup(activeGroup?.id)}
+                      >
+                        <Ionicons name="trash-outline" size={16} color="#EF4444" />
+                        <Text style={styles.btnExcluirGrupoText}>Excluir</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
                 </View>
 
                 <Text style={styles.sectionTitle}>Membros ativos ({groupMembers.length})</Text>
@@ -1475,6 +1578,108 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
     color: '#FFFFFF',
+  },
+  headerActionPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#EDE9FE',
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#DDD6FE',
+  },
+  headerActionPillText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#7C3AED',
+  },
+  groupsSelectorWrap: {
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+    paddingVertical: 10,
+  },
+  groupsSelectorScroll: {
+    paddingHorizontal: 16,
+    gap: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  groupChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+  },
+  groupChipActive: {
+    backgroundColor: '#7C3AED',
+    borderColor: '#6D28D9',
+  },
+  groupChipText: {
+    fontSize: 12.5,
+    fontWeight: '600',
+    color: '#475569',
+    maxWidth: 130,
+  },
+  groupChipTextActive: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+  groupChipBadge: {
+    backgroundColor: '#EDE9FE',
+    borderRadius: 10,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+  },
+  groupChipBadgeActive: {
+    backgroundColor: 'rgba(255, 255, 255, 0.28)',
+  },
+  groupChipBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#7C3AED',
+  },
+  groupChipBadgeTextActive: {
+    color: '#FFFFFF',
+  },
+  addGroupChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#F3E8FF',
+    borderWidth: 1,
+    borderColor: '#C084FC',
+    borderStyle: 'dashed',
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+  },
+  addGroupChipText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#7C3AED',
+  },
+  btnExcluirGrupo: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#FEE2E2',
+    paddingVertical: 10,
+    borderRadius: 12,
+  },
+  btnExcluirGrupoText: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#EF4444',
   },
 });
 
