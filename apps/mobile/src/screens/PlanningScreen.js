@@ -86,10 +86,10 @@ export default function PlanningScreen({ navigation }) {
       return 'Cadastre suas primeiras movimentações para que o FINN AI descubra padrões de economia e dicas personalizadas para você!';
     }
     if (totalExpense === 0) {
-      return 'Nenhuma despesa registrada este mês. Seu orçamento está totalmente preservado!';
+      return `Você economizou 100% da sua renda este mês (${formatMoney(resultadoDoMes)} de saldo positivo).\nContinue assim! 🚀`;
     }
     if (totalIncome > totalExpense) {
-      return `Você já economizou ${economizadoPercent}% da sua renda este mês (${formatMoney(resultadoDoMes)} de saldo positivo). Continue assim! 🚀`;
+      return `Você economizou ${economizadoPercent}% da sua renda este mês (${formatMoney(resultadoDoMes)} de saldo positivo).\nContinue assim! 🚀`;
     }
     return `Atenção: suas saídas no mês (${formatMoney(totalExpense)}) superaram as entradas (${formatMoney(totalIncome)}).`;
   }, [transactions, totalExpense, totalIncome, economizadoPercent, resultadoDoMes]);
@@ -345,31 +345,41 @@ export default function PlanningScreen({ navigation }) {
               )}
             </View>
 
-            {/* CARD 3: INSIGHT DA IA COM GRADIENTE */}
+            {/* CARD 3: INSIGHT DA IA FIEL AO DESIGN SOLICITADO */}
             <TouchableOpacity
-              activeOpacity={0.88}
+              activeOpacity={0.92}
               onPress={() => navigation?.navigate('FinnAI')}
+              style={styles.aiInsightCardWrapper}
             >
-              <LinearGradient
-                colors={['rgba(124, 58, 237, 0.12)', 'rgba(6, 182, 212, 0.14)']}
-                style={styles.aiInsightCard}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-              >
-                <View style={styles.aiInsightHeader}>
-                  <Ionicons name="sparkles" size={17} color="#7C3AED" />
-                  <Text style={styles.aiInsightTitle}>Insight da IA</Text>
-                </View>
+              <View style={styles.aiInsightCard}>
+                {/* Efeito decorativo de curva/onda suave lilás ao fundo à direita */}
+                <View style={styles.aiInsightWaveBlob1} pointerEvents="none" />
+                <View style={styles.aiInsightWaveBlob2} pointerEvents="none" />
 
-                <View style={styles.aiInsightBody}>
+                {/* Conteúdo principal à esquerda */}
+                <View style={styles.aiInsightContentCol}>
+                  <View style={styles.aiInsightHeader}>
+                    <Ionicons name="sparkles" size={20} color="#7C3AED" />
+                    <Text style={styles.aiInsightTitle}>Insight da IA</Text>
+                  </View>
+
                   <Text style={styles.aiInsightText}>
                     {planningInsightText}
                   </Text>
-                  <View style={styles.aiInsightArrowBtn}>
-                    <Ionicons name="arrow-forward" size={16} color="#FFFFFF" />
-                  </View>
                 </View>
-              </LinearGradient>
+
+                {/* Botão de seta circular destacado à direita */}
+                <View style={styles.aiInsightArrowWrap}>
+                  <LinearGradient
+                    colors={['#8B5CF6', '#6D28D9']}
+                    style={styles.aiInsightArrowBtn}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                  >
+                    <Ionicons name="arrow-forward" size={22} color="#FFFFFF" />
+                  </LinearGradient>
+                </View>
+              </View>
             </TouchableOpacity>
           </>
         )}
@@ -1044,47 +1054,86 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#71717A',
   },
+  aiInsightCardWrapper: {
+    marginTop: 6,
+    marginBottom: 10,
+  },
   aiInsightCard: {
-    borderRadius: 22,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: 'rgba(124, 58, 237, 0.25)',
+    position: 'relative',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    borderWidth: 1.5,
+    borderColor: '#E9D5FF',
+    paddingHorizontal: 22,
+    paddingTop: 20,
+    paddingBottom: 22,
+    overflow: 'hidden',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     shadowColor: '#7C3AED',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.12,
-    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
     elevation: 3,
+  },
+  aiInsightWaveBlob1: {
+    position: 'absolute',
+    right: -25,
+    bottom: -35,
+    width: 175,
+    height: 185,
+    borderRadius: 90,
+    backgroundColor: '#F3E8FF',
+  },
+  aiInsightWaveBlob2: {
+    position: 'absolute',
+    right: 25,
+    bottom: -55,
+    width: 120,
+    height: 130,
+    borderRadius: 65,
+    backgroundColor: '#FAF5FF',
+  },
+  aiInsightContentCol: {
+    flex: 1,
+    paddingRight: 16,
   },
   aiInsightHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    marginBottom: 8,
+    gap: 8,
+    marginBottom: 10,
   },
   aiInsightTitle: {
-    fontSize: 15,
+    fontSize: 18,
     fontWeight: '800',
-    color: '#18181B',
-  },
-  aiInsightBody: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
+    color: '#0F172A',
+    letterSpacing: -0.3,
   },
   aiInsightText: {
-    flex: 1,
-    fontSize: 12.5,
+    fontSize: 14.5,
     fontWeight: '600',
-    color: '#3F3F46',
-    lineHeight: 18,
+    color: '#27272A',
+    lineHeight: 22,
+    letterSpacing: -0.2,
   },
-  aiInsightArrowBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: '#7C3AED',
+  aiInsightArrowWrap: {
+    marginLeft: 4,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  aiInsightArrowBtn: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#7C3AED',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 5,
   },
   scrollContent: {
     paddingHorizontal: 16,

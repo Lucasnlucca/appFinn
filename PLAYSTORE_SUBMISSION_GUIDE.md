@@ -102,3 +102,4 @@ Se você criou uma conta de desenvolvedor Google Play de **Pessoa Física** apó
 3. Essas 20 pessoas devem instalar o app e mantê-lo instalado por **14 dias consecutivos**.
 4. Após os 14 dias, o painel do Google Play liberará o botão para **"Solicitar Acesso à Produção"**.
 *(Dica: Se a sua conta for de **Empresa / Pessoa Jurídica (com CNPJ / D-U-N-S Number)**, essa regra de 20 testadores não existe e você pode publicar direto para produção).*
+
