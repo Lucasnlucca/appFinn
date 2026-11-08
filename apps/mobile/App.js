@@ -27,6 +27,7 @@ import LoginScreen from './src/screens/LoginScreen';
 import AddTransactionModal from './src/components/AddTransactionModal';
 import FloatingAiButton from './src/components/FloatingAiButton';
 import LiquidTabBar from './src/components/LiquidTabBar';
+import AppIntroSplash from './src/components/AppIntroSplash';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -97,19 +98,19 @@ function MainTabs({ navigation }) {
   );
 }
 
-function MainAppContent({ assetsLoaded, isFontsReady }) {
+function MainAppContent({ assetsLoaded, isFontsReady, onReadyChange }) {
   const { loggedInUser, loaded } = useFinance();
 
-  if (!loaded || !assetsLoaded || !isFontsReady) {
-    return (
-      <View style={styles.splashContainer}>
-        <View style={styles.splashBadge}>
-          <Ionicons name="sparkles" size={36} color={COLORS.navy} />
-        </View>
-        <Text style={styles.splashTitle}>FINN</Text>
-        <ActivityIndicator size="small" color={COLORS.navy} style={{ marginTop: 16 }} />
-      </View>
-    );
+  const isAppReady = Boolean(loaded && assetsLoaded && isFontsReady);
+
+  useEffect(() => {
+    if (onReadyChange) {
+      onReadyChange(isAppReady);
+    }
+  }, [isAppReady, onReadyChange]);
+
+  if (!isAppReady) {
+    return <View style={{ flex: 1, backgroundColor: '#000000' }} />;
   }
 
   if (!loggedInUser) {
@@ -145,6 +146,8 @@ export default function App() {
     Audiowide: require('./assets/fonts/Audiowide-Regular.ttf'),
   });
   const [assetsLoaded, setAssetsLoaded] = useState(false);
+  const [splashDismissed, setSplashDismissed] = useState(false);
+  const [isAppReady, setIsAppReady] = useState(false);
 
   useEffect(() => {
     async function preloadAssets() {
@@ -174,8 +177,23 @@ export default function App() {
     <SafeAreaProvider>
       <FinanceProvider>
         <CustomAlertProvider>
-          <StatusBar style="dark" backgroundColor={COLORS.bg} />
-          <MainAppContent assetsLoaded={assetsLoaded} isFontsReady={isFontsReady} />
+          <StatusBar
+            style={splashDismissed ? "dark" : "light"}
+            backgroundColor={splashDismissed ? COLORS.bg : "#000000"}
+          />
+          <View style={{ flex: 1, backgroundColor: '#000000' }}>
+            <MainAppContent
+              assetsLoaded={assetsLoaded}
+              isFontsReady={isFontsReady}
+              onReadyChange={setIsAppReady}
+            />
+            {!splashDismissed && (
+              <AppIntroSplash
+                isAppReady={isAppReady}
+                onFinish={() => setSplashDismissed(true)}
+              />
+            )}
+          </View>
         </CustomAlertProvider>
       </FinanceProvider>
     </SafeAreaProvider>
