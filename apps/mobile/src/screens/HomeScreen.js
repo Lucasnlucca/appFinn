@@ -74,6 +74,7 @@ export default function HomeScreen({ navigation }) {
     setActiveGroupId,
     createSharedGroup,
     acceptGroupInvitation,
+    isGroupCreator,
     cards = [],
   } = useFinance();
 
@@ -1206,6 +1207,11 @@ export default function HomeScreen({ navigation }) {
                         <View style={styles.groupItemTypeBadge}>
                           <Text style={styles.groupItemTypeBadgeText}>{grp.type || 'Casal'}</Text>
                         </View>
+                        {isGroupCreator && isGroupCreator(grp) && (
+                          <View style={styles.groupItemOwnerBadge}>
+                            <Text style={styles.groupItemOwnerBadgeText}>👑 Criador</Text>
+                          </View>
+                        )}
                       </View>
                       <Text style={styles.groupItemMembersText}>
                         {memberCount} {memberCount === 1 ? 'participante' : 'participantes'}
@@ -2789,6 +2795,19 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '700',
     color: '#7C3AED',
+  },
+  groupItemOwnerBadge: {
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  groupItemOwnerBadgeText: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    color: '#B45309',
   },
   groupItemMembersText: {
     fontSize: 11,

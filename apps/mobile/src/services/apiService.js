@@ -493,3 +493,17 @@ export async function generateHouseholdInviteCodeApi(householdId) {
   });
 }
 
+export async function deleteHouseholdApi(householdId) {
+  await ensureAuthenticated();
+  return apiRequest(`households/${encodeURIComponent(householdId)}`, {
+    method: 'DELETE',
+  });
+}
+
+export async function leaveHouseholdApi(householdId) {
+  await ensureAuthenticated();
+  return apiRequest(`households/${encodeURIComponent(householdId)}/leave`, {
+    method: 'POST',
+  });
+}
+

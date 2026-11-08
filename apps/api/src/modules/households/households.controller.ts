@@ -2,6 +2,8 @@ import {
   Controller,
   Post,
   Get,
+  Delete,
+  Param,
   Body,
   UseGuards,
   Query,
@@ -66,6 +68,24 @@ export class HouseholdsController {
     @Query('token') token: string,
   ) {
     return this.householdsService.acceptInvitation(user.id, token);
+  }
+
+  @Delete(':id')
+  @ApiOperation({ summary: 'Excluir grupo financeiro (apenas o criador/dono pode excluir)' })
+  async deleteHousehold(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+  ) {
+    return this.householdsService.deleteHousehold(user.id, id);
+  }
+
+  @Post(':id/leave')
+  @ApiOperation({ summary: 'Sair do grupo financeiro (participantes saem e dono é notificado)' })
+  async leaveHousehold(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+  ) {
+    return this.householdsService.leaveHousehold(user.id, id);
   }
 }
 

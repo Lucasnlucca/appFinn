@@ -317,5 +317,109 @@ export class HouseholdsService {
 
     return { message: 'Você agora faz parte do núcleo familiar!' };
   }
+
+  /**
+   * Exclui o grupo criado. Apenas o criador/dono (OWNER) tem permissão para excluir.
+   */
+  async deleteHousehold(userId: string, householdId: string) {
+    const membership = await this.prisma.householdMember.findUnique({
+      where: {
+        householdId_userId: {
+          householdId,
+          userId,
+        },
+      },
+      include: {
+        household: true,
+      },
+    });
+
+    if (!membership) {
+      throw new NotFoundException('Grupo ou vínculo não encontrado.');
+    }
+
+    if (membership.role !== 'OWNER') {
+      throw new ForbiddenException('Apenas o criador do grupo tem permissão para excluí-lo.');
+    }
+
+    await this.prisma.household.delete({
+      where: { id: householdId },
+    });
+
+    return { message: `Grupo '${membership.household.name}' excluído com sucesso.` };
+  }
+
+  /**
+   * Permite que um membro saia do grupo.
+   * O dono não pode sair (deve excluir).
+   * Notifica automaticamente o dono do grupo sobre a saída do participante.
+   */
+  async leaveHousehold(userId: string, householdId: string) {
+    const membership = await this.prisma.householdMember.findUnique({
+      where: {
+        householdId_userId: {
+          householdId,
+          userId,
+        },
+      },
+      include: {
+        user: true,
+        household: true,
+      },
+    });
+
+    if (!membership) {
+      throw new NotFoundException('Vínculo com o grupo não encontrado.');
+    }
+
+    if (membership.role === 'OWNER') {
+      throw new BadRequestException(
+        'O criador do grupo não pode sair. Se deseja encerrar o grupo, você deve excluí-lo.',
+      );
+    }
+
+    // Localiza o criador/dono do grupo para notificação
+    const ownerMembership = await this.prisma.householdMember.findFirst({
+      where: {
+        householdId,
+        role: 'OWNER',
+      },
+      include: {
+        user: true,
+      },
+    });
+
+    const memberName = membership.user.fullName || membership.user.email;
+    const groupName = membership.household.name;
+
+    await this.prisma.$transaction(async (tx) => {
+      // 1. Remove o membro do grupo
+      await tx.householdMember.delete({
+        where: {
+          householdId_userId: {
+            householdId,
+            userId,
+          },
+        },
+      });
+
+      // 2. Notifica o criador/dono do grupo
+      if (ownerMembership) {
+        await tx.notification.create({
+          data: {
+            userId: ownerMembership.userId,
+            title: 'Membro saiu do grupo',
+            message: `${memberName} saiu do grupo '${groupName}'.`,
+            type: 'HOUSEHOLD_MEMBER_LEFT',
+          },
+        });
+      }
+    });
+
+    return {
+      message: `Você saiu do grupo '${groupName}' com sucesso. O criador foi notificado.`,
+      ownerNotified: !!ownerMembership,
+    };
+  }
 }
 

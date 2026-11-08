@@ -29,6 +29,8 @@ export default function SharedFinancesScreen({ navigation }) {
     createSharedGroup,
     generateNewGroupInviteCode,
     deleteSharedGroup,
+    leaveSharedGroup,
+    isGroupCreator,
     invitePersonToGroup,
     acceptGroupInvitation,
     groupInvitations,
@@ -81,6 +83,10 @@ export default function SharedFinancesScreen({ navigation }) {
   const activeGroup = useMemo(() => {
     return sharedGroups.find((g) => g.id === activeGroupId) || sharedGroups[0] || null;
   }, [sharedGroups, activeGroupId]);
+
+  const isOwner = useMemo(() => {
+    return isGroupCreator ? isGroupCreator(activeGroup) : false;
+  }, [activeGroup, isGroupCreator]);
 
   const groupMembers = useMemo(() => {
     if (activeGroup?.members && activeGroup.members.length > 0) {
@@ -315,24 +321,53 @@ export default function SharedFinancesScreen({ navigation }) {
     }
   };
 
-  // Excluir Grupo
+  // Excluir Grupo (Apenas o Criador/Dono)
   const handleDeleteGroup = (groupId) => {
-    if (sharedGroups.length <= 1) {
-      Alert.alert('Atenção', 'Você precisa manter pelo menos um grupo ativo.');
+    if (!isOwner) {
+      Alert.alert('Atenção', 'Apenas quem criou o grupo tem permissão para excluí-lo.');
       return;
     }
     Alert.alert(
       'Excluir Grupo',
-      `Tem certeza que deseja excluir o grupo "${activeGroup?.name}"? Esta ação removerá o grupo da sua conta.`,
+      `Tem certeza que deseja excluir o grupo "${activeGroup?.name}"?\n\nEsta ação é irreversível. O grupo será excluído e todos os participantes perderão o acesso.`,
       [
         { text: 'Cancelar', style: 'cancel' },
         {
-          text: 'Excluir',
+          text: 'Excluir Grupo',
           style: 'destructive',
           onPress: async () => {
-            if (deleteSharedGroup) {
-              await deleteSharedGroup(groupId);
-              Alert.alert('Sucesso', 'Grupo excluído com sucesso.');
+            try {
+              if (deleteSharedGroup) {
+                await deleteSharedGroup(groupId);
+                Alert.alert('Sucesso', `Grupo "${activeGroup?.name}" excluído com sucesso.`);
+              }
+            } catch (e) {
+              Alert.alert('Erro ao excluir', e.message);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  // Sair do Grupo (Membros saem e o criador é notificado)
+  const handleLeaveGroup = (groupId) => {
+    Alert.alert(
+      'Sair do Grupo',
+      `Tem certeza que deseja sair do grupo "${activeGroup?.name}"?\n\nO criador do grupo será notificado sobre a sua saída.`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Sair do Grupo',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              if (leaveSharedGroup) {
+                const res = await leaveSharedGroup(groupId);
+                Alert.alert('Sucesso', res?.message || 'Você saiu do grupo com sucesso. O criador foi notificado.');
+              }
+            } catch (e) {
+              Alert.alert('Erro ao sair do grupo', e.message);
             }
           },
         },
@@ -732,13 +767,23 @@ export default function SharedFinancesScreen({ navigation }) {
                       <Text style={styles.btnConvidarNovoText}>Convidar membro</Text>
                     </TouchableOpacity>
 
-                    {sharedGroups.length > 1 && (
+                    {isOwner ? (
                       <TouchableOpacity
                         style={styles.btnExcluirGrupo}
                         onPress={() => handleDeleteGroup(activeGroup?.id)}
+                        activeOpacity={0.8}
                       >
                         <Ionicons name="trash-outline" size={16} color="#EF4444" />
-                        <Text style={styles.btnExcluirGrupoText}>Excluir</Text>
+                        <Text style={styles.btnExcluirGrupoText}>Excluir grupo</Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <TouchableOpacity
+                        style={styles.btnSairGrupo}
+                        onPress={() => handleLeaveGroup(activeGroup?.id)}
+                        activeOpacity={0.8}
+                      >
+                        <Ionicons name="log-out-outline" size={16} color="#DC2626" />
+                        <Text style={styles.btnSairGrupoText}>Sair do grupo</Text>
                       </TouchableOpacity>
                     )}
                   </View>
@@ -837,7 +882,9 @@ export default function SharedFinancesScreen({ navigation }) {
                     <View style={{ flex: 1, marginHorizontal: 12 }}>
                       <Text style={styles.memberName}>{m.name}</Text>
                       <Text style={styles.memberRole}>
-                        {m.role === 'ADMIN' ? 'Administrador(a)' : 'Participante'}
+                        {m.isCreator || m.role === 'OWNER' || m.role === 'ADMIN'
+                          ? '👑 Criador(a)'
+                          : 'Participante'}
                       </Text>
                     </View>
                     <View style={styles.memberBadgeActive}>
@@ -2072,6 +2119,23 @@ const styles = StyleSheet.create({
     fontSize: 12.5,
     fontWeight: '700',
     color: '#EF4444',
+  },
+  btnSairGrupo: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    paddingVertical: 10,
+    borderRadius: 12,
+  },
+  btnSairGrupoText: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#DC2626',
   },
   inviteCodeCard: {
     backgroundColor: '#FFFFFF',

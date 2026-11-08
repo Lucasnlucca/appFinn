@@ -29,6 +29,8 @@ import {
   createHouseholdInvitationApi,
   acceptHouseholdInvitationApi,
   generateHouseholdInviteCodeApi,
+  deleteHouseholdApi,
+  leaveHouseholdApi,
 } from '../services/apiService';
 import { getBankTheme } from '../constants/BankThemeRegistry';
 
@@ -883,6 +885,9 @@ export function FinanceProvider({ children }) {
       type: type || 'Outros',
       description: (description || '').trim(),
       createdAt: new Date().toISOString(),
+      creatorId: loggedInUser?.id || 'admin',
+      creatorEmail: (loggedInUser?.email || '').toLowerCase().trim(),
+      creatorName: ownerName,
       inviteCode,
       inviteCodeExpiresAt,
       members: [
@@ -890,7 +895,8 @@ export function FinanceProvider({ children }) {
           id: loggedInUser?.id || 'admin',
           name: ownerName,
           email: loggedInUser?.email || '',
-          role: 'ADMIN',
+          role: 'OWNER',
+          isCreator: true,
         },
       ],
     };
@@ -910,6 +916,33 @@ export function FinanceProvider({ children }) {
     await saveUserItem('shared_groups', nextGroups);
     await saveUserItem('active_group_id', newGroup.id);
     return newGroup;
+  };
+
+  // Verifica se o usuário autenticado é o criador/dono do grupo
+  const isGroupCreator = (group) => {
+    if (!group || !loggedInUser) return false;
+    const myId = loggedInUser.id ? String(loggedInUser.id) : null;
+    const myEmail = loggedInUser.email ? loggedInUser.email.toLowerCase().trim() : null;
+
+    if (group.creatorId && myId && String(group.creatorId) === myId) return true;
+    if (group.creatorEmail && myEmail && group.creatorEmail.toLowerCase().trim() === myEmail) return true;
+
+    // Busca nos membros se possui role 'OWNER' ou isCreator
+    const myMember = (group.members || []).find((m) => {
+      const matchId = myId && m.id && String(m.id) === myId;
+      const matchEmail = myEmail && m.email && m.email.toLowerCase().trim() === myEmail;
+      return matchId || matchEmail;
+    });
+
+    if (myMember?.isCreator || myMember?.role === 'OWNER') return true;
+
+    // Fallback: se o grupo não tem creatorId explícito e o primeiro membro é o usuário logado
+    if (!group.creatorId && group.members && group.members.length > 0) {
+      const first = group.members[0];
+      if ((myId && first.id === myId) || (myEmail && first.email === myEmail)) return true;
+    }
+
+    return false;
   };
 
   // Gerar NOVO código de convite único para o grupo (válido por 30 minutos)
@@ -949,16 +982,89 @@ export function FinanceProvider({ children }) {
     };
   };
 
-  // Excluir Grupo Compartilhado
+  // Excluir Grupo Compartilhado (Apenas o Criador/Dono tem permissão)
   const deleteSharedGroup = async (groupId) => {
+    const targetGroup = sharedGroups.find((g) => g.id === groupId);
+    if (!targetGroup) return;
+
+    if (!isGroupCreator(targetGroup)) {
+      throw new Error('Apenas quem criou o grupo tem permissão para excluí-lo.');
+    }
+
+    try {
+      if (targetGroup.remoteId) {
+        await deleteHouseholdApi(targetGroup.remoteId);
+      }
+    } catch (e) {
+      console.log('Exclusão remota offline:', e.message);
+    }
+
     const updated = sharedGroups.filter((g) => g.id !== groupId);
     setSharedGroups(updated);
     await saveUserItem('shared_groups', updated);
+
     if (activeGroupId === groupId) {
       const nextId = updated[0]?.id || null;
       setActiveGroupIdState(nextId);
       await saveUserItem('active_group_id', nextId);
     }
+
+    return { success: true };
+  };
+
+  // Sair do Grupo Compartilhado (Participantes saem e o criador é notificado)
+  const leaveSharedGroup = async (groupId) => {
+    const targetGroup = sharedGroups.find((g) => g.id === groupId);
+    if (!targetGroup) return;
+
+    if (isGroupCreator(targetGroup)) {
+      throw new Error(
+        'O criador do grupo não pode sair. Se deseja encerrar o grupo, você deve excluí-lo.',
+      );
+    }
+
+    const myName = loggedInUser?.fullName || loggedInUser?.name || 'Um participante';
+    const myId = loggedInUser?.id ? String(loggedInUser.id) : null;
+    const myEmail = loggedInUser?.email ? loggedInUser.email.toLowerCase().trim() : null;
+
+    // 1. Notifica via API backend se houver vínculo remoto
+    try {
+      if (targetGroup.remoteId) {
+        await leaveHouseholdApi(targetGroup.remoteId);
+      }
+    } catch (e) {
+      console.log('Saída de grupo remota offline:', e.message);
+    }
+
+    // 2. Registra notificação persistida para o criador do grupo
+    const exitNotification = {
+      id: 'notif-' + Date.now(),
+      groupId: targetGroup.id,
+      groupName: targetGroup.name,
+      title: 'Membro saiu do grupo',
+      message: `${myName} saiu do grupo '${targetGroup.name}'.`,
+      date: new Date().toISOString(),
+      read: false,
+    };
+
+    const existingNotifs = (await getUserItem('owner_notifications')) || [];
+    await saveUserItem('owner_notifications', [exitNotification, ...existingNotifs]);
+
+    // 3. Remove o usuário da lista de membros e remove o grupo das finanças deste usuário
+    const updated = sharedGroups.filter((g) => g.id !== groupId);
+    setSharedGroups(updated);
+    await saveUserItem('shared_groups', updated);
+
+    if (activeGroupId === groupId) {
+      const nextId = updated[0]?.id || null;
+      setActiveGroupIdState(nextId);
+      await saveUserItem('active_group_id', nextId);
+    }
+
+    return {
+      success: true,
+      message: `Você saiu do grupo '${targetGroup.name}' com sucesso. O criador foi notificado.`,
+    };
   };
 
   // Convidar Pessoa para o Grupo Compartilhado
@@ -1597,6 +1703,8 @@ Responda de forma clara, motivadora e estruturada em tópicos!`;
         createSharedGroup,
         generateNewGroupInviteCode,
         deleteSharedGroup,
+        leaveSharedGroup,
+        isGroupCreator,
         invitePersonToGroup,
         acceptGroupInvitation,
         addSharedExpense,
