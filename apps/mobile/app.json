@@ -9,6 +9,11 @@
     "userInterfaceStyle": "light",
     "primaryColor": "#7C3AED",
     "backgroundColor": "#F8FAFC",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#F8FAFC"
+    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.finnai.app",
@@ -20,6 +25,7 @@
     "android": {
       "package": "com.finnai.app",
       "versionCode": 1,
+      "allowBackup": false,
       "adaptiveIcon": {
         "backgroundColor": "#0B0F19",
         "foregroundImage": "./assets/android-icon-foreground.png"
