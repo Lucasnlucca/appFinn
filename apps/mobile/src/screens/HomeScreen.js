@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   StatusBar,
   Dimensions,
+  useWindowDimensions,
   Modal,
   TextInput,
   Alert,
@@ -36,6 +37,8 @@ const { width } = Dimensions.get('window');
 
 export default function HomeScreen({ navigation }) {
   const insets = useSafeAreaInsets();
+  const { width: windowWidth } = useWindowDimensions();
+  const isTablet = (windowWidth || width) >= 768;
   const [fontsLoaded] = useFonts({
     Audiowide: require('../../assets/fonts/Audiowide-Regular.ttf'),
   });
@@ -429,52 +432,106 @@ export default function HomeScreen({ navigation }) {
         </View>
 
         {/* SELETOR DE MODO DE VISUALIZAÇÃO: Minhas | Compartilhadas | Consolidada */}
-        <View style={styles.viewModeContainer}>
-          <View style={styles.viewModePillGroup}>
-            {[
-              { id: 'personal', label: 'Minhas' },
-              { id: 'shared', label: 'Compartilhadas' },
-              { id: 'consolidated', label: 'Consolidada' },
-            ].map((tab) => {
-              const active = (viewMode || 'personal') === tab.id;
-              return (
+        {isTablet ? (
+          <View style={styles.viewModeContainer}>
+            <View style={styles.viewModePillGroup}>
+              {[
+                { id: 'personal', label: 'Minhas' },
+                { id: 'shared', label: 'Compartilhadas' },
+                { id: 'consolidated', label: 'Consolidada' },
+              ].map((tab) => {
+                const active = (viewMode || 'personal') === tab.id;
+                return (
+                  <TouchableOpacity
+                    key={tab.id}
+                    style={[styles.viewModePill, active && styles.viewModePillActive]}
+                    onPress={() => setViewMode && setViewMode(tab.id)}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[styles.viewModePillText, active && styles.viewModePillTextActive]}>
+                      {tab.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            {viewMode === 'shared' && (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                 <TouchableOpacity
-                  key={tab.id}
-                  style={[styles.viewModePill, active && styles.viewModePillActive]}
-                  onPress={() => setViewMode && setViewMode(tab.id)}
+                  style={styles.openDivideBtn}
+                  onPress={() => navigation.navigate('SharedFinances', { initialTab: 'divisao' })}
                   activeOpacity={0.8}
                 >
-                  <Text style={[styles.viewModePillText, active && styles.viewModePillTextActive]}>
-                    {tab.label}
-                  </Text>
+                  <Ionicons name="pie-chart-outline" size={13} color="#7C3AED" />
+                  <Text style={styles.openDivideBtnText}>Dividir Conta</Text>
                 </TouchableOpacity>
-              );
-            })}
+
+                <TouchableOpacity
+                  style={styles.openSharedBtn}
+                  onPress={() => navigation.navigate('SharedFinances')}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="people" size={13} color="#7C3AED" />
+                  <Text style={styles.openSharedBtnText}>Ver Grupo</Text>
+                  <Ionicons name="chevron-forward" size={12} color="#7C3AED" />
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
-
-          {viewMode === 'shared' && (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <TouchableOpacity
-                style={styles.openDivideBtn}
-                onPress={() => navigation.navigate('SharedFinances', { initialTab: 'divisao' })}
-                activeOpacity={0.8}
-              >
-                <Ionicons name="pie-chart-outline" size={13} color="#7C3AED" />
-                <Text style={styles.openDivideBtnText}>Dividir Conta</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.openSharedBtn}
-                onPress={() => navigation.navigate('SharedFinances')}
-                activeOpacity={0.8}
-              >
-                <Ionicons name="people" size={13} color="#7C3AED" />
-                <Text style={styles.openSharedBtnText}>Ver Grupo</Text>
-                <Ionicons name="chevron-forward" size={12} color="#7C3AED" />
-              </TouchableOpacity>
+        ) : (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.viewModeScrollWrap}
+            contentContainerStyle={styles.viewModeScrollContainer}
+          >
+            <View style={styles.viewModePillGroup}>
+              {[
+                { id: 'personal', label: 'Minhas' },
+                { id: 'shared', label: 'Compartilhadas' },
+                { id: 'consolidated', label: 'Consolidada' },
+              ].map((tab) => {
+                const active = (viewMode || 'personal') === tab.id;
+                return (
+                  <TouchableOpacity
+                    key={tab.id}
+                    style={[styles.viewModePill, active && styles.viewModePillActive]}
+                    onPress={() => setViewMode && setViewMode(tab.id)}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[styles.viewModePillText, active && styles.viewModePillTextActive]}>
+                      {tab.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
-          )}
-        </View>
+
+            {viewMode === 'shared' && (
+              <View style={styles.viewModeSharedActionsRow}>
+                <TouchableOpacity
+                  style={styles.openDivideBtn}
+                  onPress={() => navigation.navigate('SharedFinances', { initialTab: 'divisao' })}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="pie-chart-outline" size={13} color="#7C3AED" />
+                  <Text style={styles.openDivideBtnText}>Dividir Conta</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.openSharedBtn}
+                  onPress={() => navigation.navigate('SharedFinances')}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="people" size={13} color="#7C3AED" />
+                  <Text style={styles.openSharedBtnText}>Ver Grupo</Text>
+                  <Ionicons name="chevron-forward" size={12} color="#7C3AED" />
+                </TouchableOpacity>
+              </View>
+            )}
+          </ScrollView>
+        )}
 
         {/* CARD HERO ROBÔ COM VÍDEO NATIVO E SALDO */}
         <View style={styles.heroCardContainer}>
@@ -1996,6 +2053,21 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+  },
+  viewModeScrollWrap: {
+    marginHorizontal: -16,
+    marginBottom: 4,
+  },
+  viewModeScrollContainer: {
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  viewModeSharedActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   viewModePillGroup: {
     flexDirection: 'row',
