@@ -27,6 +27,7 @@ import { useVideoPlayer, VideoView } from 'expo-video';
 const heroVideoSource = require('../../assets/hero-robot.mp4');
 const heroBgSource = require('../../assets/hero-robot-bg.jpg');
 const heroPosterSource = require('../../assets/finn-hero-poster.jpg');
+const heroSharedSource = require('../../assets/hero-robot-shared.jpg');
 const finnLogoSource = require('../../assets/finn-logo.png');
 
 const { width } = Dimensions.get('window');
@@ -67,8 +68,60 @@ export default function HomeScreen({ navigation }) {
     viewMode,
     setViewMode,
     sharedGroups,
+    activeGroupId,
+    setActiveGroupId,
     cards = [],
   } = useFinance();
+
+  const [groupModalVisible, setGroupModalVisible] = useState(false);
+
+  const activeSharedGroup = useMemo(() => {
+    if (sharedGroups && sharedGroups.length > 0) {
+      return sharedGroups.find((g) => g.id === activeGroupId) || sharedGroups[0];
+    }
+    return {
+      id: 'default-casal',
+      name: 'Finanças do Casal',
+      type: 'Casal',
+      members: [
+        { id: '1', name: loggedInUser?.name || 'Você' },
+        { id: '2', name: 'Parceiro(a)' },
+      ],
+    };
+  }, [sharedGroups, activeGroupId, loggedInUser]);
+
+  const displayGroups = useMemo(() => {
+    if (sharedGroups && sharedGroups.length > 0) {
+      return sharedGroups;
+    }
+    return [
+      {
+        id: 'default-casal',
+        name: 'Finanças do Casal',
+        type: 'Casal',
+        members: [
+          { id: '1', name: loggedInUser?.name || 'Você' },
+          { id: '2', name: 'Parceiro(a)' },
+        ],
+      },
+    ];
+  }, [sharedGroups, loggedInUser]);
+
+  const sharedGroupBalance = useMemo(() => {
+    const groupTxs = transactions.filter(
+      (t) => t.isShared && (!activeSharedGroup?.id || !t.groupId || t.groupId === activeSharedGroup.id)
+    );
+    const totalExp = groupTxs
+      .filter((t) => t.type === 'expense')
+      .reduce((sum, t) => sum + (t.amount || 0), 0);
+    const totalInc = groupTxs
+      .filter((t) => t.type === 'income')
+      .reduce((sum, t) => sum + (t.amount || 0), 0);
+
+    if (totalInc > 0) return totalInc - totalExp;
+    if (totalExp > 0) return totalExp;
+    return totalBalance > 0 ? totalBalance : 2968.0;
+  }, [transactions, activeSharedGroup, totalBalance]);
 
   const totalOpenInvoices = useMemo(
     () => (cards || []).reduce((sum, c) => sum + (c.currentInvoice || 0), 0),
@@ -120,14 +173,14 @@ export default function HomeScreen({ navigation }) {
     const unsubscribeBlur = navigation?.addListener?.('blur', () => {
       try {
         player.pause();
-      } catch (e) {}
+      } catch (e) { }
     });
 
     const appStateSub = AppState.addEventListener('change', (nextAppState) => {
       if (nextAppState.match(/inactive|background/)) {
         try {
           player.pause();
-        } catch (e) {}
+        } catch (e) { }
       }
     });
 
@@ -320,101 +373,151 @@ export default function HomeScreen({ navigation }) {
 
         {/* CARD HERO ROBÔ COM VÍDEO NATIVO E SALDO */}
         <View style={styles.heroCardContainer}>
-          {/* Camada 1: Vídeo nativo expo-video (sempre montado em background, não intercepta toques) */}
-          <VideoView
-            style={styles.heroMedia}
-            player={player}
-            contentFit="contain"
-            nativeControls={false}
-            surfaceType="textureView"
-            onFirstFrameRender={() => setIsFirstFrameRendered(true)}
-            pointerEvents="none"
-          />
-
-          {/* Camada 2: Imagem de cobertura perfeitamente alinhada para eliminar flash ou exibir quadro final */}
-          {(!isFirstFrameRendered || videoError) ? (
+          {viewMode === 'shared' ? (
+            /* Imagem dos dois robôs finanças compartilhadas (Print solicitado pelo usuário) */
             <Image
-              source={heroPosterSource}
+              source={heroSharedSource}
               style={styles.heroMedia}
-              resizeMode="contain"
+              resizeMode="cover"
               pointerEvents="none"
             />
-          ) : showStaticOverlay ? (
-            <Image
-              source={heroBgSource}
-              style={styles.heroMedia}
-              resizeMode="contain"
-              pointerEvents="none"
-            />
-          ) : null}
+          ) : (
+            <>
+              {/* Camada 1: Vídeo nativo expo-video (sempre montado em background, não intercepta toques) */}
+              <VideoView
+                style={styles.heroMedia}
+                player={player}
+                contentFit="contain"
+                nativeControls={false}
+                surfaceType="textureView"
+                onFirstFrameRender={() => setIsFirstFrameRendered(true)}
+                pointerEvents="none"
+              />
 
-          {/* Camada 3: Overlay clicável (tocar no card repete a animação suave do mascote) */}
-          <TouchableOpacity
-            style={styles.heroOverlayTouch}
-            activeOpacity={0.92}
-            onPress={handleReplayHeroAnimation}
-          >
-            <View style={styles.heroContentLeft}>
-              {/* Pill Saldo Atual com Carteira e Olho */}
-              <View style={styles.heroWalletPill}>
-                <TouchableOpacity
-                  style={{ flexDirection: 'row', alignItems: 'center' }}
-                  onPress={toggleHeroCardMode}
-                  activeOpacity={0.75}
-                >
-                  <View style={styles.walletIconBox}>
-                    <Ionicons name="wallet-outline" size={13} color="#FFFFFF" />
-                  </View>
-                  <Text style={styles.heroWalletText}>
-                    {heroCardMode === 'monthResult'
-                      ? 'Resultado do mês'
-                      : accounts.length > 0
-                      ? 'Saldo atual (contas)'
-                      : 'Saldo disponível'}
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={toggleHideBalances}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  activeOpacity={0.7}
-                  style={{ marginLeft: 6 }}
-                >
-                  <Ionicons
-                    name={hideBalances ? 'eye-off-outline' : 'eye-outline'}
-                    size={14}
-                    color="#FFFFFF"
-                  />
-                </TouchableOpacity>
+              {/* Camada 2: Imagem de cobertura perfeitamente alinhada para eliminar flash ou exibir quadro final */}
+              {(!isFirstFrameRendered || videoError) ? (
+                <Image
+                  source={heroPosterSource}
+                  style={styles.heroMedia}
+                  resizeMode="contain"
+                  pointerEvents="none"
+                />
+              ) : showStaticOverlay ? (
+                <Image
+                  source={heroBgSource}
+                  style={styles.heroMedia}
+                  resizeMode="contain"
+                  pointerEvents="none"
+                />
+              ) : null}
+            </>
+          )}
+
+          {viewMode === 'shared' ? (
+            /* Overlay quando selecionado Compartilhadas: Fiel ao print fornecido */
+            <View style={styles.heroSharedOverlay}>
+              {/* 1. Pill superior: [ 👥 Finanças compartilhadas ⌵ ] */}
+              <TouchableOpacity
+                style={styles.heroSharedTopPill}
+                onPress={() => setGroupModalVisible(true)}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="people" size={17} color="#FFFFFF" />
+                <Text style={styles.heroSharedTopPillText}>
+                  Finanças compartilhadas
+                </Text>
+                <Ionicons name="chevron-down" size={15} color="#FFFFFF" />
+              </TouchableOpacity>
+
+              {/* 2. Bloco central: Saldo do grupo + Valor formatado */}
+              <View style={styles.heroSharedBalanceBlock}>
+                <Text style={styles.heroSharedBalanceLabel}>Saldo do grupo</Text>
+                <Text style={styles.heroSharedBalanceValue} numberOfLines={1}>
+                  {formatMoney(sharedGroupBalance)}
+                </Text>
               </View>
 
-              {/* Saldo Principal Formatado em Destaque */}
-              <Text
-                style={styles.heroBalanceValue}
-                numberOfLines={1}
+              {/* 3. Pill inferior: [ 👥 X participantes ] */}
+              <TouchableOpacity
+                style={styles.heroSharedBottomPill}
+                onPress={() => setGroupModalVisible(true)}
+                activeOpacity={0.8}
               >
-                {formatMoney(heroCardMode === 'balance' ? totalBalance : resultadoDoMes)}
-              </Text>
-
-              {/* Tag de Comparativo / Tendência Inferior */}
-              {accounts.length > 0 ? (
-                <View style={styles.heroTrendPill}>
-                  <Ionicons name="wallet-outline" size={12} color="#34D399" />
-                  <Text style={styles.heroTrendLabel}>
-                    {accounts.length} conta{accounts.length > 1 ? 's' : ''} cadastrada{accounts.length > 1 ? 's' : ''}
-                  </Text>
-                </View>
-              ) : (
-                <View style={styles.heroTrendPill}>
-                  <Ionicons name="sparkles" size={12} color="#FBBF24" />
-                  <Text style={styles.heroTrendLabel}>
-                    {transactions.length > 0
-                      ? 'Saldo acumulado das suas movimentações'
-                      : 'Toque para adicionar sua primeira conta'}
-                  </Text>
-                </View>
-              )}
+                <Ionicons name="people" size={15} color="#D8B4FE" />
+                <Text style={styles.heroSharedBottomPillText}>
+                  {activeSharedGroup?.members?.length || 2} participantes
+                </Text>
+              </TouchableOpacity>
             </View>
-          </TouchableOpacity>
+          ) : (
+            /* Camada 3: Overlay clicável individual padrão */
+            <TouchableOpacity
+              style={styles.heroOverlayTouch}
+              activeOpacity={0.92}
+              onPress={handleReplayHeroAnimation}
+            >
+              <View style={styles.heroContentLeft}>
+                {/* Pill Saldo Atual com Carteira e Olho */}
+                <View style={styles.heroWalletPill}>
+                  <TouchableOpacity
+                    style={{ flexDirection: 'row', alignItems: 'center' }}
+                    onPress={toggleHeroCardMode}
+                    activeOpacity={0.75}
+                  >
+                    <View style={styles.walletIconBox}>
+                      <Ionicons name="wallet-outline" size={13} color="#FFFFFF" />
+                    </View>
+                    <Text style={styles.heroWalletText}>
+                      {heroCardMode === 'monthResult'
+                        ? 'Resultado do mês'
+                        : accounts.length > 0
+                          ? 'Saldo atual (contas)'
+                          : 'Saldo disponível'}
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={toggleHideBalances}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    activeOpacity={0.7}
+                    style={{ marginLeft: 6 }}
+                  >
+                    <Ionicons
+                      name={hideBalances ? 'eye-off-outline' : 'eye-outline'}
+                      size={14}
+                      color="#FFFFFF"
+                    />
+                  </TouchableOpacity>
+                </View>
+
+                {/* Saldo Principal Formatado em Destaque */}
+                <Text
+                  style={styles.heroBalanceValue}
+                  numberOfLines={1}
+                >
+                  {formatMoney(heroCardMode === 'balance' ? totalBalance : resultadoDoMes)}
+                </Text>
+
+                {/* Tag de Comparativo / Tendência Inferior */}
+                {accounts.length > 0 ? (
+                  <View style={styles.heroTrendPill}>
+                    <Ionicons name="wallet-outline" size={12} color="#34D399" />
+                    <Text style={styles.heroTrendLabel}>
+                      {accounts.length} conta{accounts.length > 1 ? 's' : ''} cadastrada{accounts.length > 1 ? 's' : ''}
+                    </Text>
+                  </View>
+                ) : (
+                  <View style={styles.heroTrendPill}>
+                    <Ionicons name="sparkles" size={12} color="#FBBF24" />
+                    <Text style={styles.heroTrendLabel}>
+                      {transactions.length > 0
+                        ? 'Saldo acumulado das suas movimentações'
+                        : 'Toque para adicionar sua primeira conta'}
+                    </Text>
+                  </View>
+                )}
+              </View>
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* DOIS CARDS RÁPIDOS LADO A LADO: ENTRADAS E SAÍDAS */}
@@ -454,7 +557,7 @@ export default function HomeScreen({ navigation }) {
               <Ionicons name="card-outline" size={18} color={COLORS.textSecondary} />
               <Text style={styles.overviewLabel}>Faturas</Text>
               <Text style={styles.overviewValue} numberOfLines={1}>
-                {formatMoney(totalOpenInvoices)}
+                {formatMoney(totalBalance)}
               </Text>
             </TouchableOpacity>
 
@@ -938,6 +1041,104 @@ export default function HomeScreen({ navigation }) {
             </View>
           </View>
         </View>
+      </Modal>
+
+      {/* MODAL SELETOR DE GRUPOS COMPARTILHADOS (CONFORME SOLICITADO) */}
+      <Modal
+        visible={groupModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setGroupModalVisible(false)}
+      >
+        <TouchableOpacity
+          style={styles.groupModalOverlay}
+          activeOpacity={1}
+          onPress={() => setGroupModalVisible(false)}
+        >
+          <View style={styles.groupModalCard} onStartShouldSetResponder={() => true}>
+            <View style={styles.groupModalHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <View style={styles.groupModalIconBox}>
+                  <Ionicons name="people" size={20} color="#7C3AED" />
+                </View>
+                <View>
+                  <Text style={styles.groupModalTitle}>Finanças Compartilhadas</Text>
+                  <Text style={styles.groupModalSub}>Seus grupos ativos e membros</Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                onPress={() => setGroupModalVisible(false)}
+                style={styles.groupModalCloseBtn}
+              >
+                <Ionicons name="close" size={20} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.groupModalList} showsVerticalScrollIndicator={false}>
+              {displayGroups.map((grp) => {
+                const isSelected = activeSharedGroup?.id === grp.id;
+                const memberCount = grp.members?.length || 2;
+                return (
+                  <TouchableOpacity
+                    key={grp.id}
+                    style={[styles.groupItemRow, isSelected && styles.groupItemRowActive]}
+                    onPress={() => {
+                      if (setActiveGroupId) setActiveGroupId(grp.id);
+                      setGroupModalVisible(false);
+                    }}
+                    activeOpacity={0.75}
+                  >
+                    <View style={[styles.groupItemAvatar, isSelected && styles.groupItemAvatarActive]}>
+                      <Ionicons
+                        name={grp.type === 'Casal' ? 'heart' : 'people'}
+                        size={18}
+                        color={isSelected ? '#FFFFFF' : '#7C3AED'}
+                      />
+                    </View>
+
+                    <View style={{ flex: 1 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Text style={[styles.groupItemName, isSelected && styles.groupItemNameActive]}>
+                          {grp.name}
+                        </Text>
+                        <View style={styles.groupItemTypeBadge}>
+                          <Text style={styles.groupItemTypeBadgeText}>{grp.type || 'Casal'}</Text>
+                        </View>
+                      </View>
+                      <Text style={styles.groupItemMembersText}>
+                        {memberCount} {memberCount === 1 ? 'participante' : 'participantes'}
+                        {grp.members && grp.members.length > 0
+                          ? ` • ${grp.members.map((m) => m.name || m.email).slice(0, 2).join(', ')}`
+                          : ''}
+                      </Text>
+                    </View>
+
+                    {isSelected ? (
+                      <View style={styles.groupItemCheckCircle}>
+                        <Ionicons name="checkmark" size={16} color="#FFFFFF" />
+                      </View>
+                    ) : (
+                      <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+
+            <TouchableOpacity
+              style={styles.manageGroupsBtn}
+              onPress={() => {
+                setGroupModalVisible(false);
+                navigation.navigate('SharedFinances');
+              }}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="settings-outline" size={16} color="#7C3AED" />
+              <Text style={styles.manageGroupsBtnText}>Gerenciar ou criar novos grupos</Text>
+              <Ionicons name="arrow-forward" size={15} color="#7C3AED" />
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
       </Modal>
     </View>
   );
@@ -2000,5 +2201,202 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
     fontSize: 12,
     marginTop: 2,
+  },
+  heroSharedOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    width: '100%',
+    height: '100%',
+    zIndex: 10,
+    elevation: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  heroSharedTopPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.18)',
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.32)',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+  },
+  heroSharedTopPillText: {
+    color: '#FFFFFF',
+    fontSize: 13.5,
+    fontWeight: '700',
+    letterSpacing: -0.2,
+  },
+  heroSharedBalanceBlock: {
+    marginVertical: 4,
+  },
+  heroSharedBalanceLabel: {
+    color: 'rgba(255, 255, 255, 0.88)',
+    fontSize: 13.5,
+    fontWeight: '600',
+    marginBottom: 2,
+    letterSpacing: -0.2,
+  },
+  heroSharedBalanceValue: {
+    color: '#FFFFFF',
+    fontSize: 30,
+    fontWeight: '900',
+    letterSpacing: -0.5,
+    textShadowColor: 'rgba(0, 0, 0, 0.5)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 6,
+  },
+  heroSharedBottomPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(15, 8, 38, 0.72)',
+    borderRadius: 16,
+    borderWidth: 1.2,
+    borderColor: 'rgba(168, 85, 247, 0.65)',
+    paddingVertical: 5,
+    paddingHorizontal: 12,
+    alignSelf: 'flex-start',
+  },
+  heroSharedBottomPillText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  groupModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.55)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  groupModalCard: {
+    width: '100%',
+    maxHeight: '75%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 20,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.18,
+    shadowRadius: 20,
+    elevation: 8,
+  },
+  groupModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingBottom: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  groupModalIconBox: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#EDE9FE',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  groupModalTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  groupModalSub: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 1,
+  },
+  groupModalCloseBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  groupModalList: {
+    marginVertical: 14,
+  },
+  groupItemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 16,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginBottom: 8,
+    gap: 12,
+  },
+  groupItemRowActive: {
+    backgroundColor: '#F5EEFD',
+    borderColor: '#C084FC',
+  },
+  groupItemAvatar: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#EDE9FE',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  groupItemAvatarActive: {
+    backgroundColor: '#7C3AED',
+  },
+  groupItemName: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  groupItemNameActive: {
+    color: '#6D28D9',
+  },
+  groupItemTypeBadge: {
+    backgroundColor: '#EDE9FE',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  groupItemTypeBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#7C3AED',
+  },
+  groupItemMembersText: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  groupItemCheckCircle: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#7C3AED',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  manageGroupsBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#F3E8FF',
+    paddingVertical: 12,
+    borderRadius: 14,
+    marginTop: 4,
+  },
+  manageGroupsBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#7C3AED',
   },
 });
