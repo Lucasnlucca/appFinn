@@ -485,3 +485,11 @@ export async function acceptHouseholdInvitationApi(token) {
   });
 }
 
+export async function generateHouseholdInviteCodeApi(householdId) {
+  await ensureAuthenticated();
+  return apiRequest('households/invite-code', {
+    method: 'POST',
+    body: { householdId },
+  });
+}
+

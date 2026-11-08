@@ -86,10 +86,10 @@ export default function PlanningScreen({ navigation }) {
       return 'Cadastre suas primeiras movimentações para que o FINN AI descubra padrões de economia e dicas personalizadas para você!';
     }
     if (totalExpense === 0) {
-      return `Você economizou 100% da sua renda este mês (${formatMoney(resultadoDoMes)} de saldo positivo).\nContinue assim! 🚀`;
+      return `Você economizou 100% da sua renda este mês (${formatMoney(resultadoDoMes)} de saldo positivo). Continue assim! 🚀`;
     }
     if (totalIncome > totalExpense) {
-      return `Você economizou ${economizadoPercent}% da sua renda este mês (${formatMoney(resultadoDoMes)} de saldo positivo).\nContinue assim! 🚀`;
+      return `Você economizou ${economizadoPercent}% da sua renda este mês (${formatMoney(resultadoDoMes)} de saldo positivo). Continue assim! 🚀`;
     }
     return `Atenção: suas saídas no mês (${formatMoney(totalExpense)}) superaram as entradas (${formatMoney(totalIncome)}).`;
   }, [transactions, totalExpense, totalIncome, economizadoPercent, resultadoDoMes]);
@@ -351,7 +351,12 @@ export default function PlanningScreen({ navigation }) {
               onPress={() => navigation?.navigate('FinnAI')}
               style={styles.aiInsightCardWrapper}
             >
-              <View style={styles.aiInsightCard}>
+              <LinearGradient
+                colors={['#FAF7FD', '#F5EBFC', '#F0E2FB']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.aiInsightCard}
+              >
                 {/* Efeito decorativo de curva/onda suave lilás ao fundo à direita */}
                 <View style={styles.aiInsightWaveBlob1} pointerEvents="none" />
                 <View style={styles.aiInsightWaveBlob2} pointerEvents="none" />
@@ -359,7 +364,7 @@ export default function PlanningScreen({ navigation }) {
                 {/* Conteúdo principal à esquerda */}
                 <View style={styles.aiInsightContentCol}>
                   <View style={styles.aiInsightHeader}>
-                    <Ionicons name="sparkles" size={20} color="#7C3AED" />
+                    <Ionicons name="sparkles" size={22} color="#7C3AED" />
                     <Text style={styles.aiInsightTitle}>Insight da IA</Text>
                   </View>
 
@@ -376,10 +381,10 @@ export default function PlanningScreen({ navigation }) {
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
                   >
-                    <Ionicons name="arrow-forward" size={22} color="#FFFFFF" />
+                    <Ionicons name="arrow-forward" size={24} color="#FFFFFF" />
                   </LinearGradient>
                 </View>
-              </View>
+              </LinearGradient>
             </TouchableOpacity>
           </>
         )}
@@ -1060,10 +1065,9 @@ const styles = StyleSheet.create({
   },
   aiInsightCard: {
     position: 'relative',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 24,
+    borderRadius: 26,
     borderWidth: 1.5,
-    borderColor: '#E9D5FF',
+    borderColor: '#E8D5F5',
     paddingHorizontal: 22,
     paddingTop: 20,
     paddingBottom: 22,
@@ -1071,29 +1075,29 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    shadowColor: '#7C3AED',
+    shadowColor: '#8B5CF6',
     shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.08,
-    shadowRadius: 16,
-    elevation: 3,
+    shadowOpacity: 0.12,
+    shadowRadius: 18,
+    elevation: 4,
   },
   aiInsightWaveBlob1: {
     position: 'absolute',
-    right: -25,
-    bottom: -35,
-    width: 175,
-    height: 185,
-    borderRadius: 90,
-    backgroundColor: '#F3E8FF',
+    right: -30,
+    top: -20,
+    bottom: -20,
+    width: 160,
+    borderRadius: 100,
+    backgroundColor: 'rgba(216, 180, 254, 0.4)',
   },
   aiInsightWaveBlob2: {
     position: 'absolute',
-    right: 25,
-    bottom: -55,
-    width: 120,
-    height: 130,
-    borderRadius: 65,
-    backgroundColor: '#FAF5FF',
+    right: -10,
+    top: -5,
+    bottom: -5,
+    width: 125,
+    borderRadius: 80,
+    backgroundColor: 'rgba(233, 213, 255, 0.45)',
   },
   aiInsightContentCol: {
     flex: 1,
@@ -1106,27 +1110,27 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   aiInsightTitle: {
-    fontSize: 18,
+    fontSize: 19,
     fontWeight: '800',
-    color: '#0F172A',
+    color: '#1E1B4B',
     letterSpacing: -0.3,
   },
   aiInsightText: {
-    fontSize: 14.5,
+    fontSize: 15,
     fontWeight: '600',
-    color: '#27272A',
+    color: '#334155',
     lineHeight: 22,
     letterSpacing: -0.2,
   },
   aiInsightArrowWrap: {
-    marginLeft: 4,
+    marginLeft: 6,
     alignItems: 'center',
     justifyContent: 'center',
   },
   aiInsightArrowBtn: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 50,
+    height: 50,
+    borderRadius: 25,
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#7C3AED',

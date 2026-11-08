@@ -216,6 +216,59 @@ export class HouseholdsService {
   }
 
   /**
+   * Gera um código único de 6 caracteres para o grupo, validado rigorosamente por 30 minutos.
+   */
+  async generateGroupInviteCode(userId: string, householdId?: string) {
+    let targetHouseholdId = householdId;
+    if (!targetHouseholdId) {
+      const membership = await this.prisma.householdMember.findFirst({
+        where: { userId },
+        orderBy: { joinedAt: 'desc' },
+      });
+      if (!membership) {
+        throw new BadRequestException('Usuário não pertence a nenhum grupo');
+      }
+      targetHouseholdId = membership.householdId;
+    }
+
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let code = '';
+    for (let i = 0; i < 6; i++) {
+      code += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+
+    const tokenHash = crypto.createHash('sha256').update(code).digest('hex');
+    const expiresAt = new Date(Date.now() + 30 * 60 * 1000); // 30 minutos!
+
+    await this.prisma.householdInvitation.updateMany({
+      where: {
+        householdId: targetHouseholdId,
+        email: { startsWith: 'code-' },
+        status: 'PENDING',
+      },
+      data: { status: 'REVOKED' },
+    });
+
+    await this.prisma.householdInvitation.create({
+      data: {
+        householdId: targetHouseholdId,
+        invitedById: userId,
+        email: `code-${code}@finn.local`,
+        role: 'MEMBER',
+        tokenHash,
+        expiresAt,
+      },
+    });
+
+    return {
+      code,
+      expiresAt: expiresAt.toISOString(),
+      expiresInMinutes: 30,
+      householdId: targetHouseholdId,
+    };
+  }
+
+  /**
    * Aceita um convite com o token seguro.
    */
   async acceptInvitation(userId: string, token: string) {
@@ -224,8 +277,12 @@ export class HouseholdsService {
       where: { tokenHash },
     });
 
-    if (!invitation || invitation.status !== 'PENDING' || invitation.expiresAt < new Date()) {
-      throw new BadRequestException('Convite inválido ou expirado');
+    if (!invitation || invitation.status !== 'PENDING') {
+      throw new BadRequestException('Convite inválido ou revogado');
+    }
+
+    if (invitation.expiresAt < new Date()) {
+      throw new BadRequestException('Este convite/código expirou (validade de 30 minutos). Solicite um novo código ao criador do grupo.');
     }
 
     const existingMembership = await this.prisma.householdMember.findUnique({

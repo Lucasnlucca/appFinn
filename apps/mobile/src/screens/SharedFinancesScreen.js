@@ -26,6 +26,7 @@ export default function SharedFinancesScreen({ navigation }) {
     activeGroupId,
     setActiveGroupId,
     createSharedGroup,
+    generateNewGroupInviteCode,
     deleteSharedGroup,
     invitePersonToGroup,
     acceptGroupInvitation,
@@ -134,6 +135,27 @@ export default function SharedFinancesScreen({ navigation }) {
     };
   }, [sharedTxs, settlements, groupMembers]);
 
+  // Status de validade do código de convite de 30 minutos
+  const inviteCodeStatus = useMemo(() => {
+    if (!activeGroup?.inviteCode) {
+      return { hasCode: false, isExpired: true, minutesLeft: 0, text: 'Sem código gerado' };
+    }
+    if (!activeGroup.inviteCodeExpiresAt) {
+      return { hasCode: true, isExpired: false, minutesLeft: 30, text: 'Válido por 30 min' };
+    }
+    const diffMs = new Date(activeGroup.inviteCodeExpiresAt).getTime() - Date.now();
+    const minutesLeft = Math.max(0, Math.ceil(diffMs / (60 * 1000)));
+    if (minutesLeft <= 0) {
+      return { hasCode: true, isExpired: true, minutesLeft: 0, text: 'Código expirado' };
+    }
+    return {
+      hasCode: true,
+      isExpired: false,
+      minutesLeft,
+      text: `Válido por mais ${minutesLeft} min`,
+    };
+  }, [activeGroup?.inviteCode, activeGroup?.inviteCodeExpiresAt]);
+
   const formatMoney = (val) => {
     return (
       'R$ ' +
@@ -144,14 +166,14 @@ export default function SharedFinancesScreen({ navigation }) {
     );
   };
 
-  // 1. Criar Grupo
+  // 1. Criar Grupo (Gera código único válido por 30 minutos)
   const handleCreateGroup = async () => {
     if (!newGroupName.trim()) {
       Alert.alert('Atenção', 'Informe o nome do grupo.');
       return;
     }
     try {
-      await createSharedGroup({
+      const created = await createSharedGroup({
         name: newGroupName.trim(),
         type: newGroupType,
         description: newGroupDesc.trim(),
@@ -159,9 +181,51 @@ export default function SharedFinancesScreen({ navigation }) {
       setModalNewGroup(false);
       setNewGroupName('');
       setNewGroupDesc('');
-      Alert.alert('Sucesso', 'Grupo de finanças compartilhado criado com sucesso!');
+
+      Alert.alert(
+        'Grupo Criado com Sucesso! 🎉',
+        `Nome: ${created.name}\nCódigo de Convite: ${created.inviteCode}\n\nEste código é único e válido por 30 minutos para você enviar aos outros participantes.`,
+        [
+          { text: 'Concluir' },
+          {
+            text: 'Compartilhar Código',
+            onPress: () => {
+              Share.share({
+                message: `Olá! Estou te convidando para o grupo '${created.name}' no FINN. Baixe o app e entre com o código de convite: ${created.inviteCode} (válido por 30 minutos).`,
+              });
+            },
+          },
+        ]
+      );
     } catch (e) {
       Alert.alert('Erro', e.message);
+    }
+  };
+
+  // Gerar Novo Código de Convite (Válido por 30 min)
+  const handleRegenerateInviteCode = async () => {
+    if (!activeGroup?.id) return;
+    try {
+      const res = await generateNewGroupInviteCode(activeGroup.id);
+      if (res?.inviteCode) {
+        Alert.alert(
+          'Novo Código Gerado! 🔄',
+          `Novo Código: ${res.inviteCode}\n\nEste código é único e está válido pelos próximos 30 minutos.`,
+          [
+            { text: 'OK' },
+            {
+              text: 'Compartilhar',
+              onPress: () => {
+                Share.share({
+                  message: `Olá! Aqui está o novo código de convite para o grupo '${activeGroup.name}' no FINN: ${res.inviteCode} (válido por 30 minutos).`,
+                });
+              },
+            },
+          ]
+        );
+      }
+    } catch (e) {
+      Alert.alert('Erro ao gerar código', e.message);
     }
   };
 
@@ -678,6 +742,72 @@ export default function SharedFinancesScreen({ navigation }) {
                   </View>
                 </View>
 
+                {/* CARD DE CÓDIGO ÚNICO DE CONVITE (VÁLIDO POR 30 MINUTOS) */}
+                <View style={styles.inviteCodeCard}>
+                  <View style={styles.inviteCodeCardHeader}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Ionicons name="key" size={16} color="#7C3AED" />
+                      <Text style={styles.inviteCodeCardTitle}>Código de Convite Único</Text>
+                    </View>
+                    <View
+                      style={[
+                        styles.inviteCodeBadge,
+                        inviteCodeStatus.isExpired
+                          ? styles.inviteCodeBadgeExpired
+                          : styles.inviteCodeBadgeActive,
+                      ]}
+                    >
+                      <View
+                        style={[
+                          styles.statusDot,
+                          { backgroundColor: inviteCodeStatus.isExpired ? '#EF4444' : '#10B981' },
+                        ]}
+                      />
+                      <Text
+                        style={[
+                          styles.inviteCodeBadgeText,
+                          { color: inviteCodeStatus.isExpired ? '#EF4444' : '#059669' },
+                        ]}
+                      >
+                        {inviteCodeStatus.text}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <Text style={styles.inviteCodeCardSub}>
+                    Envie este código único para quem você deseja convidar. O código expira em 30 minutos por segurança.
+                  </Text>
+
+                  {/* Código em destaque */}
+                  <View style={styles.inviteCodeBox}>
+                    <Text style={styles.inviteCodeText}>
+                      {activeGroup?.inviteCode || '------'}
+                    </Text>
+                    <TouchableOpacity
+                      style={styles.shareCodeBtn}
+                      onPress={() => {
+                        Share.share({
+                          message: `Olá! Estou te convidando para participar do grupo '${activeGroup?.name}' no app FINN. Baixe o app e entre com o código de convite: ${activeGroup?.inviteCode} (válido por 30 minutos).`,
+                        });
+                      }}
+                      activeOpacity={0.8}
+                    >
+                      <Ionicons name="share-social" size={15} color="#FFFFFF" />
+                      <Text style={styles.shareCodeBtnText}>Compartilhar</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* Botão de Gerar Novo Código de Convite */}
+                  <TouchableOpacity
+                    style={styles.btnRegenerateCode}
+                    onPress={handleRegenerateInviteCode}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons name="refresh" size={15} color="#7C3AED" />
+                    <Text style={styles.btnRegenerateCodeText}>Gerar novo código de convite</Text>
+                  </TouchableOpacity>
+                </View>
+
                 <Text style={styles.sectionTitle}>Membros ativos ({groupMembers.length})</Text>
                 {groupMembers.map((m, idx) => (
                   <View key={m.id || idx} style={styles.memberCardRow}>
@@ -797,6 +927,44 @@ export default function SharedFinancesScreen({ navigation }) {
               </TouchableOpacity>
             </View>
 
+            {/* CÓDIGO DIRETO DE 30 MINUTOS */}
+            <View style={{ backgroundColor: '#F5EEFD', borderRadius: 14, padding: 14, marginBottom: 14, borderWidth: 1, borderColor: '#DDD6FE' }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Text style={{ fontSize: 11, fontWeight: '800', color: '#6D28D9' }}>CÓDIGO RÁPIDO (30 MIN)</Text>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: inviteCodeStatus.isExpired ? '#EF4444' : '#059669' }}>
+                  {inviteCodeStatus.text}
+                </Text>
+              </View>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
+                <Text style={{ fontSize: 22, fontWeight: '900', color: '#7C3AED', letterSpacing: 3, fontFamily: 'monospace' }}>
+                  {activeGroup?.inviteCode || '------'}
+                </Text>
+                <TouchableOpacity
+                  style={{ backgroundColor: '#7C3AED', paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10, flexDirection: 'row', alignItems: 'center', gap: 4 }}
+                  onPress={() => {
+                    Share.share({
+                      message: `Olá! Estou te convidando para o grupo '${activeGroup?.name}' no FINN. Baixe o app e entre com o código: ${activeGroup?.inviteCode} (válido por 30 minutos).`,
+                    });
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="share-social" size={13} color="#FFFFFF" />
+                  <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '700' }}>Compartilhar</Text>
+                </TouchableOpacity>
+              </View>
+              <TouchableOpacity
+                style={{ marginTop: 10, alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 4 }}
+                onPress={handleRegenerateInviteCode}
+              >
+                <Ionicons name="refresh" size={14} color="#7C3AED" />
+                <Text style={{ color: '#7C3AED', fontSize: 11.5, fontWeight: '700' }}>Gerar outro código</Text>
+              </TouchableOpacity>
+            </View>
+
+            <Text style={{ fontSize: 11, fontWeight: '800', color: '#94A3B8', textAlign: 'center', marginVertical: 6 }}>
+              ── OU ENVIAR CONVITE POR E-MAIL ──
+            </Text>
+
             <Text style={styles.inputLabel}>E-MAIL DO CONVIDADO(A)</Text>
             <TextInput
               style={styles.modalInput}
@@ -853,16 +1021,19 @@ export default function SharedFinancesScreen({ navigation }) {
               </TouchableOpacity>
             </View>
 
-            <Text style={styles.inputLabel}>CÓDIGO DE 6 DÍGITOS</Text>
+            <Text style={styles.inputLabel}>CÓDIGO DE CONVITE (VÁLIDO POR 30 MIN)</Text>
             <TextInput
-              style={[styles.modalInput, { textAlign: 'center', fontSize: 22, fontWeight: '800', letterSpacing: 4 }]}
+              style={[styles.modalInput, { textAlign: 'center', fontSize: 24, fontWeight: '900', letterSpacing: 4, fontFamily: 'monospace', color: '#7C3AED' }]}
               placeholder="ABC123"
-              placeholderTextColor="#9CA3AF"
+              placeholderTextColor="#CBD5E1"
               autoCapitalize="characters"
               maxLength={10}
               value={joinCode}
               onChangeText={setJoinCode}
             />
+            <Text style={{ fontSize: 11.5, color: '#64748B', marginTop: 8, textAlign: 'center' }}>
+              Insira o código único de 6 dígitos gerado pelo organizador do grupo (válido por 30 minutos).
+            </Text>
 
             <TouchableOpacity style={styles.btnModalPrimary} onPress={handleJoin}>
               <Text style={styles.btnModalPrimaryText}>Ingressar no Grupo</Text>
@@ -1680,6 +1851,109 @@ const styles = StyleSheet.create({
     fontSize: 12.5,
     fontWeight: '700',
     color: '#EF4444',
+  },
+  inviteCodeCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 16,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#EFEAF8',
+    shadowColor: '#7C3AED',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    elevation: 2,
+  },
+  inviteCodeCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  inviteCodeCardTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#18181B',
+  },
+  inviteCodeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+  },
+  inviteCodeBadgeActive: {
+    backgroundColor: '#ECFDF5',
+  },
+  inviteCodeBadgeExpired: {
+    backgroundColor: '#FEF2F2',
+  },
+  statusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  inviteCodeBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  inviteCodeCardSub: {
+    fontSize: 12,
+    color: '#64748B',
+    lineHeight: 16,
+    marginBottom: 12,
+  },
+  inviteCodeBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#F7F5FC',
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderWidth: 1.5,
+    borderColor: '#DDD6FE',
+    borderStyle: 'dashed',
+    marginBottom: 10,
+  },
+  inviteCodeText: {
+    fontSize: 22,
+    fontWeight: '900',
+    color: '#7C3AED',
+    letterSpacing: 4,
+    fontFamily: 'monospace',
+  },
+  shareCodeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#7C3AED',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+  },
+  shareCodeBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  btnRegenerateCode: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#F5EEFD',
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#DDD6FE',
+  },
+  btnRegenerateCodeText: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#7C3AED',
   },
 });
 

@@ -12,6 +12,7 @@ import {
   Alert,
   Image,
   AppState,
+  Share,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -157,13 +158,29 @@ export default function HomeScreen({ navigation }) {
       return;
     }
     try {
-      await createSharedGroup({
+      const created = await createSharedGroup({
         name: quickGroupName.trim(),
         type: quickGroupType,
       });
       setQuickGroupName('');
       setModalQuickNewGroup(false);
-      Alert.alert('Sucesso', 'Novo grupo compartilhado criado com sucesso!');
+      setGroupModalVisible(false);
+
+      Alert.alert(
+        'Grupo Criado com Sucesso! 🎉',
+        `Nome: ${created.name}\nCódigo de Convite: ${created.inviteCode}\n\nEste código é único e válido por 30 minutos para você enviar aos outros participantes.`,
+        [
+          { text: 'Concluir' },
+          {
+            text: 'Compartilhar Código',
+            onPress: () => {
+              Share.share({
+                message: `Olá! Estou te convidando para o grupo '${created.name}' no FINN. Baixe o app e entre com o código de convite: ${created.inviteCode} (válido por 30 minutos).`,
+              });
+            },
+          },
+        ]
+      );
     } catch (e) {
       Alert.alert('Erro', e.message);
     }
@@ -284,10 +301,15 @@ export default function HomeScreen({ navigation }) {
 
   const homeInsightText = useMemo(() => {
     if (!transactions || transactions.length === 0) {
-      return 'Adicione suas contas e transações para a IA analisar seus hábitos financeiros.';
+      return 'Cadastre suas primeiras movimentações para que o FINN AI descubra padrões de economia e dicas personalizadas para você!';
     }
     if (totalExpense === 0 && totalIncome > 0) {
-      return `Você já recebeu ${formatMoney(totalIncome)} este mês e ainda não teve despesas registradas.`;
+      return `Você economizou 100% da sua renda este mês (${formatMoney(totalIncome)} de saldo positivo). Continue assim! 🚀`;
+    }
+    if (totalIncome > totalExpense) {
+      const savedPercent = Math.round(((totalIncome - totalExpense) / totalIncome) * 100);
+      const savedAmount = totalIncome - totalExpense;
+      return `Você economizou ${savedPercent}% da sua renda este mês (${formatMoney(savedAmount)} de saldo positivo). Continue assim! 🚀`;
     }
     if (categoryBreakdown && categoryBreakdown.length > 0) {
       const topCat = categoryBreakdown[0];
@@ -462,7 +484,7 @@ export default function HomeScreen({ navigation }) {
           {viewMode === 'shared' ? (
             /* Overlay quando selecionado Compartilhadas: Fiel ao print fornecido */
             <View style={styles.heroSharedOverlay}>
-              {/* 1. Pill superior: [ 👥 Nome do Grupo ⌵ ] */}
+              {/* 1. Pill superior: [ 👥 Finanças compartilhadas ⌵ ] */}
               <TouchableOpacity
                 style={styles.heroSharedTopPill}
                 onPress={() => setGroupModalVisible(true)}
@@ -470,7 +492,7 @@ export default function HomeScreen({ navigation }) {
               >
                 <Ionicons name="people" size={17} color="#FFFFFF" />
                 <Text style={styles.heroSharedTopPillText} numberOfLines={1}>
-                  {activeSharedGroup?.name || 'Finanças compartilhadas'}
+                  Finanças compartilhadas
                 </Text>
                 <Ionicons name="chevron-down" size={15} color="#FFFFFF" />
               </TouchableOpacity>
@@ -491,7 +513,7 @@ export default function HomeScreen({ navigation }) {
               >
                 <Ionicons name="people" size={15} color="#D8B4FE" />
                 <Text style={styles.heroSharedBottomPillText}>
-                  {activeSharedGroup?.members?.length || 1} participante{activeSharedGroup?.members?.length !== 1 ? 's' : ''}
+                  {activeSharedGroup?.members?.length || 2} participante{activeSharedGroup?.members?.length !== 1 ? 's' : ''}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -689,37 +711,44 @@ export default function HomeScreen({ navigation }) {
           </View>
         </View>
 
-        {/* BANNER FINN INSIGHTS */}
+        {/* CARD INSIGHT DA IA (FIEL AO DESIGN DA IMAGEM 4) */}
         <TouchableOpacity
-          activeOpacity={0.88}
+          activeOpacity={0.92}
           onPress={() => navigation.navigate('FinnAI')}
+          style={styles.aiInsightHomeWrapper}
         >
           <LinearGradient
-            colors={['#7C3AED', '#9333EA', '#C026D3']}
-            style={styles.insightsCard}
+            colors={['#FAF7FD', '#F5EBFC', '#F0E2FB']}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
+            style={styles.aiInsightCard}
           >
-            <View style={styles.insightsHeader}>
-              <View style={styles.insightsTitleGroup}>
-                <Ionicons name="sparkles" size={15} color="#FFFFFF" />
-                <Text style={styles.insightsTitle}>FINN Insights</Text>
-              </View>
-              <View style={styles.novoPill}>
-                <Text style={styles.novoPillText}>Novo</Text>
-              </View>
-            </View>
+            {/* Efeito decorativo de curva/onda suave lilás ao fundo à direita */}
+            <View style={styles.aiInsightWaveBlob1} pointerEvents="none" />
+            <View style={styles.aiInsightWaveBlob2} pointerEvents="none" />
 
-            <View style={styles.insightsBody}>
-              <View style={styles.targetIconCircle}>
-                <Ionicons name="sparkles" size={18} color="#FFFFFF" />
+            {/* Conteúdo principal à esquerda */}
+            <View style={styles.aiInsightContentCol}>
+              <View style={styles.aiInsightHeader}>
+                <Ionicons name="sparkles" size={22} color="#7C3AED" />
+                <Text style={styles.aiInsightTitle}>Insight da IA</Text>
               </View>
-              <Text style={styles.insightsText}>
+
+              <Text style={styles.aiInsightText}>
                 {homeInsightText}
               </Text>
-              <View style={styles.insightsChevronBtn}>
-                <Ionicons name="chevron-forward" size={16} color="#FFFFFF" />
-              </View>
+            </View>
+
+            {/* Botão de seta circular destacado à direita */}
+            <View style={styles.aiInsightArrowWrap}>
+              <LinearGradient
+                colors={['#8B5CF6', '#6D28D9']}
+                style={styles.aiInsightArrowBtn}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+              >
+                <Ionicons name="arrow-forward" size={24} color="#FFFFFF" />
+              </LinearGradient>
             </View>
           </LinearGradient>
         </TouchableOpacity>
@@ -1640,6 +1669,85 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#18181B',
   },
+  aiInsightHomeWrapper: {
+    marginVertical: 4,
+  },
+  aiInsightCard: {
+    position: 'relative',
+    borderRadius: 26,
+    borderWidth: 1.5,
+    borderColor: '#E8D5F5',
+    paddingHorizontal: 22,
+    paddingTop: 20,
+    paddingBottom: 22,
+    overflow: 'hidden',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    shadowColor: '#8B5CF6',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.12,
+    shadowRadius: 18,
+    elevation: 4,
+  },
+  aiInsightWaveBlob1: {
+    position: 'absolute',
+    right: -30,
+    top: -20,
+    bottom: -20,
+    width: 160,
+    borderRadius: 100,
+    backgroundColor: 'rgba(216, 180, 254, 0.4)',
+  },
+  aiInsightWaveBlob2: {
+    position: 'absolute',
+    right: -10,
+    top: -5,
+    bottom: -5,
+    width: 125,
+    borderRadius: 80,
+    backgroundColor: 'rgba(233, 213, 255, 0.45)',
+  },
+  aiInsightContentCol: {
+    flex: 1,
+    paddingRight: 16,
+  },
+  aiInsightHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 10,
+  },
+  aiInsightTitle: {
+    fontSize: 19,
+    fontWeight: '800',
+    color: '#1E1B4B',
+    letterSpacing: -0.3,
+  },
+  aiInsightText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#334155',
+    lineHeight: 22,
+    letterSpacing: -0.2,
+  },
+  aiInsightArrowWrap: {
+    marginLeft: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  aiInsightArrowBtn: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#7C3AED',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 5,
+  },
   insightsCard: {
     borderRadius: 22,
     padding: 16,
@@ -2375,8 +2483,9 @@ const styles = StyleSheet.create({
     height: '100%',
     zIndex: 10,
     elevation: 10,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingHorizontal: 18,
+    paddingTop: 16,
+    paddingBottom: 16,
     justifyContent: 'space-between',
     alignItems: 'flex-start',
   },
@@ -2385,34 +2494,34 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
     backgroundColor: 'rgba(255, 255, 255, 0.18)',
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.32)',
-    paddingVertical: 6,
-    paddingHorizontal: 12,
+    borderRadius: 24,
+    borderWidth: 1.2,
+    borderColor: 'rgba(255, 255, 255, 0.38)',
+    paddingVertical: 7,
+    paddingHorizontal: 14,
   },
   heroSharedTopPillText: {
     color: '#FFFFFF',
-    fontSize: 13.5,
+    fontSize: 14,
     fontWeight: '700',
     letterSpacing: -0.2,
   },
   heroSharedBalanceBlock: {
-    marginVertical: 4,
+    marginVertical: 6,
   },
   heroSharedBalanceLabel: {
-    color: 'rgba(255, 255, 255, 0.88)',
-    fontSize: 13.5,
+    color: 'rgba(255, 255, 255, 0.92)',
+    fontSize: 14,
     fontWeight: '600',
-    marginBottom: 2,
+    marginBottom: 4,
     letterSpacing: -0.2,
   },
   heroSharedBalanceValue: {
     color: '#FFFFFF',
-    fontSize: 30,
+    fontSize: 32,
     fontWeight: '900',
     letterSpacing: -0.5,
-    textShadowColor: 'rgba(0, 0, 0, 0.5)',
+    textShadowColor: 'rgba(0, 0, 0, 0.4)',
     textShadowOffset: { width: 0, height: 2 },
     textShadowRadius: 6,
   },
@@ -2420,17 +2529,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: 'rgba(15, 8, 38, 0.72)',
-    borderRadius: 16,
+    backgroundColor: 'rgba(18, 10, 42, 0.75)',
+    borderRadius: 18,
     borderWidth: 1.2,
-    borderColor: 'rgba(168, 85, 247, 0.65)',
-    paddingVertical: 5,
-    paddingHorizontal: 12,
+    borderColor: 'rgba(168, 85, 247, 0.7)',
+    paddingVertical: 6,
+    paddingHorizontal: 14,
     alignSelf: 'flex-start',
   },
   heroSharedBottomPillText: {
     color: '#FFFFFF',
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '700',
   },
   groupModalOverlay: {

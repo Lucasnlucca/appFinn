@@ -28,6 +28,7 @@ import {
   createHouseholdApi,
   createHouseholdInvitationApi,
   acceptHouseholdInvitationApi,
+  generateHouseholdInviteCodeApi,
 } from '../services/apiService';
 import { getBankTheme } from '../constants/BankThemeRegistry';
 
@@ -44,6 +45,16 @@ const INITIAL_COFRINHOS = [];
 export const getUserStorageKey = (userId, keyName) => {
   const safeId = userId ? String(userId).trim() : 'guest';
   return `@finn_usr_${safeId}_${keyName}`;
+};
+
+// Gerador de código único de 6 caracteres alfanuméricos para convite de grupo
+export const generateGroupInviteCode = () => {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let code = '';
+  for (let i = 0; i < 6; i++) {
+    code += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return code;
 };
 
 export const getInitialChat = (userName) => [
@@ -237,7 +248,8 @@ export function FinanceProvider({ children }) {
             type: 'Casal',
             description: 'Espaço compartilhado do casal',
             createdAt: new Date().toISOString(),
-            inviteCode: 'CASAL1',
+            inviteCode: generateGroupInviteCode(),
+            inviteCodeExpiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
             members: [
               { id: loggedInUser?.id || 'admin', name: ownerName, email: loggedInUser?.email || '', role: 'ADMIN' },
               { id: 'partner', name: 'Parceiro(a)', email: '', role: 'MEMBER' },
@@ -862,13 +874,17 @@ export function FinanceProvider({ children }) {
   const createSharedGroup = async ({ name, type = 'Casal', description = '' }) => {
     const ownerName = loggedInUser?.fullName || loggedInUser?.name || 'Você';
     const cleanName = (name || '').trim() || 'Novo Grupo';
+    const inviteCode = generateGroupInviteCode();
+    const inviteCodeExpiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString(); // Válido por 30 minutos
+
     const newGroup = {
       id: 'grp-' + Date.now(),
       name: cleanName,
       type: type || 'Outros',
       description: (description || '').trim(),
       createdAt: new Date().toISOString(),
-      inviteCode: Math.random().toString(36).substring(2, 8).toUpperCase(),
+      inviteCode,
+      inviteCodeExpiresAt,
       members: [
         {
           id: loggedInUser?.id || 'admin',
@@ -896,6 +912,43 @@ export function FinanceProvider({ children }) {
     return newGroup;
   };
 
+  // Gerar NOVO código de convite único para o grupo (válido por 30 minutos)
+  const generateNewGroupInviteCode = async (groupId) => {
+    const targetGroupId = groupId || activeGroupId || sharedGroups[0]?.id;
+    if (!targetGroupId) return null;
+
+    const newCode = generateGroupInviteCode();
+    const newExpiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+
+    try {
+      const targetGroup = sharedGroups.find((g) => g.id === targetGroupId);
+      if (targetGroup?.remoteId) {
+        await generateHouseholdInviteCodeApi(targetGroup.remoteId);
+      }
+    } catch (e) {
+      console.log('Renovação de código local/offline:', e.message);
+    }
+
+    const updatedGroups = sharedGroups.map((g) => {
+      if (g.id === targetGroupId) {
+        return {
+          ...g,
+          inviteCode: newCode,
+          inviteCodeExpiresAt: newExpiresAt,
+        };
+      }
+      return g;
+    });
+
+    setSharedGroups(updatedGroups);
+    await saveUserItem('shared_groups', updatedGroups);
+
+    return {
+      inviteCode: newCode,
+      inviteCodeExpiresAt: newExpiresAt,
+    };
+  };
+
   // Excluir Grupo Compartilhado
   const deleteSharedGroup = async (groupId) => {
     const updated = sharedGroups.filter((g) => g.id !== groupId);
@@ -910,7 +963,7 @@ export function FinanceProvider({ children }) {
 
   // Convidar Pessoa para o Grupo Compartilhado
   const invitePersonToGroup = async ({ groupId, email, type = 'Casal', message = '' }) => {
-    const code = Math.random().toString(36).substring(2, 8).toUpperCase();
+    const code = generateGroupInviteCode();
     const targetGroupId = groupId || activeGroupId || sharedGroups[0]?.id;
     const inv = {
       id: 'inv-' + Date.now(),
@@ -920,6 +973,7 @@ export function FinanceProvider({ children }) {
       message,
       token: code,
       createdAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
       status: 'PENDING',
     };
 
@@ -938,23 +992,77 @@ export function FinanceProvider({ children }) {
     return inv;
   };
 
-  // Aceitar Convite de Grupo
-  const acceptGroupInvitation = async (code) => {
+  // Aceitar Convite de Grupo via Código (Validação rigorosa de expiração de 30 minutos)
+  const acceptGroupInvitation = async (rawCode) => {
+    const code = (rawCode || '').trim().toUpperCase();
+    if (!code) {
+      throw new Error('Informe o código do convite.');
+    }
+
     try {
       await acceptHouseholdInvitationApi(code);
     } catch (e) {
       console.log('Ingresso offline/local:', e.message);
     }
 
+    // Busca se existe algum grupo cadastrado com este código
+    const matchingGroup = sharedGroups.find(
+      (g) => g.inviteCode && g.inviteCode.toUpperCase() === code
+    );
+
+    if (matchingGroup) {
+      // Validação do prazo de 30 minutos
+      if (matchingGroup.inviteCodeExpiresAt) {
+        const expiresTime = new Date(matchingGroup.inviteCodeExpiresAt).getTime();
+        if (Date.now() > expiresTime) {
+          throw new Error('Este código de convite expirou (validade de 30 minutos). Solicite um novo código ao administrador do grupo.');
+        }
+      }
+
+      // Verifica se já participa deste grupo
+      const isAlreadyMember = matchingGroup.members?.some(
+        (m) => m.id === loggedInUser?.id || (loggedInUser?.email && m.email === loggedInUser.email)
+      );
+      if (isAlreadyMember) {
+        throw new Error('Você já faz parte deste grupo financeiro.');
+      }
+
+      const myMember = {
+        id: loggedInUser?.id || 'm-' + Date.now(),
+        name: loggedInUser?.fullName || loggedInUser?.name || 'Novo Membro',
+        email: loggedInUser?.email || '',
+        role: 'MEMBER',
+        joinedAt: new Date().toISOString(),
+      };
+
+      const updatedGroups = sharedGroups.map((g) => {
+        if (g.id === matchingGroup.id) {
+          return {
+            ...g,
+            members: [...(g.members || []), myMember],
+          };
+        }
+        return g;
+      });
+
+      setSharedGroups(updatedGroups);
+      setActiveGroupIdState(matchingGroup.id);
+      await saveUserItem('shared_groups', updatedGroups);
+      await saveUserItem('active_group_id', matchingGroup.id);
+      return matchingGroup;
+    }
+
+    // Caso não seja um grupo local (ex: recebido de outro usuário), cria o ingresso no grupo
     const joinedGroup = {
       id: 'grp-joined-' + Date.now(),
       name: 'Grupo Compartilhado',
       type: 'Casal',
-      description: 'Convite aceito',
+      description: `Ingresso via código ${code}`,
       createdAt: new Date().toISOString(),
       inviteCode: code,
+      inviteCodeExpiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
       members: [
-        { id: 'partner', name: 'Participante', email: '', role: 'ADMIN' },
+        { id: 'admin-partner', name: 'Organizador(a)', email: '', role: 'ADMIN' },
         { id: loggedInUser?.id || 'me', name: loggedInUser?.name || 'Você', email: loggedInUser?.email || '', role: 'MEMBER' },
       ],
     };
@@ -1487,6 +1595,7 @@ Responda de forma clara, motivadora e estruturada em tópicos!`;
         groupInvitations,
         settlements,
         createSharedGroup,
+        generateNewGroupInviteCode,
         deleteSharedGroup,
         invitePersonToGroup,
         acceptGroupInvitation,

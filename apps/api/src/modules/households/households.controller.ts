@@ -50,6 +50,15 @@ export class HouseholdsController {
     return this.householdsService.createInvitation(user.id, dto);
   }
 
+  @Post('invite-code')
+  @ApiOperation({ summary: 'Gerar código de convite rápido válido por 30 minutos' })
+  async generateInviteCode(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body('householdId') householdId?: string,
+  ) {
+    return this.householdsService.generateGroupInviteCode(user.id, householdId);
+  }
+
   @Post('invitations/accept')
   @ApiOperation({ summary: 'Aceitar convite para ingressar em um núcleo familiar' })
   async acceptInvitation(
