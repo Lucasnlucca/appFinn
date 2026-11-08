@@ -11,6 +11,7 @@ import { Asset } from 'expo-asset';
 
 import { COLORS } from './src/theme/colors';
 import { FinanceProvider, useFinance } from './src/context/FinanceContext';
+import { CustomAlertProvider } from './src/context/CustomAlertContext';
 
 import HomeScreen from './src/screens/HomeScreen';
 import TransactionsScreen from './src/screens/TransactionsScreen';
@@ -172,8 +173,10 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <FinanceProvider>
-        <StatusBar style="dark" backgroundColor={COLORS.bg} />
-        <MainAppContent assetsLoaded={assetsLoaded} isFontsReady={isFontsReady} />
+        <CustomAlertProvider>
+          <StatusBar style="dark" backgroundColor={COLORS.bg} />
+          <MainAppContent assetsLoaded={assetsLoaded} isFontsReady={isFontsReady} />
+        </CustomAlertProvider>
       </FinanceProvider>
     </SafeAreaProvider>
   );

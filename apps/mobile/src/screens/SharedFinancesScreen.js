@@ -14,6 +14,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as Clipboard from 'expo-clipboard';
 import { COLORS } from '../theme/colors';
 import { useFinance, CATEGORIES } from '../context/FinanceContext';
 
@@ -778,11 +779,29 @@ export default function SharedFinancesScreen({ navigation }) {
                     Envie este código único para quem você deseja convidar. O código expira em 30 minutos por segurança.
                   </Text>
 
-                  {/* Código em destaque */}
+                  {/* Código em destaque com ações de Copiar e Compartilhar */}
                   <View style={styles.inviteCodeBox}>
-                    <Text style={styles.inviteCodeText}>
-                      {activeGroup?.inviteCode || '------'}
-                    </Text>
+                    <TouchableOpacity
+                      onPress={async () => {
+                        if (activeGroup?.inviteCode) {
+                          await Clipboard.setStringAsync(activeGroup.inviteCode);
+                          Alert.alert(
+                            'Código Copiado! 📋',
+                            `Código de Convite: ${activeGroup.inviteCode}\n\nO código foi copiado para a área de transferência. Envie para os membros que deseja convidar.`
+                          );
+                        }
+                      }}
+                      activeOpacity={0.7}
+                      style={{ flex: 1, paddingVertical: 4 }}
+                    >
+                      <Text style={styles.inviteCodeText}>
+                        {activeGroup?.inviteCode || '------'}
+                      </Text>
+                      <Text style={{ fontSize: 11, color: '#7C3AED', fontWeight: '600', marginTop: 2 }}>
+                        Toque para copiar
+                      </Text>
+                    </TouchableOpacity>
+
                     <TouchableOpacity
                       style={styles.shareCodeBtn}
                       onPress={() => {
