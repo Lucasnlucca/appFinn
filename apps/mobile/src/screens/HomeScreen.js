@@ -201,6 +201,8 @@ export default function HomeScreen({ navigation }) {
       setQuickJoinCode('');
       setModalQuickNewGroup(false);
       setGroupModalVisible(false);
+      if (setViewMode) setViewMode('shared');
+      if (joined?.id && setActiveGroupId) setActiveGroupId(joined.id);
       Alert.alert(
         'Sucesso! 🎉',
         `Você ingressou no grupo '${joined?.name || 'Compartilhado'}' com sucesso!`

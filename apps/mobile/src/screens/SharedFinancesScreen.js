@@ -656,10 +656,17 @@ export default function SharedFinancesScreen({ navigation, route }) {
       return;
     }
     try {
-      await acceptGroupInvitation(joinCode.trim());
+      const joined = await acceptGroupInvitation(joinCode.trim());
+      if (joined?.id && setActiveGroupId) {
+        setActiveGroupId(joined.id);
+      }
       setModalJoin(false);
+      setModalNewGroup(false);
       setJoinCode('');
-      Alert.alert('Sucesso', 'Você ingressou no grupo financeiro com sucesso!');
+      Alert.alert(
+        'Sucesso! 🎉',
+        `Você ingressou no grupo '${joined?.name || 'Compartilhado'}' com sucesso!`
+      );
     } catch (e) {
       Alert.alert('Erro ao aceitar convite', e.message);
     }
