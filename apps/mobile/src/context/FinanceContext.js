@@ -1204,6 +1204,7 @@ export function FinanceProvider({ children }) {
       groupName: targetGroup?.name || null,
       splitMethod: expData.splitMethod || 'equal',
       splitRatio: splitRatio,
+      splitDetails: expData.splitDetails || null,
       notes: expData.notes || '',
     };
 

@@ -451,15 +451,26 @@ export default function HomeScreen({ navigation }) {
           </View>
 
           {viewMode === 'shared' && (
-            <TouchableOpacity
-              style={styles.openSharedBtn}
-              onPress={() => navigation.navigate('SharedFinances')}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="people" size={14} color="#7C3AED" />
-              <Text style={styles.openSharedBtnText}>Ver Grupo</Text>
-              <Ionicons name="chevron-forward" size={12} color="#7C3AED" />
-            </TouchableOpacity>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <TouchableOpacity
+                style={styles.openDivideBtn}
+                onPress={() => navigation.navigate('SharedFinances', { initialTab: 'divisao' })}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="pie-chart-outline" size={13} color="#7C3AED" />
+                <Text style={styles.openDivideBtnText}>Dividir Conta</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.openSharedBtn}
+                onPress={() => navigation.navigate('SharedFinances')}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="people" size={13} color="#7C3AED" />
+                <Text style={styles.openSharedBtnText}>Ver Grupo</Text>
+                <Ionicons name="chevron-forward" size={12} color="#7C3AED" />
+              </TouchableOpacity>
+            </View>
           )}
         </View>
 
@@ -2004,6 +2015,22 @@ const styles = StyleSheet.create({
   viewModePillTextActive: {
     color: '#7C3AED',
     fontWeight: '700',
+  },
+  openDivideBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#F3E8FF',
+    borderWidth: 1,
+    borderColor: '#DDD6FE',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  openDivideBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#7C3AED',
   },
   openSharedBtn: {
     flexDirection: 'row',

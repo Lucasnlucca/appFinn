@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -18,7 +18,7 @@ import * as Clipboard from 'expo-clipboard';
 import { COLORS } from '../theme/colors';
 import { useFinance, CATEGORIES } from '../context/FinanceContext';
 
-export default function SharedFinancesScreen({ navigation }) {
+export default function SharedFinancesScreen({ navigation, route }) {
   const insets = useSafeAreaInsets();
   const {
     loggedInUser,
@@ -42,8 +42,14 @@ export default function SharedFinancesScreen({ navigation }) {
     setViewMode,
   } = useFinance();
 
-  // Abas: 'dashboard' | 'acertos' | 'membros'
-  const [activeTab, setActiveTab] = useState('dashboard');
+  // Abas: 'dashboard' | 'divisao' | 'acertos' | 'membros'
+  const [activeTab, setActiveTab] = useState(route?.params?.initialTab || 'dashboard');
+
+  useEffect(() => {
+    if (route?.params?.initialTab) {
+      setActiveTab(route.params.initialTab);
+    }
+  }, [route?.params?.initialTab]);
 
   // Modais
   const [modalNewGroup, setModalNewGroup] = useState(false);
@@ -80,6 +86,20 @@ export default function SharedFinancesScreen({ navigation }) {
   const [settleAmount, setSettleAmount] = useState('');
   const [settleNotes, setSettleNotes] = useState('');
 
+  // ==============================================================
+  // ESTADOS DA DIVISÃO DE CONTAS & ITENS (RACHADOR INTELIGENTE)
+  // ==============================================================
+  const [splitDesc, setSplitDesc] = useState('');
+  const [splitTotal, setSplitTotal] = useState('');
+  const [splitPaidBy, setSplitPaidBy] = useState(loggedInUser?.name || 'Você');
+  const [splitSelectedMembers, setSplitSelectedMembers] = useState([]);
+  const [splitShowItems, setSplitShowItems] = useState(false);
+  const [splitItems, setSplitItems] = useState([]);
+  const [newItemName, setNewItemName] = useState('');
+  const [newItemAmount, setNewItemAmount] = useState('');
+  const [newItemAssigned, setNewItemAssigned] = useState([]);
+  const [serviceFeePercent, setServiceFeePercent] = useState(0); // 0, 10, 12, etc.
+
   const activeGroup = useMemo(() => {
     return sharedGroups.find((g) => g.id === activeGroupId) || sharedGroups[0] || null;
   }, [sharedGroups, activeGroupId]);
@@ -98,6 +118,26 @@ export default function SharedFinancesScreen({ navigation }) {
     ];
   }, [activeGroup, loggedInUser]);
 
+  // Sincroniza participantes selecionados na ferramenta de Divisão de Contas
+  useEffect(() => {
+    if (groupMembers && groupMembers.length > 0) {
+      setSplitSelectedMembers((prev) => {
+        if (!prev || prev.length === 0) {
+          return groupMembers.map((m) => m.id || m.name);
+        }
+        const validIds = groupMembers.map((m) => m.id || m.name);
+        const filtered = prev.filter((id) => validIds.includes(id));
+        return filtered.length > 0 ? filtered : validIds;
+      });
+
+      const currentUserName = loggedInUser?.name || loggedInUser?.fullName || 'Você';
+      if (!splitPaidBy || splitPaidBy === 'Você') {
+        const found = groupMembers.find((m) => m.name === currentUserName);
+        setSplitPaidBy(found ? found.name : groupMembers[0].name);
+      }
+    }
+  }, [groupMembers, loggedInUser]);
+
   // Transações compartilhadas do grupo (100% isoladas para o grupo ativo)
   const sharedTxs = useMemo(() => {
     if (!activeGroup?.id) return [];
@@ -111,37 +151,372 @@ export default function SharedFinancesScreen({ navigation }) {
     return sharedTxs.reduce((sum, t) => sum + (t.amount || 0), 0);
   }, [sharedTxs]);
 
-  // Cálculo de Acerto de Contas (Quem deve para quem)
-  const debtsCalculation = useMemo(() => {
-    const member1 = groupMembers[0]?.name || (loggedInUser?.name || 'Você');
-    const member2 = groupMembers[1]?.name || 'Participante';
+  // ==============================================================
+  // CÁLCULO REATIVO DA DIVISÃO DE CONTAS (IGUALITÁRIA OU POR ITENS)
+  // ==============================================================
+  const billSplitCalculation = useMemo(() => {
+    const rawTotal = parseFloat(String(splitTotal).replace(',', '.')) || 0;
+    const tipAmount = (rawTotal * (serviceFeePercent || 0)) / 100;
+    const effectiveTotal = rawTotal + tipAmount;
 
-    let netOwed = 0; // Se positivo: member2 deve para member1. Se negativo: member1 deve para member2.
+    const activeMembers = groupMembers.filter((m) =>
+      splitSelectedMembers.includes(m.id || m.name)
+    );
+    const memberCount = activeMembers.length;
+
+    if (memberCount === 0 || effectiveTotal <= 0) {
+      return {
+        rawTotal,
+        tipAmount,
+        effectiveTotal,
+        activeMembers,
+        itemsTotal: 0,
+        commonAmount: 0,
+        commonPerMember: 0,
+        memberResults: activeMembers.map((m) => ({
+          id: m.id || m.name,
+          name: m.name,
+          itemsShare: 0,
+          commonShare: 0,
+          tipShare: 0,
+          totalToPay: 0,
+          consumedItems: [],
+          isPayer: (splitPaidBy || groupMembers[0]?.name) === m.name,
+        })),
+        hasItems: false,
+        itemsExceedTotal: false,
+      };
+    }
+
+    // 1. Itens individuais cadastrados
+    let itemsTotal = 0;
+    const memberItemMap = {};
+    activeMembers.forEach((m) => {
+      memberItemMap[m.id || m.name] = { total: 0, items: [] };
+    });
+
+    splitItems.forEach((item) => {
+      const itemAmt = parseFloat(item.amount) || 0;
+      itemsTotal += itemAmt;
+      const assignedIds = (item.assignedTo || []).filter((id) =>
+        activeMembers.some((m) => (m.id || m.name) === id)
+      );
+      // Se nenhum participante foi atribuído explicitamente ao item, rateia entre todos os participantes da conta
+      const targetIds = assignedIds.length > 0 ? assignedIds : activeMembers.map((m) => m.id || m.name);
+      const perPerson = itemAmt / targetIds.length;
+
+      targetIds.forEach((id) => {
+        if (memberItemMap[id]) {
+          memberItemMap[id].total += perPerson;
+          memberItemMap[id].items.push({
+            name: item.name,
+            amount: perPerson,
+          });
+        }
+      });
+    });
+
+    const hasItems = splitItems.length > 0;
+    const itemsExceedTotal = itemsTotal > rawTotal;
+
+    // 2. Diferença restante da conta (despesa comum a ser dividida entre todos os selecionados)
+    const commonDifference = Math.max(0, rawTotal - itemsTotal);
+    const commonPerMember = commonDifference / memberCount;
+    const tipPerMember = tipAmount / memberCount;
+
+    // 3. Monta o resumo detalhado por membro
+    const memberResults = activeMembers.map((m) => {
+      const key = m.id || m.name;
+      const itemsShare = memberItemMap[key]?.total || 0;
+      const myItemsList = memberItemMap[key]?.items || [];
+      const totalToPay = itemsShare + commonPerMember + tipPerMember;
+
+      return {
+        id: key,
+        name: m.name,
+        itemsShare: Math.round(itemsShare * 100) / 100,
+        commonShare: Math.round(commonPerMember * 100) / 100,
+        tipShare: Math.round(tipPerMember * 100) / 100,
+        totalToPay: Math.round(totalToPay * 100) / 100,
+        consumedItems: myItemsList,
+        isPayer: (splitPaidBy || groupMembers[0]?.name) === m.name,
+      };
+    });
+
+    // 4. Ajuste fino de arredondamento de centavos
+    const calculatedSum = memberResults.reduce((acc, r) => acc + r.totalToPay, 0);
+    const diffCentavos = Math.round((effectiveTotal - calculatedSum) * 100) / 100;
+    if (Math.abs(diffCentavos) > 0 && memberResults.length > 0) {
+      memberResults[0].totalToPay = Math.round((memberResults[0].totalToPay + diffCentavos) * 100) / 100;
+    }
+
+    return {
+      rawTotal,
+      tipAmount,
+      effectiveTotal,
+      activeMembers,
+      itemsTotal,
+      commonAmount: commonDifference,
+      commonPerMember,
+      memberResults,
+      hasItems,
+      itemsExceedTotal,
+    };
+  }, [splitTotal, serviceFeePercent, groupMembers, splitSelectedMembers, splitItems, splitPaidBy]);
+
+  // ==============================================================
+  // CÁLCULO DE ACERTO DE CONTAS (QUEM DEVE PARA QUEM COM SPLITS)
+  // ==============================================================
+  const debtsCalculation = useMemo(() => {
+    const balances = {};
+    groupMembers.forEach((m) => {
+      balances[m.name] = 0;
+    });
 
     sharedTxs.forEach((tx) => {
-      const half = (tx.amount || 0) / 2;
-      if (tx.paidBy === member1) {
-        netOwed += half;
-      } else if (tx.paidBy === member2) {
-        netOwed -= half;
+      const payer = tx.paidBy || groupMembers[0]?.name || 'Você';
+      const totalAmt = tx.amount || 0;
+      if (balances[payer] === undefined) balances[payer] = 0;
+
+      if (tx.splitDetails?.members && Array.isArray(tx.splitDetails.members)) {
+        balances[payer] += totalAmt;
+        tx.splitDetails.members.forEach((sm) => {
+          if (balances[sm.name] === undefined) balances[sm.name] = 0;
+          balances[sm.name] -= (sm.totalToPay || 0);
+        });
+      } else {
+        const count = groupMembers.length || 1;
+        const share = totalAmt / count;
+        balances[payer] += totalAmt;
+        groupMembers.forEach((m) => {
+          balances[m.name] = (balances[m.name] || 0) - share;
+        });
       }
     });
 
     // Subtrai acertos já realizados e confirmados
     settlements.forEach((s) => {
-      if (s.fromMember === member2 && s.toMember === member1) {
-        netOwed -= s.amount || 0;
-      } else if (s.fromMember === member1 && s.toMember === member2) {
-        netOwed += s.amount || 0;
-      }
+      if (balances[s.fromMember] !== undefined) balances[s.fromMember] += (s.amount || 0);
+      if (balances[s.toMember] !== undefined) balances[s.toMember] -= (s.amount || 0);
     });
+
+    const member1 = groupMembers[0]?.name || (loggedInUser?.name || 'Você');
+    const member2 = groupMembers[1]?.name || 'Participante';
+    const netOwed = Math.round(((balances[member1] || 0) - (balances[member2] || 0)) / 2 * 100) / 100;
+
+    // Resumo de débitos par a par para qualquer número de membros
+    const creditors = [];
+    const debtors = [];
+    Object.entries(balances).forEach(([name, bal]) => {
+      const rounded = Math.round(bal * 100) / 100;
+      if (rounded > 0.01) creditors.push({ name, amount: rounded });
+      else if (rounded < -0.01) debtors.push({ name, amount: Math.abs(rounded) });
+    });
+
+    const pairwiseDebts = [];
+    let cIdx = 0;
+    let dIdx = 0;
+    const credCopy = creditors.map((c) => ({ ...c }));
+    const debtCopy = debtors.map((d) => ({ ...d }));
+
+    while (cIdx < credCopy.length && dIdx < debtCopy.length) {
+      const settleAmt = Math.min(credCopy[cIdx].amount, debtCopy[dIdx].amount);
+      if (settleAmt > 0.01) {
+        pairwiseDebts.push({
+          from: debtCopy[dIdx].name,
+          to: credCopy[cIdx].name,
+          amount: Math.round(settleAmt * 100) / 100,
+        });
+      }
+      credCopy[cIdx].amount -= settleAmt;
+      debtCopy[dIdx].amount -= settleAmt;
+      if (credCopy[cIdx].amount < 0.01) cIdx++;
+      if (debtCopy[dIdx].amount < 0.01) dIdx++;
+    }
 
     return {
       member1,
       member2,
-      netOwed: Math.round(netOwed * 100) / 100,
+      netOwed,
+      balances,
+      pairwiseDebts,
     };
-  }, [sharedTxs, settlements, groupMembers]);
+  }, [sharedTxs, settlements, groupMembers, loggedInUser]);
+
+  // ==============================================================
+  // AÇÕES DA DIVISÃO DE CONTAS (ADICIONAR ITEM, SALVAR, COMPARTILHAR)
+  // ==============================================================
+  const handleAddSplitItem = () => {
+    const amt = parseFloat(String(newItemAmount).replace(',', '.')) || 0;
+    if (!newItemName.trim()) {
+      Alert.alert('Item sem descrição', 'Informe o nome do item consumido.');
+      return;
+    }
+    if (amt <= 0) {
+      Alert.alert('Valor inválido', 'Informe um valor maior que zero para o item.');
+      return;
+    }
+
+    const assigned = newItemAssigned.length > 0
+      ? newItemAssigned
+      : splitSelectedMembers;
+
+    const newItem = {
+      id: 'item-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4),
+      name: newItemName.trim(),
+      amount: amt,
+      assignedTo: assigned,
+    };
+
+    setSplitItems((prev) => [...prev, newItem]);
+    setNewItemName('');
+    setNewItemAmount('');
+    setNewItemAssigned([]);
+  };
+
+  const handleRemoveSplitItem = (itemId) => {
+    setSplitItems((prev) => prev.filter((it) => it.id !== itemId));
+  };
+
+  const toggleMemberSelection = (memberId) => {
+    setSplitSelectedMembers((prev) => {
+      if (prev.includes(memberId)) {
+        if (prev.length <= 1) {
+          Alert.alert('Atenção', 'Pelo menos um participante deve fazer parte da divisão.');
+          return prev;
+        }
+        return prev.filter((id) => id !== memberId);
+      } else {
+        return [...prev, memberId];
+      }
+    });
+  };
+
+  const toggleNewItemMember = (memberId) => {
+    setNewItemAssigned((prev) => {
+      if (prev.includes(memberId)) {
+        return prev.filter((id) => id !== memberId);
+      } else {
+        return [...prev, memberId];
+      }
+    });
+  };
+
+  const handleSyncTotalWithItems = () => {
+    const sum = splitItems.reduce((acc, it) => acc + (it.amount || 0), 0);
+    setSplitTotal(sum.toFixed(2));
+  };
+
+  const formatSplitShareMessage = () => {
+    let msg = `🧾 *DIVISÃO DE CONTA — ${activeGroup?.name || 'FINN'}*\n`;
+    if (splitDesc.trim()) msg += `📝 *${splitDesc.trim()}*\n`;
+    msg += `💰 *Total da Conta:* ${formatMoney(billSplitCalculation.effectiveTotal)}\n`;
+    msg += `👤 *Pago por:* ${splitPaidBy || groupMembers[0]?.name}\n`;
+    msg += `👥 *Participantes:* ${billSplitCalculation.activeMembers.length} pessoas\n\n`;
+
+    if (billSplitCalculation.hasItems) {
+      msg += `🍽️ *Consumo e Itens Discriminados:*\n`;
+      splitItems.forEach((it) => {
+        const assignedNames = (it.assignedTo || [])
+          .map((id) => groupMembers.find((m) => (m.id || m.name) === id)?.name || id)
+          .join(', ');
+        msg += `  • ${it.name}: ${formatMoney(it.amount)} (${assignedNames || 'Todos'})\n`;
+      });
+      if (billSplitCalculation.commonAmount > 0) {
+        msg += `  • Restante comum compartilhado: ${formatMoney(billSplitCalculation.commonAmount)} (${formatMoney(billSplitCalculation.commonPerMember)}/pessoa)\n`;
+      }
+      msg += `\n`;
+    }
+
+    msg += `💵 *VALOR FINAL POR PESSOA:*\n`;
+    billSplitCalculation.memberResults.forEach((r) => {
+      const payerTag = r.isPayer ? ' 💳 (Pagou)' : '';
+      let detail = '';
+      if (billSplitCalculation.hasItems && r.itemsShare > 0) {
+        detail = ` [Itens: ${formatMoney(r.itemsShare)} + Comum: ${formatMoney(r.commonShare)}]`;
+      }
+      msg += `• *${r.name}*${payerTag}: ${formatMoney(r.totalToPay)}${detail}\n`;
+    });
+
+    msg += `\n✨ Calculado pelo app FINN`;
+    return msg;
+  };
+
+  const handleShareBillSplit = async () => {
+    if (billSplitCalculation.effectiveTotal <= 0) {
+      Alert.alert('Atenção', 'Informe o valor da conta antes de compartilhar.');
+      return;
+    }
+    const msg = formatSplitShareMessage();
+    try {
+      await Share.share({ message: msg });
+    } catch (e) {
+      console.warn('Erro ao compartilhar:', e);
+    }
+  };
+
+  const handleSaveBillSplit = async () => {
+    if (billSplitCalculation.effectiveTotal <= 0) {
+      Alert.alert('Valor Inválido', 'Informe o valor total da conta para registrar.');
+      return;
+    }
+    if (billSplitCalculation.activeMembers.length === 0) {
+      Alert.alert('Participantes', 'Selecione pelo menos um participante do grupo.');
+      return;
+    }
+
+    try {
+      const payerName = splitPaidBy || groupMembers[0]?.name || 'Você';
+      const desc = splitDesc.trim() || 'Conta Dividida';
+
+      await addSharedExpense({
+        description: desc,
+        amount: billSplitCalculation.effectiveTotal,
+        paidBy: payerName,
+        category: 'alimentacao',
+        groupId: activeGroup.id,
+        splitMethod: splitItems.length > 0 ? 'by_items' : 'equal',
+        splitDetails: {
+          items: splitItems,
+          members: billSplitCalculation.memberResults,
+          commonAmount: billSplitCalculation.commonAmount,
+          tipAmount: billSplitCalculation.tipAmount,
+          totalBill: billSplitCalculation.effectiveTotal,
+        },
+      });
+
+      Alert.alert(
+        'Conta Dividida e Registrada! 🎉',
+        `A conta "${desc}" de ${formatMoney(billSplitCalculation.effectiveTotal)} foi lançada no grupo '${activeGroup?.name}'.\n\nOs valores devidos foram integrados ao Balanço de Acertos.`,
+        [
+          {
+            text: 'Ver no Painel',
+            onPress: () => setActiveTab('dashboard'),
+          },
+          {
+            text: 'Compartilhar Resumo',
+            onPress: handleShareBillSplit,
+          },
+        ]
+      );
+    } catch (e) {
+      Alert.alert('Erro ao salvar', e.message);
+    }
+  };
+
+  const handleResetBillSplit = () => {
+    setSplitDesc('');
+    setSplitTotal('');
+    setSplitItems([]);
+    setSplitShowItems(false);
+    setServiceFeePercent(0);
+    setNewItemName('');
+    setNewItemAmount('');
+    setNewItemAssigned([]);
+    if (groupMembers && groupMembers.length > 0) {
+      setSplitSelectedMembers(groupMembers.map((m) => m.id || m.name));
+    }
+  };
 
   // Status de validade do código de convite de 30 minutos
   const inviteCodeStatus = useMemo(() => {
@@ -548,8 +923,12 @@ export default function SharedFinancesScreen({ navigation }) {
         </ScrollView>
       ) : (
         <>
-          {/* ABAS DO MÓDULO: DASHBOARD | ACERTO DE CONTAS | MEMBROS */}
-          <View style={styles.tabsRow}>
+          {/* ABAS DO MÓDULO: DASHBOARD | DIVIDIR CONTA | ACERTO DE CONTAS | MEMBROS */}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.tabsRow}
+          >
             <TouchableOpacity
               style={[styles.tabBtn, activeTab === 'dashboard' && styles.tabBtnActive]}
               onPress={() => setActiveTab('dashboard')}
@@ -560,11 +939,27 @@ export default function SharedFinancesScreen({ navigation }) {
             </TouchableOpacity>
 
             <TouchableOpacity
+              style={[styles.tabBtn, activeTab === 'divisao' && styles.tabBtnActive]}
+              onPress={() => setActiveTab('divisao')}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <Ionicons
+                  name="pie-chart"
+                  size={13}
+                  color={activeTab === 'divisao' ? '#7C3AED' : '#64748B'}
+                />
+                <Text style={[styles.tabBtnText, activeTab === 'divisao' && styles.tabBtnTextActive]}>
+                  Dividir Conta
+                </Text>
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity
               style={[styles.tabBtn, activeTab === 'acertos' && styles.tabBtnActive]}
               onPress={() => setActiveTab('acertos')}
             >
               <Text style={[styles.tabBtnText, activeTab === 'acertos' && styles.tabBtnTextActive]}>
-                Acerto de Contas
+                Acertos
               </Text>
             </TouchableOpacity>
 
@@ -573,10 +968,10 @@ export default function SharedFinancesScreen({ navigation }) {
               onPress={() => setActiveTab('membros')}
             >
               <Text style={[styles.tabBtnText, activeTab === 'membros' && styles.tabBtnTextActive]}>
-                Participantes ({groupMembers.length})
+                Membros ({groupMembers.length})
               </Text>
             </TouchableOpacity>
-          </View>
+          </ScrollView>
 
           <ScrollView
             showsVerticalScrollIndicator={false}
@@ -643,6 +1038,31 @@ export default function SharedFinancesScreen({ navigation }) {
                   )}
                 </View>
 
+                {/* BANNER DIVIDIR CONTA OU DESPESA COM ITENS */}
+                <TouchableOpacity
+                  style={styles.billSplitBanner}
+                  onPress={() => setActiveTab('divisao')}
+                  activeOpacity={0.88}
+                >
+                  <LinearGradient
+                    colors={['#7C3AED', '#6D28D9']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={styles.billSplitBannerGradient}
+                  >
+                    <View style={styles.billSplitBannerIcon}>
+                      <Ionicons name="pie-chart" size={22} color="#FFFFFF" />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.billSplitBannerTitle}>Dividir Conta do Grupo</Text>
+                      <Text style={styles.billSplitBannerSub}>
+                        Rache valores igualmente ou selecione o consumo individual de cada membro
+                      </Text>
+                    </View>
+                    <Ionicons name="arrow-forward-circle" size={24} color="#FFFFFF" />
+                  </LinearGradient>
+                </TouchableOpacity>
+
                 {/* BOTÃO ADICIONAR DESPESA COMPARTILHADA */}
                 <TouchableOpacity
                   style={styles.btnNovaDespesa}
@@ -691,7 +1111,412 @@ export default function SharedFinancesScreen({ navigation }) {
             )}
 
             {/* ============================================================== */}
-            {/* ABA 2: ACERTO DE CONTAS                                        */}
+            {/* ABA 2: DIVISÃO DE CONTAS / RACHADOR INTELIGENTE COM ITENS       */}
+            {/* ============================================================== */}
+            {activeTab === 'divisao' && (
+              <>
+                {/* 1. Header explicativo */}
+                <View style={styles.splitHeaderCard}>
+                  <View style={styles.splitHeaderIconBox}>
+                    <Ionicons name="pie-chart" size={22} color="#7C3AED" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.splitHeaderTitle}>Divisão de Conta</Text>
+                    <Text style={styles.splitHeaderSub}>
+                      {activeGroup?.name} • Rache o valor igualmente ou selecione itens
+                    </Text>
+                  </View>
+                  {billSplitCalculation.effectiveTotal > 0 && (
+                    <TouchableOpacity
+                      style={styles.splitResetSmallBtn}
+                      onPress={handleResetBillSplit}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons name="refresh" size={13} color="#6B7280" />
+                      <Text style={styles.splitResetSmallBtnText}>Limpar</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+
+                {/* 2. Formulário Principal da Conta */}
+                <View style={styles.splitFormCard}>
+                  <Text style={styles.splitFieldLabel}>DESCRIÇÃO DA CONTA</Text>
+                  <TextInput
+                    style={styles.splitInputDesc}
+                    placeholder="Ex: Restaurante Outback, Pizzaria, Mercado..."
+                    placeholderTextColor="#94A3B8"
+                    value={splitDesc}
+                    onChangeText={setSplitDesc}
+                  />
+
+                  <Text style={[styles.splitFieldLabel, { marginTop: 14 }]}>VALOR TOTAL DA CONTA</Text>
+                  <View style={styles.splitInputTotalRow}>
+                    <Text style={styles.splitInputCurrency}>R$</Text>
+                    <TextInput
+                      style={styles.splitInputTotal}
+                      placeholder="0,00"
+                      placeholderTextColor="#CBD5E1"
+                      keyboardType="numeric"
+                      value={splitTotal}
+                      onChangeText={setSplitTotal}
+                    />
+                  </View>
+
+                  {/* Taxa de serviço / Gorjeta */}
+                  <View style={styles.splitTipRow}>
+                    <Text style={styles.splitTipLabel}>Taxa / Gorjeta (Opcional):</Text>
+                    <View style={styles.splitTipChips}>
+                      {[0, 10, 12, 15].map((pct) => (
+                        <TouchableOpacity
+                          key={pct}
+                          style={[styles.splitTipChip, serviceFeePercent === pct && styles.splitTipChipActive]}
+                          onPress={() => setServiceFeePercent(pct)}
+                        >
+                          <Text
+                            style={[
+                              styles.splitTipChipText,
+                              serviceFeePercent === pct && styles.splitTipChipTextActive,
+                            ]}
+                          >
+                            {pct === 0 ? 'Sem taxa' : `+${pct}%`}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </View>
+                  {billSplitCalculation.tipAmount > 0 && (
+                    <Text style={styles.splitTipInfo}>
+                      Taxa de {serviceFeePercent}%: +{formatMoney(billSplitCalculation.tipAmount)} (Total com taxa: {formatMoney(billSplitCalculation.effectiveTotal)})
+                    </Text>
+                  )}
+
+                  {/* Quem pagou a conta */}
+                  <Text style={[styles.splitFieldLabel, { marginTop: 14 }]}>QUEM PAGOU A CONTA?</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 6 }}>
+                    <View style={{ flexDirection: 'row', gap: 8 }}>
+                      {groupMembers.map((m) => {
+                        const isPayer = (splitPaidBy || groupMembers[0]?.name) === m.name;
+                        return (
+                          <TouchableOpacity
+                            key={m.id || m.name}
+                            style={[styles.splitPayerChip, isPayer && styles.splitPayerChipActive]}
+                            onPress={() => setSplitPaidBy(m.name)}
+                            activeOpacity={0.8}
+                          >
+                            <View style={[styles.splitPayerAvatar, isPayer && styles.splitPayerAvatarActive]}>
+                              <Text style={[styles.splitPayerAvatarText, isPayer && styles.splitPayerAvatarTextActive]}>
+                                {m.name.charAt(0).toUpperCase()}
+                              </Text>
+                            </View>
+                            <Text style={[styles.splitPayerText, isPayer && styles.splitPayerTextActive]}>
+                              {m.name}
+                            </Text>
+                            {isPayer && <Ionicons name="checkmark-circle" size={14} color="#7C3AED" />}
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  </ScrollView>
+                </View>
+
+                {/* 3. Seleção de Participantes */}
+                <View style={styles.splitMembersCard}>
+                  <View style={styles.splitSectionTitleRow}>
+                    <View>
+                      <Text style={styles.splitSectionTitle}>Quem vai dividir essa conta?</Text>
+                      <Text style={styles.splitSectionSub}>
+                        {billSplitCalculation.activeMembers.length} de {groupMembers.length} participantes selecionados
+                      </Text>
+                    </View>
+                    <View style={{ flexDirection: 'row', gap: 6 }}>
+                      <TouchableOpacity
+                        style={styles.splitMiniActionBtn}
+                        onPress={() => setSplitSelectedMembers(groupMembers.map((m) => m.id || m.name))}
+                      >
+                        <Text style={styles.splitMiniActionText}>Todos</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.splitMiniActionBtn}
+                        onPress={() => {
+                          if (groupMembers.length > 0) {
+                            setSplitSelectedMembers([groupMembers[0].id || groupMembers[0].name]);
+                          }
+                        }}
+                      >
+                        <Text style={styles.splitMiniActionText}>Limpar</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+
+                  <View style={styles.splitMembersList}>
+                    {groupMembers.map((m) => {
+                      const isSelected = splitSelectedMembers.includes(m.id || m.name);
+                      const isPayer = (splitPaidBy || groupMembers[0]?.name) === m.name;
+                      return (
+                        <TouchableOpacity
+                          key={m.id || m.name}
+                          style={[styles.splitMemberToggleRow, isSelected && styles.splitMemberToggleRowActive]}
+                          onPress={() => toggleMemberSelection(m.id || m.name)}
+                          activeOpacity={0.8}
+                        >
+                          <View style={[styles.splitMemberAvatar, isSelected && styles.splitMemberAvatarActive]}>
+                            <Text style={[styles.splitMemberAvatarText, isSelected && styles.splitMemberAvatarTextActive]}>
+                              {m.name.charAt(0).toUpperCase()}
+                            </Text>
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={[styles.splitMemberName, isSelected && styles.splitMemberNameActive]}>
+                              {m.name}
+                            </Text>
+                            <Text style={styles.splitMemberRole}>
+                              {isPayer ? '💳 Pagou a conta' : 'Participante do grupo'}
+                            </Text>
+                          </View>
+                          <Ionicons
+                            name={isSelected ? 'checkbox' : 'square-outline'}
+                            size={22}
+                            color={isSelected ? '#7C3AED' : '#94A3B8'}
+                          />
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+
+                {/* 4. Seção Expansível de Itens Consumidos (Opcional) */}
+                <View style={styles.splitItemsContainer}>
+                  <TouchableOpacity
+                    style={styles.splitItemsToggleCard}
+                    onPress={() => setSplitShowItems(!splitShowItems)}
+                    activeOpacity={0.85}
+                  >
+                    <View style={styles.splitItemsToggleIcon}>
+                      <Ionicons name="fast-food-outline" size={20} color="#7C3AED" />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.splitItemsToggleTitle}>
+                        Itens e Consumo Individual (Opcional)
+                      </Text>
+                      <Text style={styles.splitItemsToggleSub}>
+                        {splitItems.length === 0
+                          ? 'Toque para discriminar o que membros específicos consumiram'
+                          : `${splitItems.length} ${splitItems.length === 1 ? 'item cadastrado' : 'itens cadastrados'} (${formatMoney(billSplitCalculation.itemsTotal)})`}
+                      </Text>
+                    </View>
+                    <Ionicons
+                      name={splitShowItems ? 'chevron-up' : 'chevron-down'}
+                      size={20}
+                      color="#7C3AED"
+                    />
+                  </TouchableOpacity>
+
+                  {splitShowItems && (
+                    <View style={styles.splitItemsBox}>
+                      <Text style={styles.splitItemsBoxHint}>
+                        💡 Adicione itens consumidos exclusivamente por certos participantes. A diferença restante da conta ({formatMoney(billSplitCalculation.commonAmount)}) será dividida igualmente entre os participantes selecionados.
+                      </Text>
+
+                      {/* Formulário Novo Item */}
+                      <View style={styles.newItemCard}>
+                        <Text style={styles.newItemLabel}>NOVO ITEM CONSUMIDO</Text>
+                        <View style={styles.newItemInputRow}>
+                          <TextInput
+                            style={[styles.modalInput, { flex: 2, marginBottom: 0 }]}
+                            placeholder="Ex: Hambúrguer, Vinho..."
+                            placeholderTextColor="#94A3B8"
+                            value={newItemName}
+                            onChangeText={setNewItemName}
+                          />
+                          <TextInput
+                            style={[styles.modalInput, { flex: 1, marginBottom: 0 }]}
+                            placeholder="R$ 0,00"
+                            placeholderTextColor="#94A3B8"
+                            keyboardType="numeric"
+                            value={newItemAmount}
+                            onChangeText={setNewItemAmount}
+                          />
+                        </View>
+
+                        <Text style={[styles.newItemLabel, { marginTop: 10 }]}>QUEM CONSUMIU ESTE ITEM?</Text>
+                        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 4 }}>
+                          <View style={{ flexDirection: 'row', gap: 6 }}>
+                            {billSplitCalculation.activeMembers.map((m) => {
+                              const isAssigned = newItemAssigned.includes(m.id || m.name);
+                              return (
+                                <TouchableOpacity
+                                  key={m.id || m.name}
+                                  style={[styles.itemMemberChip, isAssigned && styles.itemMemberChipActive]}
+                                  onPress={() => toggleNewItemMember(m.id || m.name)}
+                                >
+                                  <Text style={[styles.itemMemberChipText, isAssigned && styles.itemMemberChipTextActive]}>
+                                    {m.name}
+                                  </Text>
+                                  {isAssigned && <Ionicons name="checkmark" size={12} color="#FFFFFF" />}
+                                </TouchableOpacity>
+                              );
+                            })}
+                          </View>
+                        </ScrollView>
+                        <Text style={styles.itemAssignHelp}>
+                          {newItemAssigned.length === 0
+                            ? 'Se não selecionar ninguém, o item é rateado entre todos os membros da conta.'
+                            : `${newItemAssigned.length} ${newItemAssigned.length === 1 ? 'pessoa dividirá' : 'pessoas dividirão'} o item.`}
+                        </Text>
+
+                        <TouchableOpacity
+                          style={styles.btnAddItemBtn}
+                          onPress={handleAddSplitItem}
+                          activeOpacity={0.8}
+                        >
+                          <Ionicons name="add" size={18} color="#FFFFFF" />
+                          <Text style={styles.btnAddItemBtnText}>Adicionar Item</Text>
+                        </TouchableOpacity>
+                      </View>
+
+                      {/* Lista de Itens Já Adicionados */}
+                      {splitItems.length > 0 && (
+                        <View style={{ marginTop: 12 }}>
+                          <Text style={styles.itemsListTitle}>Itens Cadastrados ({splitItems.length})</Text>
+                          {splitItems.map((item) => {
+                            const assignedNames = (item.assignedTo || [])
+                              .map((id) => groupMembers.find((m) => (m.id || m.name) === id)?.name || id)
+                              .join(', ');
+                            return (
+                              <View key={item.id} style={styles.splitItemRow}>
+                                <View style={{ flex: 1 }}>
+                                  <Text style={styles.splitItemRowName}>{item.name}</Text>
+                                  <Text style={styles.splitItemRowAssigned}>
+                                    Consumido por: {assignedNames || 'Todos os selecionados'}
+                                  </Text>
+                                </View>
+                                <Text style={styles.splitItemRowAmount}>{formatMoney(item.amount)}</Text>
+                                <TouchableOpacity
+                                  onPress={() => handleRemoveSplitItem(item.id)}
+                                  style={styles.splitItemRemoveBtn}
+                                >
+                                  <Ionicons name="trash-outline" size={16} color="#EF4444" />
+                                </TouchableOpacity>
+                              </View>
+                            );
+                          })}
+
+                          {/* Banner da Diferença Restante */}
+                          <View style={styles.diffBanner}>
+                            <View style={{ flex: 1 }}>
+                              <Text style={styles.diffBannerTitle}>Diferença Restante (Comum)</Text>
+                              <Text style={styles.diffBannerSub}>
+                                {formatMoney(billSplitCalculation.commonAmount)} ÷ {billSplitCalculation.activeMembers.length} pessoas = {formatMoney(billSplitCalculation.commonPerMember)}/cada
+                              </Text>
+                            </View>
+                            <View style={styles.diffBadge}>
+                              <Text style={styles.diffBadgeText}>{formatMoney(billSplitCalculation.commonAmount)}</Text>
+                            </View>
+                          </View>
+
+                          {billSplitCalculation.itemsExceedTotal && (
+                            <View style={styles.exceedBanner}>
+                              <Ionicons name="warning-outline" size={18} color="#B45309" />
+                              <View style={{ flex: 1 }}>
+                                <Text style={styles.exceedTitle}>Itens superam o total da conta</Text>
+                                <Text style={styles.exceedSub}>
+                                  A soma dos itens ({formatMoney(billSplitCalculation.itemsTotal)}) é maior que o valor total ({formatMoney(billSplitCalculation.rawTotal)}).
+                                </Text>
+                                <TouchableOpacity
+                                  style={styles.btnAjustarTotal}
+                                  onPress={handleSyncTotalWithItems}
+                                >
+                                  <Text style={styles.btnAjustarTotalText}>
+                                    Ajustar Total para {formatMoney(billSplitCalculation.itemsTotal)}
+                                  </Text>
+                                </TouchableOpacity>
+                              </View>
+                            </View>
+                          )}
+                        </View>
+                      )}
+                    </View>
+                  )}
+                </View>
+
+                {/* 5. Card Resumo Final da Divisão */}
+                <View style={styles.splitSummaryCard}>
+                  <View style={styles.splitSummaryHeader}>
+                    <View>
+                      <Text style={styles.splitSummaryTitle}>Resultado da Divisão</Text>
+                      <Text style={styles.splitSummarySub}>
+                        Total: {formatMoney(billSplitCalculation.effectiveTotal)} • {billSplitCalculation.activeMembers.length} participantes
+                      </Text>
+                    </View>
+                    <View style={styles.splitEqualTag}>
+                      <Text style={styles.splitEqualTagText}>
+                        {billSplitCalculation.hasItems ? 'Por Itens + Comum' : 'Divisão Igual'}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.splitResultsList}>
+                    {billSplitCalculation.memberResults.map((r) => (
+                      <View key={r.id} style={styles.splitResultRow}>
+                        <View style={styles.splitResultAvatar}>
+                          <Text style={styles.splitResultAvatarText}>{r.name.charAt(0).toUpperCase()}</Text>
+                        </View>
+
+                        <View style={{ flex: 1, marginHorizontal: 10 }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            <Text style={styles.splitResultName}>{r.name}</Text>
+                            {r.isPayer && (
+                              <View style={styles.payerBadge}>
+                                <Text style={styles.payerBadgeText}>Pagou</Text>
+                              </View>
+                            )}
+                          </View>
+
+                          {billSplitCalculation.hasItems && (
+                            <Text style={styles.splitResultDetailText}>
+                              Itens: {formatMoney(r.itemsShare)} • Comum: {formatMoney(r.commonShare)}
+                              {r.tipShare > 0 ? ` • Taxa: ${formatMoney(r.tipShare)}` : ''}
+                            </Text>
+                          )}
+                        </View>
+
+                        <Text style={styles.splitResultAmount}>{formatMoney(r.totalToPay)}</Text>
+                      </View>
+                    ))}
+                  </View>
+
+                  {/* Ações da Divisão */}
+                  <View style={styles.splitActionsRow}>
+                    <TouchableOpacity
+                      style={styles.btnSplitSave}
+                      onPress={handleSaveBillSplit}
+                      activeOpacity={0.85}
+                    >
+                      <LinearGradient
+                        colors={['#7C3AED', '#6D28D9']}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 0 }}
+                        style={styles.btnSplitSaveGradient}
+                      >
+                        <Ionicons name="save-outline" size={18} color="#FFFFFF" />
+                        <Text style={styles.btnSplitSaveText}>Salvar no Grupo</Text>
+                      </LinearGradient>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={styles.btnSplitShare}
+                      onPress={handleShareBillSplit}
+                      activeOpacity={0.8}
+                    >
+                      <Ionicons name="logo-whatsapp" size={18} color="#16A34A" />
+                      <Text style={styles.btnSplitShareText}>WhatsApp</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </>
+            )}
+
+            {/* ============================================================== */}
+            {/* ABA 3: ACERTO DE CONTAS                                        */}
             {/* ============================================================== */}
             {activeTab === 'acertos' && (
               <>
@@ -719,6 +1544,45 @@ export default function SharedFinancesScreen({ navigation }) {
                     <Text style={styles.acertoPayBtnText}>Registrar Acerto / Liquidação</Text>
                   </TouchableOpacity>
                 </View>
+
+                {/* PENDÊNCIAS PAR A PAR ENTRE MEMBROS DO GRUPO */}
+                {debtsCalculation.pairwiseDebts && debtsCalculation.pairwiseDebts.length > 0 && (
+                  <View style={{ marginBottom: 16 }}>
+                    <Text style={styles.sectionTitle}>
+                      Pendências entre Membros ({debtsCalculation.pairwiseDebts.length})
+                    </Text>
+                    {debtsCalculation.pairwiseDebts.map((item, idx) => (
+                      <View key={idx} style={styles.pairwiseDebtRow}>
+                        <View style={styles.pairwiseDebtAvatar}>
+                          <Text style={styles.pairwiseDebtAvatarText}>
+                            {item.from.charAt(0).toUpperCase()}
+                          </Text>
+                        </View>
+                        <View style={{ flex: 1, marginHorizontal: 10 }}>
+                          <Text style={styles.pairwiseDebtText}>
+                            <Text style={{ fontWeight: '700', color: '#1E293B' }}>{item.from}</Text> deve para{' '}
+                            <Text style={{ fontWeight: '700', color: '#7C3AED' }}>{item.to}</Text>
+                          </Text>
+                          <Text style={styles.pairwiseDebtSub}>Toque em quitar para registrar o acerto</Text>
+                        </View>
+                        <View style={{ alignItems: 'flex-end', gap: 4 }}>
+                          <Text style={styles.pairwiseDebtAmount}>{formatMoney(item.amount)}</Text>
+                          <TouchableOpacity
+                            style={styles.pairwiseDebtBtn}
+                            onPress={() => {
+                              setSettleFrom(item.from);
+                              setSettleTo(item.to);
+                              setSettleAmount(String(item.amount));
+                              setModalSettlement(true);
+                            }}
+                          >
+                            <Text style={styles.pairwiseDebtBtnText}>Acertar</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                )}
 
                 {/* HISTÓRICO DE ACERTOS */}
                 <Text style={styles.sectionTitle}>Histórico de liquidações ({settlements.length})</Text>
@@ -1278,6 +2142,22 @@ export default function SharedFinancesScreen({ navigation }) {
 
             <TouchableOpacity style={styles.btnModalPrimary} onPress={handleSaveSharedExpense}>
               <Text style={styles.btnModalPrimaryText}>Salvar e Dividir</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.btnOpenSplitFromModal}
+              onPress={() => {
+                setModalNewExpense(false);
+                if (expAmount) setSplitTotal(expAmount);
+                if (expDesc) setSplitDesc(expDesc);
+                setActiveTab('divisao');
+              }}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="pie-chart-outline" size={16} color="#7C3AED" />
+              <Text style={styles.btnOpenSplitFromModalText}>
+                Divisão Detalhada por Itens / Seleção
+              </Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -2237,6 +3117,685 @@ const styles = StyleSheet.create({
   },
   btnRegenerateCodeText: {
     fontSize: 12.5,
+    fontWeight: '700',
+    color: '#7C3AED',
+  },
+
+  // BANNER DE DIVISÃO NO DASHBOARD
+  billSplitBanner: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    marginBottom: 14,
+  },
+  billSplitBannerGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
+    gap: 12,
+  },
+  billSplitBannerIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.22)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  billSplitBannerTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  billSplitBannerSub: {
+    fontSize: 11.5,
+    color: 'rgba(255,255,255,0.88)',
+    marginTop: 2,
+    lineHeight: 16,
+  },
+  btnOpenSplitFromModal: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 10,
+    paddingVertical: 12,
+    backgroundColor: '#F3E8FF',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#DDD6FE',
+  },
+  btnOpenSplitFromModalText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#7C3AED',
+  },
+
+  // TELA DE DIVISÃO DE CONTAS (RACHADOR)
+  splitHeaderCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    padding: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderWidth: 1,
+    borderColor: '#EFEAF8',
+    marginBottom: 12,
+  },
+  splitHeaderIconBox: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    backgroundColor: '#EDE9FE',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  splitHeaderTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#1E293B',
+  },
+  splitHeaderSub: {
+    fontSize: 11.5,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  splitResetSmallBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: '#F1F5F9',
+  },
+  splitResetSmallBtnText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  splitFormCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#EFEAF8',
+    marginBottom: 14,
+  },
+  splitFieldLabel: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    color: '#6D28D9',
+    letterSpacing: 0.8,
+  },
+  splitInputDesc: {
+    backgroundColor: '#FAF7FD',
+    borderWidth: 1,
+    borderColor: '#E9D5FF',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    color: '#1E293B',
+    marginTop: 6,
+  },
+  splitInputTotalRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FAF7FD',
+    borderWidth: 1.5,
+    borderColor: '#DDD6FE',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 4,
+    marginTop: 6,
+  },
+  splitInputCurrency: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#7C3AED',
+    marginRight: 6,
+  },
+  splitInputTotal: {
+    flex: 1,
+    fontSize: 24,
+    fontWeight: '900',
+    color: '#1E293B',
+  },
+  splitTipRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 12,
+  },
+  splitTipLabel: {
+    fontSize: 12,
+    color: '#64748B',
+    fontWeight: '600',
+  },
+  splitTipChips: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  splitTipChip: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    backgroundColor: '#F1F5F9',
+  },
+  splitTipChipActive: {
+    backgroundColor: '#7C3AED',
+  },
+  splitTipChipText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+  splitTipChipTextActive: {
+    color: '#FFFFFF',
+  },
+  splitTipInfo: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#7C3AED',
+    marginTop: 6,
+  },
+  splitPayerChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 20,
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  splitPayerChipActive: {
+    backgroundColor: '#EDE9FE',
+    borderColor: '#C4B5FD',
+  },
+  splitPayerAvatar: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#CBD5E1',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  splitPayerAvatarActive: {
+    backgroundColor: '#7C3AED',
+  },
+  splitPayerAvatarText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#475569',
+  },
+  splitPayerAvatarTextActive: {
+    color: '#FFFFFF',
+  },
+  splitPayerText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  splitPayerTextActive: {
+    color: '#6D28D9',
+  },
+  splitMembersCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#EFEAF8',
+    marginBottom: 14,
+  },
+  splitSectionTitleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  splitSectionTitle: {
+    fontSize: 14.5,
+    fontWeight: '800',
+    color: '#1E293B',
+  },
+  splitSectionSub: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 1,
+  },
+  splitMiniActionBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    backgroundColor: '#EDE9FE',
+  },
+  splitMiniActionText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#7C3AED',
+  },
+  splitMembersList: {
+    gap: 8,
+  },
+  splitMemberToggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    padding: 10,
+    borderRadius: 14,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
+  },
+  splitMemberToggleRowActive: {
+    backgroundColor: '#FAF5FF',
+    borderColor: '#DDD6FE',
+  },
+  splitMemberAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#E2E8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  splitMemberAvatarActive: {
+    backgroundColor: '#7C3AED',
+  },
+  splitMemberAvatarText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#475569',
+  },
+  splitMemberAvatarTextActive: {
+    color: '#FFFFFF',
+  },
+  splitMemberName: {
+    fontSize: 13.5,
+    fontWeight: '700',
+    color: '#334155',
+  },
+  splitMemberNameActive: {
+    color: '#6D28D9',
+  },
+  splitMemberRole: {
+    fontSize: 11,
+    color: '#94A3B8',
+  },
+  splitItemsContainer: {
+    marginBottom: 14,
+  },
+  splitItemsToggleCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    padding: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderWidth: 1,
+    borderColor: '#EFEAF8',
+  },
+  splitItemsToggleIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: '#FAF5FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  splitItemsToggleTitle: {
+    fontSize: 13.5,
+    fontWeight: '800',
+    color: '#1E293B',
+  },
+  splitItemsToggleSub: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  splitItemsBox: {
+    backgroundColor: '#FAF7FD',
+    borderRadius: 18,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#E9D5FF',
+    marginTop: 8,
+  },
+  splitItemsBoxHint: {
+    fontSize: 11.5,
+    color: '#6D28D9',
+    lineHeight: 16,
+    marginBottom: 12,
+  },
+  newItemCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#E9D5FF',
+  },
+  newItemLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#6D28D9',
+    letterSpacing: 0.6,
+    marginBottom: 4,
+  },
+  newItemInputRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  itemMemberChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+    backgroundColor: '#F1F5F9',
+  },
+  itemMemberChipActive: {
+    backgroundColor: '#7C3AED',
+  },
+  itemMemberChipText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  itemMemberChipTextActive: {
+    color: '#FFFFFF',
+  },
+  itemAssignHelp: {
+    fontSize: 10.5,
+    color: '#94A3B8',
+    marginTop: 6,
+    marginBottom: 8,
+  },
+  btnAddItemBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#7C3AED',
+    paddingVertical: 8,
+    borderRadius: 10,
+  },
+  btnAddItemBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  itemsListTitle: {
+    fontSize: 12.5,
+    fontWeight: '800',
+    color: '#334155',
+    marginBottom: 8,
+  },
+  splitItemRow: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
+    marginBottom: 6,
+  },
+  splitItemRowName: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  splitItemRowAssigned: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 1,
+  },
+  splitItemRowAmount: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#7C3AED',
+  },
+  splitItemRemoveBtn: {
+    padding: 4,
+  },
+  diffBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EDE9FE',
+    padding: 12,
+    borderRadius: 12,
+    marginTop: 8,
+  },
+  diffBannerTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#6D28D9',
+  },
+  diffBannerSub: {
+    fontSize: 11,
+    color: '#5B21B6',
+    marginTop: 1,
+  },
+  diffBadge: {
+    backgroundColor: '#7C3AED',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  diffBadgeText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  exceedBanner: {
+    flexDirection: 'row',
+    gap: 8,
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    padding: 10,
+    borderRadius: 12,
+    marginTop: 8,
+  },
+  exceedTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#92400E',
+  },
+  exceedSub: {
+    fontSize: 11,
+    color: '#78350F',
+    marginTop: 1,
+  },
+  btnAjustarTotal: {
+    backgroundColor: '#D97706',
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    marginTop: 6,
+    alignSelf: 'flex-start',
+  },
+  btnAjustarTotalText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  splitSummaryCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#EFEAF8',
+    marginBottom: 20,
+  },
+  splitSummaryHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  splitSummaryTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#1E293B',
+  },
+  splitSummarySub: {
+    fontSize: 11.5,
+    color: '#64748B',
+    marginTop: 1,
+  },
+  splitEqualTag: {
+    backgroundColor: '#EDE9FE',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  splitEqualTagText: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    color: '#7C3AED',
+  },
+  splitResultsList: {
+    gap: 8,
+    marginBottom: 14,
+  },
+  splitResultRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FAF5FF',
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E9D5FF',
+  },
+  splitResultAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#7C3AED',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  splitResultAvatarText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  splitResultName: {
+    fontSize: 13.5,
+    fontWeight: '800',
+    color: '#1E293B',
+  },
+  payerBadge: {
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  payerBadgeText: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    color: '#15803D',
+  },
+  splitResultDetailText: {
+    fontSize: 11,
+    color: '#6D28D9',
+    marginTop: 2,
+  },
+  splitResultAmount: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#7C3AED',
+  },
+  splitActionsRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 6,
+  },
+  btnSplitSave: {
+    flex: 2,
+    borderRadius: 14,
+    overflow: 'hidden',
+  },
+  btnSplitSaveGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+  },
+  btnSplitSaveText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  btnSplitShare: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#DCFCE7',
+    borderWidth: 1,
+    borderColor: '#86EFAC',
+    borderRadius: 14,
+    paddingVertical: 12,
+  },
+  btnSplitShareText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#15803D',
+  },
+  pairwiseDebtRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#EFEAF8',
+    marginBottom: 8,
+  },
+  pairwiseDebtAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F3E8FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pairwiseDebtAvatarText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#7C3AED',
+  },
+  pairwiseDebtText: {
+    fontSize: 13,
+    color: '#334155',
+  },
+  pairwiseDebtSub: {
+    fontSize: 10.5,
+    color: '#94A3B8',
+    marginTop: 1,
+  },
+  pairwiseDebtAmount: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#EF4444',
+  },
+  pairwiseDebtBtn: {
+    backgroundColor: '#EDE9FE',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  pairwiseDebtBtnText: {
+    fontSize: 10.5,
     fontWeight: '700',
     color: '#7C3AED',
   },
