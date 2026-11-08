@@ -51,6 +51,7 @@ export default function SharedFinancesScreen({ navigation }) {
   const [modalSettlement, setModalSettlement] = useState(false);
 
   // Formulário Novo Grupo
+  const [newGroupTab, setNewGroupTab] = useState('create'); // 'create' | 'join'
   const [newGroupName, setNewGroupName] = useState('');
   const [newGroupType, setNewGroupType] = useState('Casal');
   const [newGroupDesc, setNewGroupDesc] = useState('');
@@ -880,55 +881,163 @@ export default function SharedFinancesScreen({ navigation }) {
       )}
 
       {/* ============================================================== */}
-      {/* MODAL 1: CRIAR GRUPO                                           */}
+      {/* MODAL 1: CRIAR GRUPO OU INGRESSAR COM CÓDIGO                   */}
       {/* ============================================================== */}
       <Modal visible={modalNewGroup} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Criar Grupo Financeiro</Text>
+              <Text style={styles.modalTitle}>
+                {newGroupTab === 'create' ? 'Novo Grupo Financeiro' : 'Ingressar em um Grupo'}
+              </Text>
               <TouchableOpacity onPress={() => setModalNewGroup(false)}>
                 <Ionicons name="close" size={24} color="#71717A" />
               </TouchableOpacity>
             </View>
 
-            <Text style={styles.inputLabel}>NOME DO GRUPO</Text>
-            <TextInput
-              style={styles.modalInput}
-              placeholder="Ex: Nossa Casa, Viagem Fim de Ano..."
-              placeholderTextColor="#9CA3AF"
-              value={newGroupName}
-              onChangeText={setNewGroupName}
-            />
-
-            <Text style={styles.inputLabel}>TIPO DE COMPARTILHAMENTO</Text>
-            <View style={styles.typePillsRow}>
-              {['Casal', 'Família', 'Amigos', 'Moradia'].map((t) => (
-                <TouchableOpacity
-                  key={t}
-                  style={[styles.typePill, newGroupType === t && styles.typePillActive]}
-                  onPress={() => setNewGroupType(t)}
+            {/* ABAS SELETORAS: CRIAR NOVO GRUPO vs EU TENHO UM CÓDIGO */}
+            <View style={styles.modalTabsRow}>
+              <TouchableOpacity
+                style={[styles.modalTabBtn, newGroupTab === 'create' && styles.modalTabBtnActive]}
+                onPress={() => setNewGroupTab('create')}
+                activeOpacity={0.8}
+              >
+                <Ionicons
+                  name="add-circle-outline"
+                  size={16}
+                  color={newGroupTab === 'create' ? '#7C3AED' : '#64748B'}
+                />
+                <Text
+                  style={[
+                    styles.modalTabBtnText,
+                    newGroupTab === 'create' && styles.modalTabBtnTextActive,
+                  ]}
                 >
-                  <Text style={[styles.typePillText, newGroupType === t && styles.typePillTextActive]}>
-                    {t}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+                  Criar novo grupo
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.modalTabBtn, newGroupTab === 'join' && styles.modalTabBtnActive]}
+                onPress={() => setNewGroupTab('join')}
+                activeOpacity={0.8}
+              >
+                <Ionicons
+                  name="key-outline"
+                  size={16}
+                  color={newGroupTab === 'join' ? '#7C3AED' : '#64748B'}
+                />
+                <Text
+                  style={[
+                    styles.modalTabBtnText,
+                    newGroupTab === 'join' && styles.modalTabBtnTextActive,
+                  ]}
+                >
+                  Eu tenho um código
+                </Text>
+              </TouchableOpacity>
             </View>
 
-            <Text style={styles.inputLabel}>DESCRIÇÃO (OPCIONAL)</Text>
-            <TextInput
-              style={[styles.modalInput, { height: 70 }]}
-              placeholder="Ex: Despesas conjuntas do apartamento"
-              placeholderTextColor="#9CA3AF"
-              multiline
-              value={newGroupDesc}
-              onChangeText={setNewGroupDesc}
-            />
+            {/* ABA 1: FORMULÁRIO DE CRIAÇÃO DE GRUPO */}
+            {newGroupTab === 'create' ? (
+              <>
+                <Text style={styles.inputLabel}>NOME DO GRUPO</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  placeholder="Ex: Nossa Casa, Viagem Fim de Ano..."
+                  placeholderTextColor="#9CA3AF"
+                  value={newGroupName}
+                  onChangeText={setNewGroupName}
+                />
 
-            <TouchableOpacity style={styles.btnModalPrimary} onPress={handleCreateGroup}>
-              <Text style={styles.btnModalPrimaryText}>Criar Grupo</Text>
-            </TouchableOpacity>
+                <Text style={styles.inputLabel}>TIPO DE COMPARTILHAMENTO</Text>
+                <View style={styles.typePillsRow}>
+                  {['Casal', 'Família', 'Amigos', 'Moradia'].map((t) => (
+                    <TouchableOpacity
+                      key={t}
+                      style={[styles.typePill, newGroupType === t && styles.typePillActive]}
+                      onPress={() => setNewGroupType(t)}
+                    >
+                      <Text style={[styles.typePillText, newGroupType === t && styles.typePillTextActive]}>
+                        {t}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                <Text style={styles.inputLabel}>DESCRIÇÃO (OPCIONAL)</Text>
+                <TextInput
+                  style={[styles.modalInput, { height: 70 }]}
+                  placeholder="Ex: Despesas conjuntas do apartamento"
+                  placeholderTextColor="#9CA3AF"
+                  multiline
+                  value={newGroupDesc}
+                  onChangeText={setNewGroupDesc}
+                />
+
+                <TouchableOpacity style={styles.btnModalPrimary} onPress={handleCreateGroup}>
+                  <Text style={styles.btnModalPrimaryText}>Criar Grupo</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              /* ABA 2: FORMULÁRIO EU TENHO UM CÓDIGO COM BARRA E BOTÃO COLAR */
+              <View style={{ marginTop: 4 }}>
+                <Text style={styles.joinCodeSubText}>
+                  Digite ou cole o código único de 6 caracteres fornecido pelo criador do grupo.
+                </Text>
+
+                <Text style={styles.inputLabel}>CÓDIGO DE CONVITE</Text>
+                <View style={styles.codeInputBar}>
+                  <Ionicons name="key" size={20} color="#7C3AED" style={{ marginLeft: 14 }} />
+                  <TextInput
+                    style={styles.codeTextInput}
+                    placeholder="Ex: ABC123"
+                    placeholderTextColor="#94A3B8"
+                    value={joinCode}
+                    onChangeText={(val) => setJoinCode(val.toUpperCase())}
+                    autoCapitalize="characters"
+                    maxLength={10}
+                  />
+                  <TouchableOpacity
+                    style={styles.pasteCodeBtn}
+                    onPress={async () => {
+                      try {
+                        const clipText = await Clipboard.getStringAsync();
+                        if (clipText) {
+                          const match = clipText.match(/[A-Z0-9]{5,8}/i);
+                          const clean = (match ? match[0] : clipText).trim().toUpperCase();
+                          setJoinCode(clean);
+                        }
+                      } catch (e) {
+                        console.warn('Erro ao colar código:', e);
+                      }
+                    }}
+                    activeOpacity={0.75}
+                  >
+                    <Ionicons name="clipboard-outline" size={15} color="#7C3AED" />
+                    <Text style={styles.pasteCodeBtnText}>Colar</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <View style={styles.codeTimerNotice}>
+                  <Ionicons name="time-outline" size={15} color="#059669" />
+                  <Text style={styles.codeTimerNoticeText}>
+                    O código é único e tem validade de 30 minutos a partir do momento em que foi gerado.
+                  </Text>
+                </View>
+
+                <TouchableOpacity
+                  style={styles.btnModalPrimary}
+                  onPress={async () => {
+                    await handleJoin();
+                    setModalNewGroup(false);
+                  }}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.btnModalPrimaryText}>Ingressar no Grupo</Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
         </View>
       </Modal>
@@ -1713,6 +1822,99 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '800',
     color: '#18181B',
+  },
+  modalTabsRow: {
+    flexDirection: 'row',
+    backgroundColor: '#F3E8FF',
+    borderRadius: 16,
+    padding: 4,
+    marginBottom: 16,
+    gap: 4,
+  },
+  modalTabBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 12,
+  },
+  modalTabBtnActive: {
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#7C3AED',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  modalTabBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+  modalTabBtnTextActive: {
+    color: '#7C3AED',
+  },
+  joinCodeSubText: {
+    fontSize: 13.5,
+    fontWeight: '500',
+    color: '#475569',
+    lineHeight: 20,
+    marginBottom: 12,
+  },
+  codeInputBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    overflow: 'hidden',
+    marginBottom: 12,
+  },
+  codeTextInput: {
+    flex: 1,
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#0F172A',
+    letterSpacing: 2,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+  },
+  pasteCodeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#EDE9FE',
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 12,
+    marginRight: 8,
+  },
+  pasteCodeBtnText: {
+    fontSize: 12.5,
+    fontWeight: '800',
+    color: '#7C3AED',
+  },
+  codeTimerNotice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    marginBottom: 18,
+  },
+  codeTimerNoticeText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#059669',
+    lineHeight: 16,
   },
   inputLabel: {
     fontSize: 11,
