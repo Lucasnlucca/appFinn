@@ -92,7 +92,7 @@ export default function AppIntroSplash({ isAppReady, onFinish }) {
       <VideoView
         style={styles.video}
         player={player}
-        contentFit="cover"
+        contentFit="contain"
         nativeControls={false}
         surfaceType="textureView"
         showsTimecodes={false}
@@ -115,3 +115,4 @@ const styles = StyleSheet.create({
     height: '100%',
   },
 });
+
