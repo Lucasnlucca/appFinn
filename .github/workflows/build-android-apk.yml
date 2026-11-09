@@ -41,7 +41,7 @@ jobs:
         working-directory: apps/mobile/android
         run: |
           set -o pipefail
-          ./gradlew assembleRelease assembleDebug --no-daemon --stacktrace 2>&1 | tee gradle_output.log
+          ./gradlew assembleRelease --no-daemon --stacktrace 2>&1 | tee gradle_output.log
 
       - name: Publicar Release no GitHub com APK
         if: always()
