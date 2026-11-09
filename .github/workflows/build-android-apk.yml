@@ -25,30 +25,23 @@ jobs:
           node-version: 20
           cache: 'npm'
 
-      - name: Configurar Java 17 (JDK Recomendado React Native)
+      - name: Configurar Java 21 (JDK)
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
-          java-version: '17'
-
-      - name: Configurar Android SDK
-        uses: android-actions/setup-android@v3
+          distribution: 'zulu'
+          java-version: '21'
 
       - name: Instalar Dependências do Monorepo
         run: npm ci
 
-      - name: Gerar Projeto Android Nativo com Expo Prebuild
-        working-directory: apps/mobile
-        run: npx expo prebuild --platform android --clean
-
       - name: Permissões de Execução no Gradlew
         run: chmod +x apps/mobile/android/gradlew
 
-      - name: Compilar APK Release (Gradle)
+      - name: Compilar APK Android (Gradle)
         working-directory: apps/mobile/android
         run: |
           set -o pipefail
-          ./gradlew assembleRelease --no-daemon --stacktrace 2>&1 | tee gradle_output.log
+          ./gradlew assembleRelease assembleDebug --no-daemon --stacktrace 2>&1 | tee gradle_output.log
 
       - name: Publicar Release no GitHub com APK
         if: always()
@@ -63,7 +56,7 @@ jobs:
           done
           
           if [ ${#FILES[@]} -gt 0 ]; then
-            gh release create "$TAG" "${FILES[@]}" --title "FINN AI App ($TAG)" --notes "Download do APK instalável e log do build"
+            gh release create "$TAG" "${FILES[@]}" --title "FINN AI App ($TAG)" --notes "Download dos APKs instaláveis (Release & Debug) e log do build"
           fi
 
       - name: Fazer Upload do APK como Artifact
@@ -74,5 +67,6 @@ jobs:
           path: |
             apps/mobile/android/gradle_output.log
             apps/mobile/android/app/build/outputs/apk/release/*.apk
+            apps/mobile/android/app/build/outputs/apk/debug/*.apk
             apps/mobile/android/**/*.apk
           retention-days: 30
