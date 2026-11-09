@@ -1,16 +1,16 @@
 name: Build Android APK (FINN AI)
 
 on:
+  workflow_dispatch:
   push:
     branches: [ main ]
-  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
   build-apk:
-    name: Build APK Release & Debug
+    name: Build APK Android
     runs-on: ubuntu-latest
 
     steps:
@@ -25,33 +25,40 @@ jobs:
           node-version: 20
           cache: 'npm'
 
-      - name: Configurar Java 21 (JDK)
+      - name: Configurar Java 17 (JDK Recomendado React Native)
         uses: actions/setup-java@v4
         with:
-          distribution: 'zulu'
-          java-version: '21'
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Configurar Android SDK
+        uses: android-actions/setup-android@v3
 
       - name: Instalar Dependências do Monorepo
         run: npm ci
 
-      - name: Permissões de Execução no Gradlew
-        run: chmod +x android/gradlew
+      - name: Gerar Projeto Android Nativo com Expo Prebuild
+        working-directory: apps/mobile
+        run: npx expo prebuild --platform android --clean
 
-      - name: Compilar APK Android (Gradle)
+      - name: Permissões de Execução no Gradlew
+        run: chmod +x apps/mobile/android/gradlew
+
+      - name: Compilar APK Release (Gradle)
+        working-directory: apps/mobile/android
         run: |
           set -o pipefail
-          cd android
-          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee gradle_output.log
+          ./gradlew assembleRelease --no-daemon --stacktrace 2>&1 | tee gradle_output.log
 
-      - name: Publicar Release no GitHub com APK e Logs
+      - name: Publicar Release no GitHub com APK
         if: always()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="v1.0.$(date +%s)"
           FILES=()
-          [ -f android/gradle_output.log ] && FILES+=(android/gradle_output.log)
-          for f in $(find android/ -name "*.apk" 2>/dev/null); do
+          [ -f apps/mobile/android/gradle_output.log ] && FILES+=(apps/mobile/android/gradle_output.log)
+          for f in $(find apps/mobile/android/ -name "*.apk" 2>/dev/null); do
             FILES+=("$f")
           done
           
@@ -59,13 +66,13 @@ jobs:
             gh release create "$TAG" "${FILES[@]}" --title "FINN AI App ($TAG)" --notes "Download do APK instalável e log do build"
           fi
 
-      - name: Fazer Upload do APK e Logs
+      - name: Fazer Upload do APK como Artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: build-logs-and-apk
+          name: finn-ai-app-apk
           path: |
-            android/gradle_output.log
-            android/app/build/outputs/apk/debug/*.apk
-            android/**/*.apk
+            apps/mobile/android/gradle_output.log
+            apps/mobile/android/app/build/outputs/apk/release/*.apk
+            apps/mobile/android/**/*.apk
           retention-days: 30
