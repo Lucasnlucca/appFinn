@@ -64,7 +64,8 @@
           "photosPermission": "FINN precisa acessar suas fotos para você escolher sua imagem de perfil."
         }
       ],
-      "expo-document-picker"
+      "expo-document-picker",
+      "@react-native-google-signin/google-signin"
     ]
   }
 }

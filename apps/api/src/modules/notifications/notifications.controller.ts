@@ -101,3 +101,4 @@ export class NotificationsController {
     return this.notificationsService.registerPushToken(user.id, body);
   }
 }
+

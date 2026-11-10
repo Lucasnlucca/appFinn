@@ -519,201 +519,6 @@ export async function registerUser(email, password, fullName, phone) {
 }
 
 /**
- * Autenticação e Criação de Conta Oficial com Google (OAuth 2.0 + Validação de Duplicidade no PostgreSQL)
- * @param {object} params
- * @param {string} [params.email]
- * @param {string} [params.name]
- * @param {string} [params.avatarUrl]
- * @param {string} [params.idToken]
- * @param {string} [params.accessToken]
- * @param {'login' | 'register'} [params.mode] - 'register' bloqueia se o e-mail já existir; 'login' autentica na conta existente
- */
-export async function loginWithGoogleAccount({
-  email,
-  name,
-  avatarUrl,
-  idToken,
-  accessToken,
-  mode = 'login',
-}) {
-  let cleanEmail = (email || '').trim().toLowerCase();
-  let resolvedName = (name || '').trim();
-  let resolvedAvatar = avatarUrl || null;
-
-  // 1. Se houver token OAuth 2.0 do Google, valida diretamente na API oficial do Google
-  if (idToken) {
-    try {
-      const resp = await fetch(
-        `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`
-      );
-      if (resp.ok) {
-        const info = await resp.json();
-        if (info?.email) {
-          cleanEmail = String(info.email).trim().toLowerCase();
-          resolvedName = info.name || resolvedName;
-          resolvedAvatar = info.picture || resolvedAvatar;
-        }
-      }
-    } catch {}
-  } else if (accessToken) {
-    try {
-      const resp = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
-      if (resp.ok) {
-        const info = await resp.json();
-        if (info?.email) {
-          cleanEmail = String(info.email).trim().toLowerCase();
-          resolvedName = info.name || resolvedName;
-          resolvedAvatar = info.picture || resolvedAvatar;
-        }
-      }
-    } catch {}
-  }
-
-  if (!cleanEmail || !cleanEmail.includes('@')) {
-    throw new Error('Informe um e-mail Google válido.');
-  }
-
-  const derivedName =
-    resolvedName ||
-    cleanEmail
-      .split('@')[0]
-      .replace(/[._0-9-]+/g, ' ')
-      .trim()
-      .replace(/\b\w/g, (l) => l.toUpperCase()) ||
-    'Usuário Google';
-
-  // 2. Se o usuário clicou em "Criar conta com o Google" (mode === 'register'), valida duplicidade antes!
-  if (mode === 'register') {
-    const dup = await checkEmailExistsApi(cleanEmail);
-    if (dup.exists) {
-      throw new Error(
-        'Já existe uma conta cadastrada com este e-mail. Não é permitido criar outra conta com o mesmo e-mail.'
-      );
-    }
-  }
-
-  // 3. Tenta autenticar/criar na rota dedicada POST /api/v1/auth/google no PostgreSQL
-  try {
-    const googleData = await apiRequest('auth/google', {
-      method: 'POST',
-      body: {
-        email: cleanEmail,
-        fullName: derivedName,
-        avatarUrl: resolvedAvatar,
-        idToken,
-        accessToken,
-        mode,
-      },
-      timeoutMs: 10000,
-    });
-
-    if (googleData?.token) {
-      await saveAuthToken(googleData.token);
-    }
-    if (googleData?.user) {
-      const mergedUser = await saveAuthUser(
-        {
-          ...googleData.user,
-          email: cleanEmail,
-          name: googleData.user.fullName || googleData.user.name || derivedName,
-          avatarUri: googleData.user.avatarUri || googleData.user.avatarUrl || resolvedAvatar,
-          provider: 'google',
-        },
-        googleData.token
-      );
-      return {
-        ...googleData,
-        user: mergedUser,
-        provider: 'google',
-      };
-    }
-  } catch (err) {
-    const msg = String(err?.message || '');
-    // Se o backend retornou conflito de duplicidade (409), repassa o erro imediatamente!
-    if (
-      msg.toLowerCase().includes('já existe') ||
-      msg.toLowerCase().includes('conflict') ||
-      msg.includes('409')
-    ) {
-      throw new Error(
-        'Já existe uma conta cadastrada com este e-mail. Não é permitido criar outra conta com o mesmo e-mail.'
-      );
-    }
-  }
-
-  // 4. Fallback compatível com o PostgreSQL caso a rota /auth/google ainda não tenha sido publicada na VPS
-  const googlePass = `FinnG#${cleanEmail.slice(0, 4)}99!`;
-
-  if (mode === 'register') {
-    // Em modo de criação de conta: tenta criar no PostgreSQL. Se já existir no PostgreSQL, bloqueia!
-    const regRes = await registerUser(cleanEmail, googlePass, derivedName);
-    return { ...regRes, isNewAccount: true, provider: 'google' };
-  }
-
-  // Em modo de login ("Continuar com Google"):
-  // 4a. Tenta logar com a credencial Google no PostgreSQL
-  try {
-    const loginRes = await loginUser(cleanEmail, googlePass);
-    if (loginRes?.user) {
-      return { ...loginRes, isNewAccount: false, provider: 'google' };
-    }
-  } catch {}
-
-  // 4b. Se a conta já foi autenticada antes no aparelho com outra senha, recupera o MESMO ID e Token do PostgreSQL!
-  const indexedAccount = await getIndexedAccountByEmail(cleanEmail);
-  if (indexedAccount && indexedAccount.id && !String(indexedAccount.id).startsWith('google-')) {
-    if (indexedAccount.token) {
-      await saveAuthToken(indexedAccount.token);
-    }
-    const mergedExisting = await saveAuthUser(
-      {
-        ...indexedAccount,
-        email: cleanEmail,
-        provider: 'google',
-      },
-      indexedAccount.token
-    );
-    return {
-      user: mergedExisting,
-      token: indexedAccount.token,
-      isNewAccount: false,
-      provider: 'google',
-    };
-  }
-
-  // 4c. Se a conta ainda não existe no PostgreSQL, tenta registrá-la no PostgreSQL
-  try {
-    const regRes = await registerUser(cleanEmail, googlePass, derivedName);
-    if (regRes?.user) {
-      return { ...regRes, isNewAccount: true, provider: 'google' };
-    }
-  } catch (err) {
-    const msg = String(err?.message || '');
-    if (msg.toLowerCase().includes('já existe')) {
-      throw new Error(
-        'Já existe uma conta cadastrada com este e-mail e senha. Por favor, entre digitando sua senha ou use sua biometria.'
-      );
-    }
-    throw err;
-  }
-
-  throw new Error('Não foi possível autenticar com o Google no momento.');
-}
-
-export async function registerWithGoogleAccount({ email, name, avatarUrl, idToken, accessToken }) {
-  return loginWithGoogleAccount({
-    email,
-    name,
-    avatarUrl,
-    idToken,
-    accessToken,
-    mode: 'register',
-  });
-}
-
-/**
  * Autenticação - Dados do Usuário Ativo
  */
 export async function getMe() {
@@ -735,7 +540,71 @@ export async function logoutUser() {
 }
 
 /**
- * Autenticação - Redefinir / Atualizar Senha
+ * Autenticação - Solicitar Código de Recuperação de Senha (6 dígitos por e-mail)
+ */
+export async function requestPasswordResetApi(email) {
+  const cleanEmail = (email || '').trim().toLowerCase();
+  if (!cleanEmail || !cleanEmail.includes('@')) {
+    throw new Error('Informe um endereço de e-mail válido.');
+  }
+
+  return await apiRequest('auth/forgot-password', {
+    method: 'POST',
+    body: { email: cleanEmail },
+    timeoutMs: 18000,
+  });
+}
+
+/**
+ * Autenticação - Validar Código de 6 dígitos enviado por e-mail
+ */
+export async function verifyPasswordResetCodeApi(email, code) {
+  const cleanEmail = (email || '').trim().toLowerCase();
+  const cleanCode = String(code || '').replace(/\D+/g, '').trim();
+
+  return await apiRequest('auth/verify-reset-code', {
+    method: 'POST',
+    body: { email: cleanEmail, code: cleanCode },
+    timeoutMs: 10000,
+  });
+}
+
+/**
+ * Autenticação - Redefinir Senha com Código de 6 dígitos
+ */
+export async function resetPasswordWithCodeApi({ email, code, newPassword }) {
+  const cleanEmail = (email || '').trim().toLowerCase();
+  const cleanCode = String(code || '').replace(/\D+/g, '').trim();
+
+  const data = await apiRequest('auth/reset-password', {
+    method: 'POST',
+    body: {
+      email: cleanEmail,
+      code: cleanCode,
+      newPassword,
+    },
+    timeoutMs: 12000,
+  });
+
+  if (data?.token) {
+    await saveAuthToken(data.token);
+  }
+  if (data?.user) {
+    const baseUser = {
+      ...data.user,
+      email: cleanEmail,
+      name: data.user.fullName || data.user.name || cleanEmail.split('@')[0],
+      avatarUri: data.user.avatarUri || data.user.avatarUrl || null,
+    };
+    const mergedUser = await saveAuthUser(baseUser, data.token);
+    data.user = mergedUser;
+  }
+
+  return data;
+}
+
+/**
+ * Autenticação - Redefinir / Atualizar Senha (usuário logado)
  */
 export async function updatePasswordApi(newPassword) {
   try {

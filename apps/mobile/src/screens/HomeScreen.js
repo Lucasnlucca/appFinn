@@ -1569,45 +1569,54 @@ export default function HomeScreen({ navigation }) {
       {/* MODAL CENTRAL DE NOTIFICAÇÕES (ETAPA 3 - NOVO VISUAL) */}
       <Modal
         visible={notificationsModalVisible}
-        transparent
+        transparent={false}
         animationType="slide"
         onRequestClose={() => setNotificationsModalVisible(false)}
       >
-        <TouchableOpacity
-          style={styles.groupModalOverlay}
-          activeOpacity={1}
-          onPress={() => setNotificationsModalVisible(false)}
+        <View
+          style={{
+            flex: 1,
+            width: '100%',
+            backgroundColor: '#F4F1FB',
+            paddingTop: Math.max(insets.top + 14, 28),
+            paddingHorizontal: 20,
+          }}
         >
+          {/* CABEÇALHO: Notificações + N não lidas + Marcar lidas + Preferências + Fechar */}
           <View
-            style={[
-              styles.groupModalSheet,
-              {
-                maxHeight: '92%',
-                backgroundColor: '#F4F1FB',
-                paddingHorizontal: 18,
-                paddingTop: 14,
-                paddingBottom: Math.max(insets.bottom + 20, 24),
-              },
-            ]}
-            onStartShouldSetResponder={() => true}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'flex-start',
+              justifyContent: 'space-between',
+              marginBottom: 16,
+              gap: 10,
+            }}
           >
-            <View style={styles.groupModalHandle} />
-
-            {/* CABEÇALHO: Notificações + N não lidas + Marcar lidas + Preferências */}
-            <View
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                marginTop: 4,
-                marginBottom: 16,
-                gap: 8,
-              }}
-            >
-              <View style={{ flex: 1 }}>
-                <Text
+            <View style={{ flex: 1, paddingRight: 4 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <TouchableOpacity
+                  onPress={() => setNotificationsModalVisible(false)}
+                  activeOpacity={0.75}
+                  accessibilityRole="button"
+                  accessibilityLabel="Voltar para a tela inicial"
                   style={{
-                    fontSize: 28,
+                    width: 36,
+                    height: 36,
+                    borderRadius: 18,
+                    backgroundColor: '#FFFFFF',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    marginLeft: -2,
+                  }}
+                >
+                  <Ionicons name="chevron-back" size={20} color="#0F172A" />
+                </TouchableOpacity>
+                <Text
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  style={{
+                    flexShrink: 1,
+                    fontSize: 26,
                     fontWeight: '800',
                     color: '#0F172A',
                     letterSpacing: -0.5,
@@ -1615,126 +1624,133 @@ export default function HomeScreen({ navigation }) {
                 >
                   Notificações
                 </Text>
-                <Text
-                  style={{
-                    fontSize: 13,
-                    color: '#475569',
-                    fontWeight: '500',
-                    marginTop: 2,
-                  }}
-                >
-                  {unreadNotificationsCount}{' '}
-                  {unreadNotificationsCount === 1 ? 'não lida' : 'não lidas'}
-                </Text>
               </View>
-
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <TouchableOpacity
-                  onPress={() => markAllNotificationsAsRead && markAllNotificationsAsRead()}
-                  activeOpacity={0.8}
-                  accessibilityRole="button"
-                  accessibilityLabel="Marcar todas as notificações como lidas"
-                  style={{
-                    minHeight: 44,
-                    paddingHorizontal: 16,
-                    borderRadius: 999,
-                    backgroundColor: '#EDE9FE',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <Text style={{ fontSize: 13, fontWeight: '700', color: '#5B21B6' }}>
-                    Marcar lidas
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  onPress={() => {
-                    setNotificationsModalVisible(false);
-                    navigation.navigate('NotificationPreferences');
-                  }}
-                  activeOpacity={0.8}
-                  accessibilityRole="button"
-                  accessibilityLabel="Preferências de notificação"
-                  style={{
-                    width: 44,
-                    height: 44,
-                    borderRadius: 22,
-                    backgroundColor: '#FFFFFF',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <Ionicons name="options-outline" size={20} color="#5B21B6" />
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            {/* FILTROS EM PÍLULAS: Todas | IA | Gastos | Lembretes */}
-            <View style={{ marginBottom: 16 }}>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: 8,
+              <Text
+                style={{
+                  fontSize: 13,
+                  color: '#475569',
+                  fontWeight: '500',
+                  marginTop: 4,
+                  marginLeft: 42,
                 }}
               >
-                {['Todas', 'IA', 'Gastos', 'Lembretes'].map((tab) => {
-                  const isActive = notifFilterTab === tab;
-                  return (
-                    <TouchableOpacity
-                      key={tab}
-                      onPress={() => setNotifFilterTab(tab)}
-                      activeOpacity={0.85}
-                      accessibilityRole="tab"
-                      accessibilityState={{ selected: isActive }}
-                      accessibilityLabel={`Filtrar notificações por ${tab}`}
-                      style={{
-                        minHeight: 44,
-                        paddingHorizontal: 18,
-                        borderRadius: 999,
-                        backgroundColor: isActive ? '#5B21B6' : '#FFFFFF',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                      }}
-                    >
-                      <Text
-                        style={{
-                          fontSize: 13.5,
-                          fontWeight: isActive ? '700' : '500',
-                          color: isActive ? '#FFFFFF' : '#1E293B',
-                        }}
-                      >
-                        {tab}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
+                {unreadNotificationsCount}{' '}
+                {unreadNotificationsCount === 1 ? 'não lida' : 'não lidas'}
+              </Text>
             </View>
 
-            {!loaded ? (
-              /* ESTADO DE CARREGAMENTO */
-              <View
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2 }}>
+              <TouchableOpacity
+                onPress={() => markAllNotificationsAsRead && markAllNotificationsAsRead()}
+                activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityLabel="Marcar todas as notificações como lidas"
                 style={{
-                  paddingVertical: 56,
+                  height: 40,
+                  paddingHorizontal: 14,
+                  borderRadius: 999,
+                  backgroundColor: '#EDE9FE',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  gap: 12,
                 }}
               >
-                <ActivityIndicator size="large" color="#5B21B6" />
-                <Text style={{ fontSize: 14, fontWeight: '600', color: '#475569' }}>
-                  Carregando notificações...
+                <Text style={{ fontSize: 12.5, fontWeight: '700', color: '#5B21B6' }}>
+                  Marcar lidas
                 </Text>
-              </View>
-            ) : (
-              <ScrollView
-                showsVerticalScrollIndicator={false}
-                contentContainerStyle={{ paddingBottom: 16 }}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => {
+                  setNotificationsModalVisible(false);
+                  navigation.navigate('NotificationPreferences');
+                }}
+                activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityLabel="Preferências de notificação"
+                style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: 20,
+                  backgroundColor: '#FFFFFF',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
               >
+                <Ionicons name="options-outline" size={20} color="#5B21B6" />
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* FILTROS EM PÍLULAS: Todas | IA | Gastos | Lembretes */}
+          <View style={{ height: 48, marginBottom: 14 }}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={{ flexGrow: 0 }}
+              contentContainerStyle={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 8,
+                paddingRight: 8,
+              }}
+            >
+              {['Todas', 'IA', 'Gastos', 'Lembretes'].map((tab) => {
+                const isActive = notifFilterTab === tab;
+                return (
+                  <TouchableOpacity
+                    key={tab}
+                    onPress={() => setNotifFilterTab(tab)}
+                    activeOpacity={0.85}
+                    accessibilityRole="tab"
+                    accessibilityState={{ selected: isActive }}
+                    accessibilityLabel={`Filtrar notificações por ${tab}`}
+                    style={{
+                      height: 42,
+                      paddingHorizontal: 18,
+                      borderRadius: 999,
+                      backgroundColor: isActive ? '#5B21B6' : '#FFFFFF',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontSize: 13.5,
+                        fontWeight: isActive ? '700' : '500',
+                        color: isActive ? '#FFFFFF' : '#1E293B',
+                      }}
+                    >
+                      {tab}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+
+          {!loaded ? (
+            /* ESTADO DE CARREGAMENTO */
+            <View
+              style={{
+                flex: 1,
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 12,
+              }}
+            >
+              <ActivityIndicator size="large" color="#5B21B6" />
+              <Text style={{ fontSize: 14, fontWeight: '600', color: '#475569' }}>
+                Carregando notificações...
+              </Text>
+            </View>
+          ) : (
+            <ScrollView
+              style={{ flex: 1 }}
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={{
+                paddingBottom: Math.max(insets.bottom + 24, 32),
+              }}
+            >
                 {(() => {
                   const filtered = (notifications || []).filter((item) => {
                     const cat = String(item.category || '').toLowerCase();
@@ -2142,7 +2158,6 @@ export default function HomeScreen({ navigation }) {
               </ScrollView>
             )}
           </View>
-        </TouchableOpacity>
       </Modal>
     </View>
   );

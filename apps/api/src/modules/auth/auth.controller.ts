@@ -56,19 +56,50 @@ export class AuthController {
     return this.authService.checkEmailExists(body?.email);
   }
 
+  @Post('forgot-password')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Enviar código de 6 dígitos por e-mail para recuperação de senha' })
+  async forgotPassword(@Body() body: { email: string }) {
+    return this.authService.requestPasswordReset(body?.email);
+  }
+
+  @Post('verify-reset-code')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Validar código de 6 dígitos enviado por e-mail' })
+  async verifyResetCode(@Body() body: { email: string; code: string }) {
+    return this.authService.verifyPasswordResetCode(body?.email, body?.code);
+  }
+
+  @Post('reset-password')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Redefinir senha usando o código de 6 dígitos enviado por e-mail' })
+  async resetPassword(
+    @Body() body: { email: string; code: string; newPassword: string },
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const result = await this.authService.resetPasswordWithCode(body);
+    if (result?.token) {
+      this.setAuthCookie(response, result.token);
+    }
+    return result;
+  }
+
+  @Put('password')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Atualizar senha do usuário autenticado' })
+  async updatePassword(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: { password?: string; newPassword?: string },
+  ) {
+    return this.authService.changePassword(user.id, body?.newPassword || body?.password);
+  }
+
   @Post('google')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Autenticação ou Criação de Conta via Google OAuth 2.0 com validação de duplicidade' })
+  @ApiOperation({ summary: 'Autenticação e Cadastro Oficial com Google via ID Token Criptográfico' })
   async googleAuth(
-    @Body()
-    body: {
-      idToken?: string;
-      accessToken?: string;
-      email?: string;
-      fullName?: string;
-      avatarUrl?: string;
-      mode?: 'login' | 'register';
-    },
+    @Body() body: { idToken: string; termsAcceptedVersion?: string },
     @Res({ passthrough: true }) response: Response,
   ) {
     const result = await this.authService.authenticateGoogle(body);

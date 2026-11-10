@@ -99,17 +99,21 @@ enum SharingAccessLevel {
 // ------------------------------------------------------------------------------
 
 model User {
-  id              String    @id @default(uuid())
-  email           String    @unique
-  passwordHash    String    @map("password_hash")
-  fullName        String    @map("full_name")
-  phone           String?
-  avatarUrl       String?   @map("avatar_url")
-  isActive        Boolean   @default(true) @map("is_active")
-  createdAt       DateTime  @default(now()) @map("created_at")
-  updatedAt       DateTime  @updatedAt @map("updated_at")
+  id                    String    @id @default(uuid())
+  email                 String    @unique
+  passwordHash          String?   @map("password_hash")
+  fullName              String    @map("full_name")
+  phone                 String?
+  avatarUrl             String?   @map("avatar_url")
+  isActive              Boolean   @default(true) @map("is_active")
+  emailVerified         Boolean   @default(false) @map("email_verified")
+  termsAcceptedAt       DateTime? @map("terms_accepted_at")
+  termsAcceptedVersion  String?   @map("terms_accepted_version")
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
 
   sessions              Session[]
+  authIdentities        AuthIdentity[]
   householdMemberships  HouseholdMember[]
   sentInvitations       HouseholdInvitation[] @relation("SentInvitations")
   accounts              FinancialAccount[]
@@ -128,6 +132,22 @@ model User {
   importBatches         ImportBatch[]
 
   @@map("users")
+}
+
+model AuthIdentity {
+  id          String   @id @default(uuid())
+  userId      String   @map("user_id")
+  provider    String   @map("provider") // ex: "google"
+  providerSub String   @map("provider_sub")
+  email       String   @map("email")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerSub])
+  @@index([userId])
+  @@index([email])
+  @@map("auth_identities")
 }
 
 model Session {
