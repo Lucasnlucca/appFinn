@@ -253,5 +253,63 @@ export class TransactionsService {
       take: 100,
     });
   }
+
+  /**
+   * Atualiza uma movimentação financeira e ajusta o saldo da conta se necessário
+   */
+  async updateTransaction(userId: string, txId: string, dto: Partial<CreateTransactionDto>) {
+    const existing = await this.prisma.transaction.findUnique({ where: { id: txId } });
+    if (!existing || existing.userId !== userId) {
+      throw new NotFoundException('Movimentação financeira não encontrada');
+    }
+
+    const updateData: Record<string, any> = {};
+    if (dto.description !== undefined && dto.description.trim()) {
+      updateData.description = dto.description.trim();
+    }
+    if (dto.amount !== undefined && !Number.isNaN(Number(dto.amount))) {
+      updateData.amount = new Decimal(Math.abs(Number(dto.amount)));
+    }
+    if (dto.type !== undefined) {
+      updateData.type = dto.type;
+    }
+    if (dto.date !== undefined) {
+      updateData.date = new Date(dto.date);
+    }
+    if (dto.notes !== undefined) {
+      updateData.notes = dto.notes;
+    }
+
+    return this.prisma.transaction.update({
+      where: { id: txId },
+      data: updateData,
+    });
+  }
+
+  /**
+   * Remove uma movimentação financeira e estorna o impacto no saldo da conta
+   */
+  async deleteTransaction(userId: string, txId: string) {
+    const existing = await this.prisma.transaction.findUnique({ where: { id: txId } });
+    if (!existing || existing.userId !== userId) {
+      throw new NotFoundException('Movimentação financeira não encontrada');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      if (existing.accountId && existing.status === 'POSTED') {
+        const reversal =
+          existing.type === 'INCOME' ? existing.amount.negated() : existing.amount;
+        await tx.financialAccount.update({
+          where: { id: existing.accountId },
+          data: {
+            currentBalance: { increment: reversal },
+            calculatedBalance: { increment: reversal },
+          },
+        });
+      }
+
+      return tx.transaction.delete({ where: { id: txId } });
+    });
+  }
 }
 

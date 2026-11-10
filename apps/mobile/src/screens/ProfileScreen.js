@@ -43,16 +43,27 @@ export default function ProfileScreen({ navigation }) {
   useEffect(() => {
     if (loggedInUser) {
       const full = loggedInUser.fullName || loggedInUser.name || '';
-      const parts = full.trim().split(' ');
-      setFirstName(loggedInUser.firstName || parts[0] || '');
+      const parts = full.trim().split(/\s+/).filter(Boolean);
+      setFirstName(loggedInUser.firstName !== undefined ? loggedInUser.firstName : parts[0] || '');
       setLastName(
-        loggedInUser.lastName || (parts.length > 1 ? parts.slice(1).join(' ') : '')
+        loggedInUser.lastName !== undefined
+          ? loggedInUser.lastName
+          : parts.length > 1
+            ? parts.slice(1).join(' ')
+            : ''
       );
-      setAvatarUri(loggedInUser.avatarUri || null);
+      setAvatarUri(loggedInUser.avatarUri || loggedInUser.avatarUrl || null);
     }
-  }, [loggedInUser]);
+  }, [
+    loggedInUser?.id,
+    loggedInUser?.fullName,
+    loggedInUser?.firstName,
+    loggedInUser?.lastName,
+    loggedInUser?.avatarUri,
+    loggedInUser?.avatarUrl,
+  ]);
 
-  // Escolher Imagem de Perfil (Galeria ou Câmera)
+  // Escolher Imagem de Perfil (Galeria ou Câmera) com persistência Base64 no banco
   const handlePickAvatar = async () => {
     try {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -68,14 +79,33 @@ export default function ProfileScreen({ navigation }) {
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
         aspect: [1, 1],
-        quality: 0.85,
+        quality: 0.55,
+        base64: true,
       });
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
-        const pickedUri = result.assets[0].uri;
-        setAvatarUri(pickedUri);
+        const asset = result.assets[0];
+        const mimeType = asset.mimeType || 'image/jpeg';
+        const persistentAvatarUri = asset.base64
+          ? `data:${mimeType};base64,${asset.base64}`
+          : asset.uri;
+
+        setAvatarUri(persistentAvatarUri);
         if (updateUserProfile) {
-          await updateUserProfile({ avatarUri: pickedUri });
+          const trimmedFirst = firstName.trim();
+          const trimmedLast = lastName.trim();
+          const fullName = [trimmedFirst, trimmedLast].filter(Boolean).join(' ');
+          await updateUserProfile({
+            avatarUri: persistentAvatarUri,
+            ...(trimmedFirst
+              ? {
+                  firstName: trimmedFirst,
+                  lastName: trimmedLast,
+                  fullName,
+                  name: fullName,
+                }
+              : {}),
+          });
         }
       }
     } catch (err) {
@@ -87,11 +117,24 @@ export default function ProfileScreen({ navigation }) {
   const handleRemoveAvatar = async () => {
     setAvatarUri(null);
     if (updateUserProfile) {
-      await updateUserProfile({ avatarUri: null });
+      const trimmedFirst = firstName.trim();
+      const trimmedLast = lastName.trim();
+      const fullName = [trimmedFirst, trimmedLast].filter(Boolean).join(' ');
+      await updateUserProfile({
+        avatarUri: null,
+        ...(trimmedFirst
+          ? {
+              firstName: trimmedFirst,
+              lastName: trimmedLast,
+              fullName,
+              name: fullName,
+            }
+          : {}),
+      });
     }
   };
 
-  // Salvar Nome e Sobrenome
+  // Salvar Nome, Sobrenome e Foto de Perfil no Banco
   const handleSaveProfile = async () => {
     const trimmedFirst = firstName.trim();
     const trimmedLast = lastName.trim();
@@ -106,7 +149,7 @@ export default function ProfileScreen({ navigation }) {
       const fullName = trimmedLast ? `${trimmedFirst} ${trimmedLast}` : trimmedFirst;
       if (updateUserProfile) {
         await updateUserProfile({
-          name: trimmedFirst,
+          name: fullName,
           fullName,
           firstName: trimmedFirst,
           lastName: trimmedLast,

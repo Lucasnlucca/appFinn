@@ -24,6 +24,7 @@ import MonthlyAgendaScreen from './src/screens/MonthlyAgendaScreen';
 import SharedFinancesScreen from './src/screens/SharedFinancesScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
 import LoginScreen from './src/screens/LoginScreen';
+import NotificationPreferencesScreen from './src/screens/NotificationPreferencesScreen';
 import AddTransactionModal from './src/components/AddTransactionModal';
 import FloatingAiButton from './src/components/FloatingAiButton';
 import LiquidTabBar from './src/components/LiquidTabBar';
@@ -116,6 +117,10 @@ function MainAppContent() {
         <Stack.Screen name="MonthlyAgenda" component={MonthlyAgendaScreen} />
         <Stack.Screen name="SharedFinances" component={SharedFinancesScreen} />
         <Stack.Screen name="Profile" component={ProfileScreen} />
+        <Stack.Screen
+          name="NotificationPreferences"
+          component={NotificationPreferencesScreen}
+        />
         <Stack.Screen
           name="FinnAI"
           component={FinnAIScreen}

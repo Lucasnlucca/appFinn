@@ -16,14 +16,22 @@ import {
   testPostgresConnection,
   syncDatabaseWithPostgres,
   createTransaction as apiCreateTransaction,
+  updateTransactionApi,
+  deleteTransactionApi,
   createCreditCard as apiCreateCreditCard,
+  updateCreditCardApi,
+  deleteCreditCardApi,
   createAccount as apiCreateAccount,
+  updateAccountApi,
+  deleteAccountApi,
   logoutUser,
   deleteUserAccountApi,
   clearAuthSession,
   getStoredUser,
   getStoredToken,
   saveAuthUser,
+  mergeWithSavedProfile,
+  savePersistentUserProfile,
   fetchCurrentHouseholdApi,
   createHouseholdApi,
   createHouseholdInvitationApi,
@@ -41,7 +49,17 @@ import {
   initPhoneNotifications,
   sendInstantPhoneNotification,
   scheduleSmartPhoneNotifications,
+  DEFAULT_NOTIFICATION_PREFERENCES,
+  loadUserNotificationPreferences,
+  saveUserNotificationPreferences,
+  groupInsightsNotifications,
 } from '../services/notificationService';
+import {
+  NOTIFICATION_CATEGORIES,
+  NotificationTemplates,
+  normalizeLegacyNotification,
+  normalizeNotificationCategory,
+} from '../services/notificationTemplates';
 import { getBankTheme } from '../constants/BankThemeRegistry';
 
 const FinanceContext = createContext(null);
@@ -57,6 +75,11 @@ const INITIAL_COFRINHOS = [];
 export const getUserStorageKey = (userId, keyName) => {
   const safeId = userId ? String(userId).trim() : 'guest';
   return `@finn_usr_${safeId}_${keyName}`;
+};
+
+export const getUserEmailStorageKey = (email, keyName) => {
+  const safeEmail = email ? String(email).trim().toLowerCase() : '';
+  return safeEmail ? `@finn_mail_${safeEmail}_${keyName}` : null;
 };
 
 // Gerador de código único de 6 caracteres alfanuméricos para convite de grupo
@@ -125,20 +148,38 @@ export function FinanceProvider({ children }) {
   const [settlements, setSettlements] = useState([]);
   const [activityNotifications, setActivityNotifications] = useState([]);
   const [readNotificationIds, setReadNotificationIds] = useState([]);
+  const [notificationPreferences, setNotificationPreferences] = useState(
+    DEFAULT_NOTIFICATION_PREFERENCES
+  );
   const [loaded, setLoaded] = useState(false);
 
-  // Helper para persistir dados no namespace isolado do usuário conectado (Ambiente Separado)
+  // Helper para persistir dados no namespace isolado do usuário conectado (por ID e por E-mail)
   const saveUserItem = async (keyName, val) => {
     const uid = loggedInUser?.id || 'guest';
+    const email = loggedInUser?.email || '';
     const key = getUserStorageKey(uid, keyName);
+    const emailKey = getUserEmailStorageKey(email, keyName);
     const str = typeof val === 'string' ? val : JSON.stringify(val);
     await AsyncStorage.setItem(key, str);
+    if (emailKey) {
+      await AsyncStorage.setItem(emailKey, str);
+    }
   };
 
   const getUserItem = async (keyName) => {
     const uid = loggedInUser?.id || 'guest';
+    const email = loggedInUser?.email || '';
     const key = getUserStorageKey(uid, keyName);
-    const raw = await AsyncStorage.getItem(key);
+    let raw = await AsyncStorage.getItem(key);
+    if ((!raw || raw === '[]' || raw === 'null') && email) {
+      const emailKey = getUserEmailStorageKey(email, keyName);
+      if (emailKey) {
+        const emailRaw = await AsyncStorage.getItem(emailKey);
+        if (emailRaw && emailRaw !== '[]' && emailRaw !== 'null') {
+          raw = emailRaw;
+        }
+      }
+    }
     if (!raw) return null;
     try {
       return JSON.parse(raw);
@@ -147,19 +188,48 @@ export function FinanceProvider({ children }) {
     }
   };
 
+  const readUserRawWithEmailFallback = async (uid, email, keyName) => {
+    const primary = await AsyncStorage.getItem(getUserStorageKey(uid, keyName));
+    if (primary && primary !== '[]' && primary !== 'null') {
+      return primary;
+    }
+    const emailKey = getUserEmailStorageKey(email, keyName);
+    if (emailKey) {
+      const fallback = await AsyncStorage.getItem(emailKey);
+      if (fallback && fallback !== '[]' && fallback !== 'null') {
+        await AsyncStorage.setItem(getUserStorageKey(uid, keyName), fallback);
+        return fallback;
+      }
+    }
+    return primary;
+  };
+
   // 1. Inicialização: Verifica se já existe uma sessão de autenticação ativa salva
   useEffect(() => {
     async function initSession() {
       try {
-        const storedUser = await getStoredUser();
-        const storedToken = await getStoredToken();
+        const [storedUser, storedToken, bioEnabled] = await Promise.all([
+          getStoredUser(),
+          getStoredToken(),
+          AsyncStorage.getItem('@finn_biometric_enabled_v2'),
+        ]);
+
         if (storedUser && storedToken) {
           const uName = storedUser.fullName || storedUser.name || '';
           const normalized = { ...storedUser, name: uName };
-          setLoggedInUser(normalized);
-          if (uName) {
-            setMembers((prev) => ({ ...prev, user1: uName }));
-            setActiveMember(uName);
+
+          // Se a biometria (digital) estiver habilitada pelo cliente, ao entrar no app
+          // exibe a tela de login solicitando a digital de cara!
+          if (bioEnabled === 'true') {
+            await AsyncStorage.setItem('@finn_biometric_user_v2', JSON.stringify(normalized));
+            await AsyncStorage.setItem('@finn_biometric_token_v2', storedToken);
+            setLoggedInUser(null);
+          } else {
+            setLoggedInUser(normalized);
+            if (uName) {
+              setMembers((prev) => ({ ...prev, user1: uName }));
+              setActiveMember(uName);
+            }
           }
         } else {
           setLoggedInUser(null);
@@ -189,6 +259,7 @@ export function FinanceProvider({ children }) {
       }
 
       const uid = loggedInUser.id;
+      const uEmail = loggedInUser.email || '';
       try {
         const [
           savedTrans,
@@ -208,31 +279,58 @@ export function FinanceProvider({ children }) {
           savedMode,
           savedActNotifs,
           savedReadNotifs,
+          savedUserProfile,
         ] = await Promise.all([
-          AsyncStorage.getItem(getUserStorageKey(uid, 'transactions')),
-          AsyncStorage.getItem(getUserStorageKey(uid, 'accounts')),
-          AsyncStorage.getItem(getUserStorageKey(uid, 'cards')),
-          AsyncStorage.getItem(getUserStorageKey(uid, 'bills')),
-          AsyncStorage.getItem(getUserStorageKey(uid, 'cofrinhos')),
-          AsyncStorage.getItem(getUserStorageKey(uid, 'ai_chat')),
-          AsyncStorage.getItem(getUserStorageKey(uid, 'members_names')),
-          AsyncStorage.getItem(getUserStorageKey(uid, 'hide_balances')),
-          AsyncStorage.getItem(getUserStorageKey(uid, 'hero_view_mode')),
-          AsyncStorage.getItem(getUserStorageKey(uid, 'ai_skin')),
-          AsyncStorage.getItem(getUserStorageKey(uid, 'shared_groups')),
-          AsyncStorage.getItem(getUserStorageKey(uid, 'active_group_id')),
-          AsyncStorage.getItem(getUserStorageKey(uid, 'group_invitations')),
-          AsyncStorage.getItem(getUserStorageKey(uid, 'settlements')),
-          AsyncStorage.getItem(getUserStorageKey(uid, 'view_mode')),
-          AsyncStorage.getItem(getUserStorageKey(uid, 'activity_notifications')),
-          AsyncStorage.getItem(getUserStorageKey(uid, 'read_notifications')),
+          readUserRawWithEmailFallback(uid, uEmail, 'transactions'),
+          readUserRawWithEmailFallback(uid, uEmail, 'accounts'),
+          readUserRawWithEmailFallback(uid, uEmail, 'cards'),
+          readUserRawWithEmailFallback(uid, uEmail, 'bills'),
+          readUserRawWithEmailFallback(uid, uEmail, 'cofrinhos'),
+          readUserRawWithEmailFallback(uid, uEmail, 'ai_chat'),
+          readUserRawWithEmailFallback(uid, uEmail, 'members_names'),
+          readUserRawWithEmailFallback(uid, uEmail, 'hide_balances'),
+          readUserRawWithEmailFallback(uid, uEmail, 'hero_view_mode'),
+          readUserRawWithEmailFallback(uid, uEmail, 'ai_skin'),
+          readUserRawWithEmailFallback(uid, uEmail, 'shared_groups'),
+          readUserRawWithEmailFallback(uid, uEmail, 'active_group_id'),
+          readUserRawWithEmailFallback(uid, uEmail, 'group_invitations'),
+          readUserRawWithEmailFallback(uid, uEmail, 'settlements'),
+          readUserRawWithEmailFallback(uid, uEmail, 'view_mode'),
+          readUserRawWithEmailFallback(uid, uEmail, 'activity_notifications'),
+          readUserRawWithEmailFallback(uid, uEmail, 'read_notifications'),
+          readUserRawWithEmailFallback(uid, uEmail, 'user_profile'),
         ]);
 
-        const parsedTrans = savedTrans ? JSON.parse(savedTrans) : [];
+        // Restaura Nome, Sobrenome e Foto de Perfil salvos pelo cliente para que nunca sejam perdidos
+        const parsedLocalProfile = savedUserProfile ? JSON.parse(savedUserProfile) : null;
+        const mergedProfile = await mergeWithSavedProfile({
+          ...loggedInUser,
+          ...(parsedLocalProfile || {}),
+        });
+        if (
+          mergedProfile &&
+          (mergedProfile.fullName !== loggedInUser.fullName ||
+            mergedProfile.firstName !== loggedInUser.firstName ||
+            mergedProfile.lastName !== loggedInUser.lastName ||
+            mergedProfile.avatarUri !== loggedInUser.avatarUri)
+        ) {
+          setLoggedInUser(mergedProfile);
+        }
+
+        const rawParsedTrans = savedTrans ? JSON.parse(savedTrans) : [];
+        const parsedTrans = Array.isArray(rawParsedTrans)
+          ? rawParsedTrans.map((t) => ({
+              ...t,
+              title: t.title || t.description || 'Movimentação',
+              description: t.description || t.title || 'Movimentação',
+            }))
+          : [];
         let parsedAccs = savedAccs ? JSON.parse(savedAccs) : [];
+        const parsedCards = savedCards ? JSON.parse(savedCards) : [];
 
         // Se o usuário tem movimentações (ex: Salário), mas ainda não possui nenhuma conta bancária cadastrada,
         // cria automaticamente uma "Conta Principal" com o saldo resultante para abrigar esse dinheiro
+        let finalTrans = parsedTrans;
         if (parsedAccs.length === 0 && parsedTrans.length > 0) {
           const initialBalance = parsedTrans.reduce(
             (sum, t) => sum + (t.type === 'income' ? t.amount : -t.amount),
@@ -246,20 +344,21 @@ export function FinanceProvider({ children }) {
             owner: loggedInUser.name || 'Titular',
             icon: 'wallet-outline',
             color: '#0E2F5A',
+            updatedAt: new Date().toISOString(),
           };
           parsedAccs = [autoAcc];
-          saveUserItem('accounts', parsedAccs);
+          await saveUserItem('accounts', parsedAccs);
 
-          const updatedTrans = parsedTrans.map((t) =>
+          finalTrans = parsedTrans.map((t) =>
             t.accountId ? t : { ...t, accountId: autoAcc.id }
           );
-          setTransactions(updatedTrans);
-          saveUserItem('transactions', updatedTrans);
+          setTransactions(finalTrans);
+          await saveUserItem('transactions', finalTrans);
         } else {
-          setTransactions(parsedTrans);
+          setTransactions(finalTrans);
         }
         setAccounts(parsedAccs);
-        setCards(savedCards ? JSON.parse(savedCards) : []);
+        setCards(parsedCards);
         setBills(savedBills ? JSON.parse(savedBills) : []);
         setCofrinhos(savedCofs ? JSON.parse(savedCofs) : []);
         setAiChat(savedChat ? JSON.parse(savedChat) : getInitialChat(loggedInUser.name));
@@ -285,7 +384,7 @@ export function FinanceProvider({ children }) {
           );
           if (cleanedGroups.length !== parsedGroups.length) {
             parsedGroups = cleanedGroups;
-            saveUserItem('shared_groups', parsedGroups);
+            await saveUserItem('shared_groups', parsedGroups);
           }
         } else {
           parsedGroups = [];
@@ -296,16 +395,22 @@ export function FinanceProvider({ children }) {
             ? savedActiveGrpId
             : parsedGroups[0]?.id || null;
         setActiveGroupIdState(resolvedActiveId);
-        saveUserItem('active_group_id', resolvedActiveId);
+        await saveUserItem('active_group_id', resolvedActiveId);
 
         if (savedInvs) setGroupInvitations(JSON.parse(savedInvs));
         if (savedSettles) setSettlements(JSON.parse(savedSettles));
         if (savedMode) setViewModeState(savedMode);
         setActivityNotifications(savedActNotifs ? JSON.parse(savedActNotifs) : []);
         setReadNotificationIds(savedReadNotifs ? JSON.parse(savedReadNotifs) : []);
+        const loadedPrefs = await loadUserNotificationPreferences(uid);
+        setNotificationPreferences(loadedPrefs);
 
-        // Dispara sincronização silenciosa para obter cartões/contas do PostgreSQL deste usuário
-        syncWithPostgres();
+        // Dispara sincronização bi-direcional passando exatamente os dados carregados do banco local
+        await syncWithPostgres({
+          overrideAccounts: parsedAccs,
+          overrideCards: parsedCards,
+          overrideTransactions: finalTrans,
+        });
       } catch (e) {
         console.warn('Erro ao carregar dados locais do usuário:', e);
       }
@@ -316,83 +421,193 @@ export function FinanceProvider({ children }) {
     }
   }, [loggedInUser?.id, loaded]);
 
-  // Sincronização bi-direcional com PostgreSQL da VPS
-  const syncWithPostgres = async () => {
+  // Sincronização bi-direcional não-destrutiva com PostgreSQL da VPS
+  const syncWithPostgres = async (overrides = {}) => {
     if (isSyncingPostgres || !loggedInUser?.id) return;
     setIsSyncingPostgres(true);
     try {
+      const currentLocalCards = Array.isArray(overrides.overrideCards)
+        ? overrides.overrideCards
+        : cards;
+      const currentLocalAccounts = Array.isArray(overrides.overrideAccounts)
+        ? overrides.overrideAccounts
+        : accounts;
+      const currentLocalTransactions = Array.isArray(overrides.overrideTransactions)
+        ? overrides.overrideTransactions
+        : transactions;
+
+      const norm = (s) => String(s || '').trim().toLowerCase();
+
       const res = await syncDatabaseWithPostgres({
-        localCards: cards,
-        localAccounts: accounts,
-        localTransactions: transactions,
+        localCards: currentLocalCards,
+        localAccounts: currentLocalAccounts,
+        localTransactions: currentLocalTransactions,
       });
 
       if (res.success) {
-        // 1. Atualizar cartões se retornados do PostgreSQL para este usuário
+        // 1. Mesclar cartões remotos e locais preservando edições do cliente (limite, vencimento, fatura)
         if (res.remoteCards && res.remoteCards.length > 0) {
           const mappedCards = res.remoteCards.map((rc) => {
-            const theme = getBankTheme(rc.name);
-            const limit = parseFloat(rc.creditLimit) || 0;
-            const currentBill = rc.currentBill ? parseFloat(rc.currentBill.totalAmount) || 0 : 0;
-            const usedPercent = limit > 0 ? Math.round((currentBill / limit) * 100) : 0;
+            const localMatch = currentLocalCards.find(
+              (lc) =>
+                lc.id === rc.id ||
+                lc.remoteId === rc.id ||
+                norm(lc.name || lc.bank) === norm(rc.name)
+            );
+            const theme = getBankTheme(localMatch?.bankId || localMatch?.bank || rc.name);
+            const remoteLimit = parseFloat(rc.creditLimit) || 0;
+            const localLimit = localMatch?.limit !== undefined ? parseFloat(localMatch.limit) : null;
+            const limit =
+              localMatch?.updatedAt && localLimit !== null
+                ? localLimit
+                : remoteLimit > 0
+                ? remoteLimit
+                : localLimit || 0;
+
+            const remoteBill = rc.currentBill ? parseFloat(rc.currentBill.totalAmount) || 0 : 0;
+            const localBill = localMatch?.currentInvoice ? parseFloat(localMatch.currentInvoice) || 0 : 0;
+            const currentBill = Math.max(remoteBill, localBill);
+            const dueDay = localMatch?.updatedAt && localMatch?.dueDay ? localMatch.dueDay : rc.dueDay || localMatch?.dueDay || 10;
+            const closingDay =
+              localMatch?.updatedAt && localMatch?.closingDay
+                ? localMatch.closingDay
+                : rc.closingDay || localMatch?.closingDay || 3;
+            const usedPercent = limit > 0 ? Math.min(100, Math.round((currentBill / limit) * 100)) : 0;
+
             return {
+              ...(localMatch || {}),
               id: rc.id,
-              name: rc.name,
-              bank: rc.name,
+              remoteId: rc.id,
+              name: localMatch?.name || rc.name,
+              bank: localMatch?.bank || rc.name,
               bankId: theme.bankId,
-              holderName: rc.holderName || loggedInUser?.name || 'TITULAR',
-              lastFourDigits: rc.lastFourDigits || '••••',
-              expiryMonth: rc.expiryMonth || '12',
-              expiryYear: rc.expiryYear || '28',
+              holderName: localMatch?.holderName || rc.holderName || loggedInUser?.fullName || loggedInUser?.name || 'TITULAR',
+              lastFourDigits: localMatch?.lastFourDigits || rc.lastFourDigits || '••••',
+              expiryMonth: localMatch?.expiryMonth || rc.expiryMonth || '12',
+              expiryYear: localMatch?.expiryYear || rc.expiryYear || '28',
               limit,
               currentInvoice: currentBill,
-              closingDay: rc.closingDay || 3,
-              dueDay: rc.dueDay || 10,
-              dueDateText: `Vence dia ${rc.dueDay || 10}`,
-              status: 'Em aberto',
+              closingDay,
+              dueDay,
+              dueDateText: `Vence dia ${dueDay}`,
+              status: localMatch?.status || 'Em aberto',
               usedPercent,
-              color: rc.colorHex || theme.gradientColors[0],
+              color: localMatch?.color || rc.colorHex || theme.gradientColors[0],
               logoType: theme.bankId,
-              owner: loggedInUser?.name || 'Titular',
+              owner: localMatch?.owner || loggedInUser?.name || 'Titular',
             };
           });
-          setCards(mappedCards);
-          saveUserItem('cards', mappedCards);
+
+          // Mantém cartões locais que ainda não subiram
+          const unsyncedCards = currentLocalCards.filter(
+            (lc) =>
+              !mappedCards.some(
+                (mc) => mc.id === lc.id || norm(mc.name || mc.bank) === norm(lc.name || lc.bank)
+              )
+          );
+          const finalCards = [...mappedCards, ...unsyncedCards];
+          setCards(finalCards);
+          await saveUserItem('cards', finalCards);
         }
 
-        // 2. Atualizar contas se retornadas do PostgreSQL para este usuário
-        if (res.remoteAccounts && res.remoteAccounts.length > 0) {
-          const mappedAccs = res.remoteAccounts.map((ra) => ({
-            id: ra.id,
-            name: ra.name,
-            bank: ra.name,
-            balance: parseFloat(ra.currentBalance) || 0,
-            owner: loggedInUser?.name || 'Titular',
-            icon: 'wallet-outline',
-            color: ra.colorHex || '#820AD1',
-          }));
-          setAccounts(mappedAccs);
-          saveUserItem('accounts', mappedAccs);
-        }
-
-        // 3. Atualizar transações se retornadas do PostgreSQL para este usuário
+        // 2. Mesclar transações remotas e locais preservando todos os campos (title, description, grupo, etc.)
+        let finalTxs = [...currentLocalTransactions];
         if (res.remoteTransactions && res.remoteTransactions.length > 0) {
-          const mappedTxs = res.remoteTransactions.map((rt) => ({
-            id: rt.id,
-            description: rt.description,
-            amount: parseFloat(rt.amount) || 0,
-            type: (rt.type || 'EXPENSE').toLowerCase() === 'income' ? 'income' : 'expense',
-            category: rt.category?.name || 'outros',
-            author: loggedInUser?.name || 'Titular',
-            date: rt.date ? rt.date.split('T')[0] : new Date().toISOString().split('T')[0],
-            createdAt: rt.createdAt || new Date().toISOString(),
-            accountId: rt.accountId,
-            creditCardId: rt.creditCardId,
-            notes: rt.notes || '',
-          }));
+          const mappedRemoteTxs = res.remoteTransactions.map((rt) => {
+            const rtTitle = rt.description || rt.title || 'Movimentação';
+            const rtAmt = parseFloat(rt.amount) || 0;
+            const rtDate = rt.date ? rt.date.split('T')[0] : new Date().toISOString().split('T')[0];
+            const localMatch = currentLocalTransactions.find(
+              (lt) =>
+                lt.id === rt.id ||
+                lt.remoteId === rt.id ||
+                (norm(lt.title || lt.description) === norm(rtTitle) &&
+                  Math.abs((parseFloat(lt.amount) || 0) - rtAmt) < 0.01 &&
+                  String(lt.date || '').split('T')[0] === rtDate)
+            );
+            return {
+              ...(localMatch || {}),
+              id: rt.id,
+              remoteId: rt.id,
+              title: localMatch?.title || rtTitle,
+              description: localMatch?.description || rtTitle,
+              amount: rtAmt,
+              type: (rt.type || 'EXPENSE').toLowerCase() === 'income' ? 'income' : 'expense',
+              category: localMatch?.category || rt.category?.name || 'outros',
+              author: localMatch?.author || loggedInUser?.name || 'Titular',
+              date: rtDate,
+              createdAt: rt.createdAt || localMatch?.createdAt || new Date().toISOString(),
+              accountId: rt.accountId || localMatch?.accountId,
+              creditCardId: rt.creditCardId || localMatch?.creditCardId,
+              notes: rt.notes || localMatch?.notes || '',
+            };
+          });
 
-          setTransactions(mappedTxs);
-          saveUserItem('transactions', mappedTxs);
+          // Mantém transações locais (ex: de grupos ou recém-criadas) que não estão na lista remota
+          const localOnlyTxs = currentLocalTransactions.filter(
+            (lt) =>
+              !mappedRemoteTxs.some(
+                (mt) =>
+                  mt.id === lt.id ||
+                  (norm(mt.title || mt.description) === norm(lt.title || lt.description) &&
+                    Math.abs((parseFloat(mt.amount) || 0) - (parseFloat(lt.amount) || 0)) < 0.01 &&
+                    String(mt.date || '').split('T')[0] === String(lt.date || '').split('T')[0])
+              )
+          );
+
+          finalTxs = [...mappedRemoteTxs, ...localOnlyTxs];
+          setTransactions(finalTxs);
+          await saveUserItem('transactions', finalTxs);
+        }
+
+        // 3. Mesclar contas bancárias preservando o saldo real do cliente (nunca zerar R$ 4.000,00 para R$ 0,00!)
+        if (res.remoteAccounts && res.remoteAccounts.length > 0) {
+          const mappedAccs = res.remoteAccounts.map((ra) => {
+            const localMatch = currentLocalAccounts.find(
+              (la) =>
+                la.id === ra.id ||
+                la.remoteId === ra.id ||
+                norm(la.name || la.bank) === norm(ra.name)
+            );
+            const remoteBal = parseFloat(ra.currentBalance) || 0;
+            const localBal =
+              localMatch?.balance !== undefined && localMatch?.balance !== null
+                ? parseFloat(localMatch.balance)
+                : null;
+
+            // Se o saldo local foi definido (ex: R$ 4.000,00) e o remoto veio 0, preserva o local!
+            let resolvedBalance = remoteBal;
+            if (localBal !== null && !Number.isNaN(localBal)) {
+              const localUpdated = localMatch?.updatedAt ? new Date(localMatch.updatedAt).getTime() : 0;
+              const remoteUpdated = ra.updatedAt ? new Date(ra.updatedAt).getTime() : 0;
+              if (localUpdated >= remoteUpdated || (localBal !== 0 && remoteBal === 0)) {
+                resolvedBalance = localBal;
+              }
+            }
+
+            return {
+              ...(localMatch || {}),
+              id: ra.id,
+              remoteId: ra.id,
+              name: localMatch?.name || ra.name,
+              bank: localMatch?.bank || ra.name,
+              balance: resolvedBalance,
+              owner: localMatch?.owner || loggedInUser?.name || 'Titular',
+              icon: localMatch?.icon || 'wallet-outline',
+              color: localMatch?.color || ra.colorHex || '#820AD1',
+              updatedAt: localMatch?.updatedAt || ra.updatedAt || new Date().toISOString(),
+            };
+          });
+
+          const unsyncedAccs = currentLocalAccounts.filter(
+            (la) =>
+              !mappedAccs.some(
+                (ma) => ma.id === la.id || norm(ma.name || ma.bank) === norm(la.name || la.bank)
+              )
+          );
+          const finalAccs = [...mappedAccs, ...unsyncedAccs];
+          setAccounts(finalAccs);
+          await saveUserItem('accounts', finalAccs);
         }
 
         setPostgresStatus({
@@ -422,33 +637,21 @@ export function FinanceProvider({ children }) {
     }
   };
 
-  // Disparo silencioso de sincronização com PostgreSQL na inicialização
-  useEffect(() => {
-    if (loaded) {
-      syncWithPostgres();
-    }
-  }, [loaded]);
-
   // Helper para disparar notificações de Finanças em Grupo (In-App + Barra do Celular)
   const pushGroupNotification = ({
     title,
     message,
-    icon = 'people',
-    color = '#7C3AED',
+    icon = 'people-outline',
     groupId = null,
+    groupName = 'Compartilhado',
   }) => {
-    const newNotif = {
-      id: 'notif-grp-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
-      category: 'group',
-      icon,
-      color,
+    const newNotif = NotificationTemplates.sharedGroupActivity({
+      groupId,
+      groupName,
       title,
       message,
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      createdAt: new Date().toISOString(),
-      targetScreen: 'SharedFinances',
-      groupId,
-    };
+      icon,
+    });
 
     setActivityNotifications((prev) => {
       const next = [newNotif, ...prev].slice(0, 35);
@@ -457,8 +660,9 @@ export function FinanceProvider({ children }) {
     });
 
     sendInstantPhoneNotification({
-      title,
-      body: message,
+      notification: newNotif,
+      userId: loggedInUser?.id || 'guest',
+      preferences: notificationPreferences,
       data: { type: 'shared_group', groupId },
     }).catch(() => {});
   };
@@ -669,8 +873,16 @@ export function FinanceProvider({ children }) {
     await saveUserItem('cofrinhos', nextCofs);
 
     if (fromAccountId) {
+      const nowIso = new Date().toISOString();
       setAccounts((prev) => {
-        const updated = prev.map((a) => (a.id === fromAccountId ? { ...a, balance: (a.balance || 0) - num } : a));
+        const updated = prev.map((a) => {
+          if (a.id === fromAccountId) {
+            const nextBal = (a.balance || 0) - num;
+            updateAccountApi(a.remoteId || a.id, { name: a.name, balance: nextBal, color: a.color }).catch(() => {});
+            return { ...a, balance: nextBal, updatedAt: nowIso };
+          }
+          return a;
+        });
         saveUserItem('accounts', updated);
         return updated;
       });
@@ -687,6 +899,7 @@ export function FinanceProvider({ children }) {
   const addTransactionsBatch = async (txDataArray) => {
     if (!txDataArray || txDataArray.length === 0) return [];
 
+    const nowIso = new Date().toISOString();
     let currentAccs = [...accounts];
     // Se o usuário ainda não tiver nenhuma conta bancária cadastrada, cria automaticamente a "Conta Principal"
     if (currentAccs.length === 0) {
@@ -698,29 +911,35 @@ export function FinanceProvider({ children }) {
         owner: loggedInUser?.name || 'Titular',
         icon: 'wallet-outline',
         color: '#0E2F5A',
+        updatedAt: nowIso,
       };
       currentAccs = [defaultAcc];
     }
 
     const defaultAccId = currentAccs[0].id;
 
-    const newTxs = txDataArray.map((txData, idx) => ({
-      id: txData.id || `tx-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 7)}`,
-      description: txData.description,
-      amount: parseFloat(txData.amount) || 0,
-      type: txData.type || 'expense', // 'expense' | 'income'
-      category: txData.category || 'outros',
-      expenseType: txData.expenseType || (txData.type === 'expense' ? 'variable' : undefined),
-      incomeSource: txData.incomeSource || (txData.type === 'income' ? 'salary' : undefined),
-      author: txData.author || (loggedInUser?.name || 'Você'),
-      isShared: !!txData.isShared || !!txData.groupId,
-      groupId: txData.groupId || null,
-      groupName: txData.groupName || null,
-      date: txData.date || new Date().toISOString().split('T')[0],
-      createdAt: txData.createdAt || new Date().toISOString(),
-      accountId: txData.accountId || defaultAccId,
-      notes: txData.notes || '',
-    }));
+    const newTxs = txDataArray.map((txData, idx) => {
+      const resolvedTitle = txData.title || txData.description || 'Movimentação';
+      return {
+        id: txData.id || `tx-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 7)}`,
+        title: resolvedTitle,
+        description: txData.description || resolvedTitle,
+        amount: parseFloat(txData.amount) || 0,
+        type: txData.type || 'expense', // 'expense' | 'income'
+        category: txData.category || 'outros',
+        expenseType: txData.expenseType || (txData.type === 'expense' ? 'variable' : undefined),
+        incomeSource: txData.incomeSource || (txData.type === 'income' ? 'salary' : undefined),
+        author: txData.author || (loggedInUser?.name || 'Você'),
+        isShared: !!txData.isShared || !!txData.groupId,
+        groupId: txData.groupId || null,
+        groupName: txData.groupName || null,
+        date: txData.date || new Date().toISOString().split('T')[0],
+        createdAt: txData.createdAt || nowIso,
+        accountId: txData.accountId || defaultAccId,
+        creditCardId: txData.creditCardId || null,
+        notes: txData.notes || '',
+      };
+    });
 
     // Atualiza estado de transações e armazenamento isolado
     setTransactions((prev) => {
@@ -729,64 +948,98 @@ export function FinanceProvider({ children }) {
       return nextList;
     });
 
-    // Atualiza saldo da conta bancária para cada movimentação
+    // Atualiza saldo da conta bancária para cada movimentação e persiste no PostgreSQL
     const updatedAccs = currentAccs.map((acc) => {
       let delta = 0;
       for (const tx of newTxs) {
-        if (tx.accountId === acc.id) {
+        if (!tx.isShared && !tx.groupId && tx.accountId === acc.id) {
           delta += tx.type === 'income' ? tx.amount : -tx.amount;
         }
       }
       if (delta !== 0) {
-        return { ...acc, balance: (acc.balance || 0) + delta };
+        const nextBalance = (acc.balance || 0) + delta;
+        const targetAccId = acc.remoteId || acc.id;
+        if (targetAccId && !String(targetAccId).startsWith('acc-')) {
+          updateAccountApi(targetAccId, {
+            name: acc.name,
+            balance: nextBalance,
+            color: acc.color,
+          }).catch(() => {});
+        }
+        return { ...acc, balance: nextBalance, updatedAt: nowIso };
       }
       return acc;
     });
 
     setAccounts(updatedAccs);
-    saveUserItem('accounts', updatedAccs);
+    await saveUserItem('accounts', updatedAccs);
 
     for (const tx of newTxs) {
       syncTransactionToAppwrite(tx).catch(() => {});
-      apiCreateTransaction(tx).catch((e) => console.log('Offline queue for Postgres tx:', e.message));
+      // Envia para o PostgreSQL sem re-incrementar a conta caso já tenhamos atualizado o saldo acima
+      apiCreateTransaction({ ...tx, accountId: undefined })
+        .then((remoteTx) => {
+          if (remoteTx?.id) {
+            setTransactions((prev) => {
+              const linked = prev.map((item) =>
+                item.id === tx.id ? { ...item, id: remoteTx.id, remoteId: remoteTx.id } : item
+              );
+              saveUserItem('transactions', linked);
+              return linked;
+            });
+          }
+        })
+        .catch((e) => console.log('Offline queue for Postgres tx:', e.message));
     }
 
     // Dispara notificação inteligente sobre a movimentação do dinheiro (In-App + Celular)
     if (newTxs.length > 0) {
       const firstTx = newTxs[0];
-      const isIncome = firstTx.type === 'income';
-      const formattedVal = Number(firstTx.amount || 0).toLocaleString('pt-BR', {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
+      const newNotif = NotificationTemplates.transactionRecorded({
+        txId: firstTx.id,
+        type: firstTx.type,
+        amount: firstTx.amount,
+        category: firstTx.category,
+        description: firstTx.description || firstTx.title,
+        createdAt: firstTx.createdAt,
       });
-      const notifTitle = isIncome
-        ? `💰 Entrada registrada: R$ ${formattedVal}`
-        : `💸 Gasto registrado: R$ ${formattedVal}`;
-      const notifBody = isIncome
-        ? `Você recebeu R$ ${formattedVal} (${firstTx.title}). Aproveite para guardar pelo menos 20% em um Cofrinho e fazer seu dinheiro render!`
-        : `Movimentação em ${firstTx.category || 'Outros'} (${firstTx.title}). Fique atento ao limite mensal para continuar economizando!`;
 
-      const newNotif = {
-        id: 'notif-tx-' + Date.now(),
-        category: isIncome ? 'income' : 'economy',
-        icon: isIncome ? 'trending-up' : 'trending-down',
-        color: isIncome ? '#10B981' : '#EF4444',
-        title: notifTitle,
-        message: notifBody,
-        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        createdAt: new Date().toISOString(),
-        targetScreen: 'Categories',
-      };
+      const batchNotifs = [newNotif];
+
+      // Verifica se o gasto está muito acima da média histórica da categoria (gasto fora do padrão)
+      if (firstTx.type === 'expense' && firstTx.amount > 0) {
+        const sameCatExpenses = (transactions || []).filter(
+          (t) =>
+            t.type === 'expense' &&
+            String(t.category || '').toLowerCase() === String(firstTx.category || '').toLowerCase()
+        );
+        if (sameCatExpenses.length >= 2) {
+          const avg =
+            sameCatExpenses.reduce((s, t) => s + (Number(t.amount) || 0), 0) /
+            sameCatExpenses.length;
+          if (avg > 0 && firstTx.amount >= avg * 1.8) {
+            batchNotifs.unshift(
+              NotificationTemplates.unusualExpenseAlert({
+                txId: firstTx.id,
+                amount: firstTx.amount,
+                category: firstTx.category,
+                averageAmount: avg,
+              })
+            );
+          }
+        }
+      }
 
       setActivityNotifications((prev) => {
-        const next = [newNotif, ...prev].slice(0, 25);
+        const next = [...batchNotifs, ...prev].slice(0, 30);
         saveUserItem('activity_notifications', next);
         return next;
       });
 
       sendInstantPhoneNotification({
-        title: notifTitle,
-        body: notifBody,
+        notification: newNotif,
+        userId: loggedInUser?.id || 'guest',
+        preferences: notificationPreferences,
         data: { type: 'transaction_movement', txId: firstTx.id },
       }).catch(() => {});
     }
@@ -805,17 +1058,32 @@ export function FinanceProvider({ children }) {
     const oldTx = transactions.find((t) => t.id === updatedTx.id);
     if (!oldTx) return;
 
-    const nextList = transactions.map((t) => (t.id === updatedTx.id ? updatedTx : t));
+    const normalizedTx = {
+      ...oldTx,
+      ...updatedTx,
+      title: updatedTx.title || updatedTx.description || oldTx.title || oldTx.description || 'Movimentação',
+      description: updatedTx.description || updatedTx.title || oldTx.description || oldTx.title || 'Movimentação',
+      updatedAt: new Date().toISOString(),
+    };
+
+    const nextList = transactions.map((t) => (t.id === updatedTx.id ? normalizedTx : t));
     setTransactions(nextList);
     await saveUserItem('transactions', nextList);
 
-    if (oldTx.amount !== updatedTx.amount || oldTx.type !== updatedTx.type) {
+    if (oldTx.amount !== normalizedTx.amount || oldTx.type !== normalizedTx.type) {
+      const nowIso = new Date().toISOString();
       setAccounts((prev) => {
         const updated = prev.map((acc) => {
-          if (acc.id === updatedTx.accountId) {
+          if (acc.id === normalizedTx.accountId) {
             const oldDelta = oldTx.type === 'income' ? -oldTx.amount : oldTx.amount;
-            const newDelta = updatedTx.type === 'income' ? updatedTx.amount : -updatedTx.amount;
-            return { ...acc, balance: (acc.balance || 0) + oldDelta + newDelta };
+            const newDelta = normalizedTx.type === 'income' ? normalizedTx.amount : -normalizedTx.amount;
+            const nextBalance = (acc.balance || 0) + oldDelta + newDelta;
+            updateAccountApi(acc.remoteId || acc.id, {
+              name: acc.name,
+              balance: nextBalance,
+              color: acc.color,
+            }).catch(() => {});
+            return { ...acc, balance: nextBalance, updatedAt: nowIso };
           }
           return acc;
         });
@@ -824,14 +1092,14 @@ export function FinanceProvider({ children }) {
       });
 
       const fmtOld = Number(oldTx.amount || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-      const fmtNew = Number(updatedTx.amount || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-      if (updatedTx.isShared || updatedTx.groupId || updatedTx.sharedGroupId) {
-        const gId = updatedTx.groupId || updatedTx.sharedGroupId;
+      const fmtNew = Number(normalizedTx.amount || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      if (normalizedTx.isShared || normalizedTx.groupId || normalizedTx.sharedGroupId) {
+        const gId = normalizedTx.groupId || normalizedTx.sharedGroupId;
         const grp = sharedGroups.find((g) => g.id === gId);
-        const grpName = grp?.name || updatedTx.groupName || 'Grupo Compartilhado';
+        const grpName = grp?.name || normalizedTx.groupName || 'Grupo Compartilhado';
         pushGroupNotification({
           title: `🔄 Valor alterado no grupo ${grpName}`,
-          message: `O lançamento '${updatedTx.title || updatedTx.description}' mudou de R$ ${fmtOld} para R$ ${fmtNew}. O saldo e a divisão do grupo foram atualizados!`,
+          message: `O lançamento '${normalizedTx.title || normalizedTx.description}' mudou de R$ ${fmtOld} para R$ ${fmtNew}. O saldo e a divisão do grupo foram atualizados!`,
           icon: 'sync-outline',
           color: '#7C3AED',
           groupId: gId,
@@ -839,7 +1107,8 @@ export function FinanceProvider({ children }) {
       }
     }
 
-    syncTransactionToAppwrite(updatedTx).catch(() => {});
+    updateTransactionApi(normalizedTx.remoteId || normalizedTx.id, normalizedTx).catch(() => {});
+    syncTransactionToAppwrite(normalizedTx).catch(() => {});
   };
 
   // Remover transação
@@ -850,17 +1119,26 @@ export function FinanceProvider({ children }) {
     await saveUserItem('transactions', nextList);
 
     if (target) {
+      const nowIso = new Date().toISOString();
       setAccounts((prev) => {
         const updated = prev.map((acc) => {
           if (acc.id === target.accountId) {
             const delta = target.type === 'income' ? -target.amount : target.amount;
-            return { ...acc, balance: (acc.balance || 0) + delta };
+            const nextBalance = (acc.balance || 0) + delta;
+            updateAccountApi(acc.remoteId || acc.id, {
+              name: acc.name,
+              balance: nextBalance,
+              color: acc.color,
+            }).catch(() => {});
+            return { ...acc, balance: nextBalance, updatedAt: nowIso };
           }
           return acc;
         });
         saveUserItem('accounts', updated);
         return updated;
       });
+
+      deleteTransactionApi(target.remoteId || target.id).catch(() => {});
 
       if (target.isShared || target.groupId || target.sharedGroupId) {
         const gId = target.groupId || target.sharedGroupId;
@@ -879,60 +1157,125 @@ export function FinanceProvider({ children }) {
   };
 
   const updateAccountBalance = async (accId, newBalance) => {
+    const parsedBal =
+      typeof newBalance === 'string'
+        ? parseFloat(newBalance.replace(/\./g, '').replace(',', '.')) ||
+          parseFloat(newBalance.replace(',', '.')) ||
+          0
+        : parseFloat(newBalance) || 0;
+    const nowIso = new Date().toISOString();
+    let targetAccount = null;
+
     setAccounts((prev) => {
-      const updated = prev.map((acc) =>
-        acc.id === accId ? { ...acc, balance: parseFloat(newBalance) || 0 } : acc
-      );
+      const updated = prev.map((acc) => {
+        if (acc.id === accId) {
+          targetAccount = { ...acc, balance: parsedBal, updatedAt: nowIso };
+          return targetAccount;
+        }
+        return acc;
+      });
       saveUserItem('accounts', updated);
       return updated;
     });
+
+    const remoteAccId = targetAccount?.remoteId || accId;
+    if (remoteAccId && !String(remoteAccId).startsWith('acc-')) {
+      updateAccountApi(remoteAccId, {
+        name: targetAccount?.name,
+        balance: parsedBal,
+        color: targetAccount?.color,
+      }).catch((e) => console.log('Offline queue for Postgres balance update:', e.message));
+    } else if (targetAccount) {
+      apiCreateAccount(targetAccount)
+        .then((created) => {
+          if (created?.id) {
+            setAccounts((prev) => {
+              const linked = prev.map((a) =>
+                a.id === accId ? { ...a, id: created.id, remoteId: created.id } : a
+              );
+              saveUserItem('accounts', linked);
+              return linked;
+            });
+          }
+        })
+        .catch(() => {});
+    }
   };
 
   // Gestão de Contas Reais
   const addAccount = async (accountData) => {
+    const nowIso = new Date().toISOString();
+    const localTempId = 'acc-' + Date.now();
     const newAcc = {
-      id: 'acc-' + Date.now(),
+      id: localTempId,
       name: accountData.name || 'Nova Conta',
       bank: accountData.bank || accountData.name || 'Banco',
       balance: parseFloat(accountData.balance) || 0,
       owner: accountData.owner || loggedInUser?.name || 'Titular',
       icon: accountData.icon || 'wallet-outline',
       color: accountData.color || '#0E2F5A',
+      updatedAt: nowIso,
     };
     const nextAccs = [...accounts, newAcc];
     setAccounts(nextAccs);
     await saveUserItem('accounts', nextAccs);
-    apiCreateAccount(newAcc).catch((e) => console.log('Offline queue for Postgres acc:', e.message));
+
+    apiCreateAccount(newAcc)
+      .then((created) => {
+        if (created?.id) {
+          setAccounts((prev) => {
+            const linked = prev.map((a) =>
+              a.id === localTempId ? { ...a, id: created.id, remoteId: created.id } : a
+            );
+            saveUserItem('accounts', linked);
+            return linked;
+          });
+        }
+      })
+      .catch((e) => console.log('Offline queue for Postgres acc:', e.message));
     return newAcc;
   };
 
   const updateAccount = async (accId, updatedData) => {
-    const nextAccs = accounts.map((acc) =>
-      acc.id === accId
-        ? {
-            ...acc,
-            ...updatedData,
-            balance:
-              updatedData.balance !== undefined
-                ? parseFloat(updatedData.balance) || 0
-                : acc.balance,
-          }
-        : acc
-    );
+    const nowIso = new Date().toISOString();
+    let updatedTarget = null;
+    const nextAccs = accounts.map((acc) => {
+      if (acc.id !== accId) return acc;
+      updatedTarget = {
+        ...acc,
+        ...updatedData,
+        balance:
+          updatedData.balance !== undefined
+            ? parseFloat(updatedData.balance) || 0
+            : acc.balance,
+        updatedAt: nowIso,
+      };
+      return updatedTarget;
+    });
     setAccounts(nextAccs);
     await saveUserItem('accounts', nextAccs);
+
+    if (updatedTarget) {
+      updateAccountApi(updatedTarget.remoteId || accId, updatedTarget).catch(() => {});
+    }
   };
 
   const removeAccount = async (accId) => {
+    const target = accounts.find((acc) => acc.id === accId);
     const nextAccs = accounts.filter((acc) => acc.id !== accId);
     setAccounts(nextAccs);
     await saveUserItem('accounts', nextAccs);
+    if (target) {
+      deleteAccountApi(target.remoteId || accId).catch(() => {});
+    }
   };
 
   const addCard = async (cardData) => {
+    const nowIso = new Date().toISOString();
+    const localTempId = 'card-' + Date.now();
     const theme = getBankTheme(cardData.bankId || cardData.bank || cardData.name);
     const newCard = {
-      id: 'card-' + Date.now(),
+      id: localTempId,
       name: cardData.name || theme.name,
       bank: cardData.bank || theme.name,
       bankId: theme.bankId,
@@ -942,6 +1285,7 @@ export function FinanceProvider({ children }) {
       expiryYear: cardData.expiryYear || '28',
       limit: parseFloat(cardData.limit) || 0,
       currentInvoice: parseFloat(cardData.currentInvoice) || 0,
+      closingDay: parseInt(cardData.closingDay, 10) || 3,
       dueDay: parseInt(cardData.dueDay, 10) || 10,
       dueDateText: cardData.dueDateText || `Vence dia ${cardData.dueDay || 10}`,
       status: cardData.status || 'Em aberto',
@@ -949,34 +1293,79 @@ export function FinanceProvider({ children }) {
       color: theme.gradientColors[0],
       logoType: theme.bankId,
       owner: cardData.owner || loggedInUser?.name || 'Titular',
+      updatedAt: nowIso,
     };
     const nextCards = [...cards, newCard];
     setCards(nextCards);
     await saveUserItem('cards', nextCards);
-    apiCreateCreditCard(newCard).catch((e) => console.log('Offline queue for Postgres card:', e.message));
+
+    apiCreateCreditCard(newCard)
+      .then((created) => {
+        if (created?.id) {
+          setCards((prev) => {
+            const linked = prev.map((c) =>
+              c.id === localTempId ? { ...c, id: created.id, remoteId: created.id } : c
+            );
+            saveUserItem('cards', linked);
+            return linked;
+          });
+        }
+      })
+      .catch((e) => console.log('Offline queue for Postgres card:', e.message));
     return newCard;
   };
 
   const updateCard = async (cardId, updatedData) => {
+    const nowIso = new Date().toISOString();
+    let updatedTarget = null;
     const nextCards = cards.map((c) => {
       if (c.id !== cardId) return c;
       const theme = getBankTheme(updatedData.bankId || updatedData.bank || c.bankId || c.bank);
-      return {
+      updatedTarget = {
         ...c,
         ...updatedData,
         bankId: theme.bankId,
         color: theme.gradientColors[0],
         logoType: theme.bankId,
+        updatedAt: nowIso,
       };
+      return updatedTarget;
     });
     setCards(nextCards);
     await saveUserItem('cards', nextCards);
+
+    if (updatedTarget) {
+      const remoteCardId = updatedTarget.remoteId || cardId;
+      if (remoteCardId && !String(remoteCardId).startsWith('card-')) {
+        updateCreditCardApi(remoteCardId, updatedTarget).catch((e) =>
+          console.log('Offline queue for Postgres card update:', e.message)
+        );
+      } else {
+        apiCreateCreditCard(updatedTarget)
+          .then((created) => {
+            if (created?.id) {
+              setCards((prev) => {
+                const linked = prev.map((c) =>
+                  c.id === cardId ? { ...c, id: created.id, remoteId: created.id } : c
+                );
+                saveUserItem('cards', linked);
+                return linked;
+              });
+            }
+          })
+          .catch(() => {});
+      }
+    }
   };
 
   const removeCard = async (cardId) => {
+    const target = cards.find((c) => c.id === cardId);
     const nextCards = cards.filter((c) => c.id !== cardId);
     setCards(nextCards);
     await saveUserItem('cards', nextCards);
+    if (target) {
+      deleteCreditCardApi(target.remoteId || cardId).catch(() => {});
+    }
   };
 
   // Limpar e zerar todos os dados para uso 100% real no ambiente isolado do usuário
@@ -1073,26 +1462,54 @@ export function FinanceProvider({ children }) {
     await clearAuthSession();
   };
 
-  // Atualização em tempo real do perfil do usuário logado
+  // Atualização em tempo real do perfil do usuário logado (Nome, Sobrenome e Foto persistidos no banco)
   const updateUserProfile = async (updates) => {
     if (!loggedInUser) return;
-    const currentName = updates.fullName || updates.name || loggedInUser.fullName || loggedInUser.name;
+    const rawFirst =
+      updates.firstName !== undefined
+        ? updates.firstName.trim()
+        : (loggedInUser.firstName || (loggedInUser.fullName || loggedInUser.name || '').split(' ')[0] || '').trim();
+    const rawLast =
+      updates.lastName !== undefined
+        ? updates.lastName.trim()
+        : (
+            loggedInUser.lastName !== undefined
+              ? loggedInUser.lastName
+              : (loggedInUser.fullName || loggedInUser.name || '').split(' ').slice(1).join(' ')
+          ).trim();
+
+    const composedFull =
+      updates.fullName?.trim() ||
+      [rawFirst, rawLast].filter(Boolean).join(' ') ||
+      updates.name?.trim() ||
+      loggedInUser.fullName ||
+      loggedInUser.name ||
+      '';
+
+    const nextAvatar =
+      updates.avatarUri !== undefined ? updates.avatarUri : loggedInUser.avatarUri || null;
+
     const updated = {
       ...loggedInUser,
       ...updates,
-      name: currentName,
-      fullName: currentName,
+      firstName: rawFirst,
+      lastName: rawLast,
+      name: composedFull,
+      fullName: composedFull,
+      avatarUri: nextAvatar,
+      avatarUrl: nextAvatar,
     };
+
     setLoggedInUser(updated);
-    setMembers((prev) => ({ ...prev, user1: currentName }));
+    setMembers((prev) => ({ ...prev, user1: composedFull }));
     if (activeMember === loggedInUser.name || activeMember === 'Principal' || !activeMember) {
-      setActiveMember(currentName);
+      setActiveMember(composedFull);
     }
-    // Salva em ambas as chaves de storage para sincronização imediata
-    await saveAuthUser(updated);
-    await AsyncStorage.setItem('@finn_auth_user', JSON.stringify(updated));
-    await saveUserItem('user_profile', updated);
-    return updated;
+
+    // Salva permanentemente no banco PostgreSQL, registro por e-mail/ID e storage local
+    const persisted = await savePersistentUserProfile(updated);
+    await saveUserItem('user_profile', persisted || updated);
+    return persisted || updated;
   };
 
   // Alternador de Modo de Visualização: 'personal' | 'shared' | 'consolidated'
@@ -1790,19 +2207,21 @@ export function FinanceProvider({ children }) {
       return sum + (t.amount || 0);
     }, 0);
 
-  const accountsBalance = accounts.reduce((sum, a) => sum + (a.balance || 0), 0);
+  const accountsBalance = accounts.reduce((sum, a) => sum + (parseFloat(a.balance) || 0), 0);
 
-  // A entrada deve ser referente ao saldo das contas quando há contas cadastradas (no modo pessoal)
+  // A entrada reflete a soma das entradas registradas ou o valor total depositado nas contas (saldo atual + saídas já descontadas)
   const totalIncome = viewMode === 'shared'
     ? txIncome
     : accounts.length > 0
-    ? (accountsBalance > 0 ? accountsBalance : (txIncome || 0))
+    ? (txIncome > 0
+        ? Math.max(txIncome, accountsBalance > 0 ? accountsBalance + totalExpense : 0)
+        : (accountsBalance > 0 ? accountsBalance + totalExpense : 0))
     : txIncome;
 
-  // Saldo totalmente isolado: no modo compartilhado é estritamente o resultado do grupo ativo
+  // Saldo totalmente isolado: se houver saldo nas contas usa accountsBalance, senão usa (totalIncome - totalExpense)
   const totalBalance = viewMode === 'shared'
     ? (txIncome - totalExpense)
-    : accounts.length > 0
+    : accounts.length > 0 && accountsBalance !== 0
     ? accountsBalance
     : (totalIncome - totalExpense);
 
@@ -2025,8 +2444,27 @@ Responda de forma clara, motivadora e estruturada em tópicos!`;
       );
       createdTxs = parsedResult.transactions;
       aiReplyText = parsedResult.cleanText || raw;
+      if (createdTxs.length > 0) {
+        const receiptNotif = NotificationTemplates.receiptProcessed({
+          txId: createdTxs[0].id,
+          amount: createdTxs[0].amount,
+          category: createdTxs[0].category,
+          merchant: createdTxs[0].description || createdTxs[0].title,
+        });
+        setActivityNotifications((prev) => {
+          const next = [receiptNotif, ...prev].slice(0, 30);
+          saveUserItem('activity_notifications', next);
+          return next;
+        });
+      }
     } catch (e) {
       aiReplyText = `Erro ao ler comprovante: ${e.message}`;
+      const failNotif = NotificationTemplates.receiptFailed();
+      setActivityNotifications((prev) => {
+        const next = [failNotif, ...prev].slice(0, 30);
+        saveUserItem('activity_notifications', next);
+        return next;
+      });
     }
 
     const aiMsg = {
@@ -2144,152 +2582,231 @@ Responda de forma clara, motivadora e estruturada em tópicos!`;
     await saveUserItem('ai_skin', skinId);
   };
 
-  // Agenda notificações inteligentes nativas no celular sempre que os saldos mudarem
+  const updateNotificationPreferences = async (nextPrefs) => {
+    const uid = loggedInUser?.id || 'guest';
+    const saved = await saveUserNotificationPreferences(uid, nextPrefs);
+    setNotificationPreferences(saved);
+    return saved;
+  };
+
+  const todayIsoKey = new Date().toISOString().slice(0, 10);
+  const hasRecordedToday = (transactions || []).some(
+    (t) => String(t.date || t.createdAt || '').slice(0, 10) === todayIsoKey
+  );
+
+  // Agenda notificações inteligentes nativas no celular sempre que os saldos ou preferências mudarem
   useEffect(() => {
     if (!loaded || !loggedInUser?.id) return;
     initPhoneNotifications().then(() => {
       scheduleSmartPhoneNotifications({
+        userId: loggedInUser.id,
         userName: loggedInUser?.name,
         totalIncome,
         totalExpense,
         totalBalance,
         pendingBillsAmount,
+        hasRecordedToday,
+        preferences: notificationPreferences,
       });
     });
-  }, [loaded, loggedInUser?.id, totalIncome, totalExpense, totalBalance, pendingBillsAmount]);
+  }, [
+    loaded,
+    loggedInUser?.id,
+    totalIncome,
+    totalExpense,
+    totalBalance,
+    pendingBillsAmount,
+    hasRecordedToday,
+    notificationPreferences,
+  ]);
 
-  // Central de Notificações Inteligentes (In-App + Celular)
-  const fmtMoneyNotif = (val) =>
-    Number(val || 0).toLocaleString('pt-BR', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    });
-
+  // Central de Notificações Inteligentes (In-App + Celular) via NotificationTemplates
   const smartSystemNotifications = [];
 
-  // 1. Notificação Inteligente sobre Movimento do Dinheiro e Economia
-  const expenseRatio = totalIncome > 0 ? Math.round((totalExpense / totalIncome) * 100) : 0;
-  if (totalIncome > 0 && expenseRatio >= 75) {
-    smartSystemNotifications.push({
-      id: `smart-economy-high-${selectedMonth}`,
-      category: 'economy',
-      icon: 'warning-outline',
-      color: '#EF4444',
-      title: '⚠️ Alerta do FINN: Hora de economizar!',
-      message: `Seus gastos (R$ ${fmtMoneyNotif(totalExpense)}) já consumiram ${expenseRatio}% da sua renda deste mês. Reduza gastos variáveis esta semana para proteger seu saldo.`,
-      time: 'Hoje',
-      targetScreen: 'Categories',
-    });
-  } else if (totalIncome > 0 || totalExpense > 0) {
-    smartSystemNotifications.push({
+  // 1. Insight da FINN IA em destaque (Hero Card)
+  const savedPct = economizadoPercent > 0 ? economizadoPercent : 100;
+  const freeBal = totalBalance > 0 ? totalBalance : resultadoDoMes;
+  smartSystemNotifications.push(
+    NotificationTemplates.aiSavingsOpportunity({
       id: `smart-economy-status-${selectedMonth}`,
-      category: 'economy',
-      icon: 'sparkles',
-      color: '#7C3AED',
-      title: '📊 Movimento do seu dinheiro e economia',
-      message:
-        economizadoPercent > 0
-          ? `Parabéns! Você está economizando ${economizadoPercent}% da sua renda neste mês (Saldo livre: R$ ${fmtMoneyNotif(resultadoDoMes)}). Que tal guardar uma parte nos Cofrinhos?`
-          : `Seu balanço atual está em R$ ${fmtMoneyNotif(totalBalance)}. Acompanhe seus lançamentos e tente reservar ao menos 15% da renda para economizar.`,
+      savedPercent: savedPct,
+      freeBalance: freeBal,
+      month: selectedMonth,
       time: 'Agora',
-      targetScreen: 'Savings',
-    });
-  } else {
-    smartSystemNotifications.push({
-      id: 'smart-economy-welcome',
-      category: 'economy',
-      icon: 'wallet-outline',
-      color: '#7C3AED',
-      title: '💡 Dica Inteligente de Economia FINN',
-      message:
-        'Registre suas entradas e saídas para o FINN analisar o movimento do seu dinheiro em tempo real e avisar quando e onde você deve economizar.',
-      time: 'Hoje',
-      targetScreen: 'Assistant',
-    });
+    })
+  );
+
+  // 1.5. Caso exista despesa no mês e ainda não haja notificação transacional salva em activityNotifications
+  const hasExpenseActivityNotif = (activityNotifications || []).some(
+    (n) =>
+      n.type === 'transaction_expense' ||
+      n.category === 'expense' ||
+      String(n.title || '').includes('Gasto')
+  );
+  if (!hasExpenseActivityNotif && totalExpense > 0) {
+    const latestExpTx = (transactions || []).find((t) => t.type === 'expense');
+    const expVal = latestExpTx ? latestExpTx.amount : totalExpense;
+    const expCat = latestExpTx?.category || 'alimentacao';
+    smartSystemNotifications.push(
+      NotificationTemplates.transactionRecorded({
+        id: `smart-latest-expense-${selectedMonth}-${expVal}`,
+        txId: latestExpTx?.id || `exp-${selectedMonth}`,
+        type: 'expense',
+        amount: expVal,
+        category: expCat,
+        description: latestExpTx?.description || latestExpTx?.title,
+        createdAt: latestExpTx?.createdAt,
+        time: '02:53',
+      })
+    );
   }
 
-  // 2. Contas / Faturas pendentes
+  // 2. Alertas de controle de limite de categoria (80% e 100%)
+  (categoryBreakdown || []).forEach((cat) => {
+    if (cat.budget > 0 && cat.percentOfBudget >= 80) {
+      smartSystemNotifications.push(
+        NotificationTemplates.categoryBudgetAlert({
+          category: cat.id || cat.label,
+          percentage: cat.percentOfBudget,
+          spent: cat.spent,
+          limit: cat.budget,
+          month: selectedMonth,
+        })
+      );
+    }
+  });
+
+  // 3. Alerta de saldo negativo ou projeção negativa
+  const projectedEndOfMonth = totalBalance - pendingBillsAmount;
+  if (totalBalance < 0 || (pendingBillsAmount > 0 && projectedEndOfMonth < 0)) {
+    smartSystemNotifications.push(
+      NotificationTemplates.lowBalanceOrNegativeProjectionAlert({
+        currentBalance: totalBalance,
+        projectedBalance: projectedEndOfMonth,
+        month: selectedMonth,
+      })
+    );
+  }
+
+  // 4. Metas dos Cofrinhos atingidas (100%) ou quase atingidas (>= 80%)
+  (cofrinhos || []).forEach((cof) => {
+    const target = Number(cof.targetAmount) || 0;
+    const current = Number(cof.currentAmount) || 0;
+    if (target > 0) {
+      const pct = Math.round((current / target) * 100);
+      if (pct >= 80) {
+        smartSystemNotifications.push(
+          NotificationTemplates.aiGoalProgress({
+            goalId: cof.id,
+            goalTitle: cof.title,
+            currentAmount: current,
+            targetAmount: target,
+            percent: pct,
+          })
+        );
+      }
+    }
+  });
+
+  // 5. Contas a vencer (3 dias antes e no dia)
   if (pendingBillsAmount > 0) {
-    smartSystemNotifications.push({
-      id: `smart-bills-${selectedMonth}`,
-      category: 'bills',
-      icon: 'calendar-outline',
-      color: '#F59E0B',
-      title: '📅 Contas pendentes neste mês',
-      message: `Você possui R$ ${fmtMoneyNotif(pendingBillsAmount)} em contas a pagar. Não se esqueça de dar baixa no app assim que realizar o pagamento!`,
-      time: 'Este mês',
-      targetScreen: 'Bills',
+    const todayDay = new Date().getDate();
+    const urgentBills = (bills || []).filter((b) => !b.paid);
+    let addedSpecificBill = false;
+    urgentBills.forEach((b) => {
+      const dueDay = Number(b.dueDay || b.day) || 0;
+      if (dueDay > 0) {
+        const diff = dueDay - todayDay;
+        if (diff === 0 || (diff > 0 && diff <= 3)) {
+          addedSpecificBill = true;
+          smartSystemNotifications.push(
+            NotificationTemplates.billDueAlert({
+              billId: b.id,
+              billTitle: b.title || b.name,
+              amount: b.amount,
+              daysUntilDue: diff,
+            })
+          );
+        }
+      }
     });
-  }
-
-  // 2.5. Notificações Inteligentes de Grupos e Convites
-  const pendingInvites = (groupInvitations || []).filter((inv) => inv.status === 'PENDING');
-  if (pendingInvites.length > 0) {
-    smartSystemNotifications.push({
-      id: `smart-group-invites-${pendingInvites.length}`,
-      category: 'group',
-      icon: 'mail-unread-outline',
-      color: '#7C3AED',
-      title: `📩 Convites de Grupo Ativos (${pendingInvites.length})`,
-      message: `Último convite enviado para ${pendingInvites[0].email} (Código: ${pendingInvites[0].token}). Toque para gerenciar convites e membros do grupo.`,
-      time: 'Convite de grupo',
-      targetScreen: 'SharedFinances',
-    });
-  }
-
-  if (sharedGroups && sharedGroups.length > 0) {
-    const activeGrp = sharedGroups.find((g) => g.id === activeGroupId) || sharedGroups[0];
-    if (activeGrp) {
-      const grpTotal = transactions
-        .filter((t) => t.isShared && (t.groupId === activeGrp.id || t.sharedGroupId === activeGrp.id))
-        .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
-      smartSystemNotifications.push({
-        id: `smart-group-summary-${activeGrp.id}-${grpTotal}`,
-        category: 'group',
-        icon: 'people-outline',
-        color: '#8B5CF6',
-        title: `👥 Resumo do grupo: ${activeGrp.name}`,
-        message:
-          grpTotal > 0
-            ? `Total movimentado no grupo '${activeGrp.name}': R$ ${fmtMoneyNotif(grpTotal)} (${activeGrp.members?.length || 1} participante${(activeGrp.members?.length || 1) > 1 ? 's' : ''}). Toque para ver divisões e acertos.`
-            : `O grupo '${activeGrp.name}' está ativo (${activeGrp.members?.length || 1} participante${(activeGrp.members?.length || 1) > 1 ? 's' : ''}). Qualquer convite ou alteração de valor será notificado aqui e no celular.`,
-        time: 'Finanças em Grupo',
-        targetScreen: 'SharedFinances',
-      });
+    if (!addedSpecificBill) {
+      smartSystemNotifications.push(
+        NotificationTemplates.billDueAlert({
+          id: `smart-bills-${selectedMonth}`,
+          billTitle: 'Contas do mês',
+          amount: pendingBillsAmount,
+          daysUntilDue: 3,
+          time: 'Este mês',
+        })
+      );
     }
   }
 
-  // 3. Lembrete para não esquecer de usar o app
-  smartSystemNotifications.push({
-    id: 'smart-reminder-daily',
-    category: 'reminder',
-    icon: 'notifications-outline',
-    color: '#0EA5E9',
-    title: '📲 Não se esqueça de usar o FINN hoje!',
-    message:
-      'Fez alguma compra no Pix, cartão ou dinheiro? Mande um áudio ou foto do comprovante para o FINN IA e mantenha seu controle financeiro 100% em dia.',
-    time: 'Lembrete diário',
-    targetScreen: 'Assistant',
-  });
+  // 6. Convites ativos nas Finanças Compartilhadas
+  const pendingInvites = (groupInvitations || []).filter((inv) => inv.status === 'PENDING');
+  if (pendingInvites.length > 0) {
+    smartSystemNotifications.push(
+      NotificationTemplates.sharedGroupInvite({
+        id: `smart-group-invites-${pendingInvites.length}`,
+        invitedEmail: pendingInvites[0].email,
+        inviteCode: pendingInvites[0].token,
+        pendingCount: pendingInvites.length,
+      })
+    );
+  }
 
-  // 4. Lembrete de atualização do aplicativo
-  smartSystemNotifications.push({
-    id: 'smart-update-app',
-    category: 'update',
-    icon: 'Rocket-outline',
-    color: '#10B981',
-    title: '🚀 Mantenha seu FINN sempre atualizado',
-    message:
-      'Novas melhorias na Carteira FINN Wallet, Finanças Compartilhadas e Inteligência Artificial estão ativas. Verifique sempre se você está com a versão mais recente instalada!',
-    time: 'Sistema',
-    targetScreen: null,
-  });
+  // 7. Lembrete diário para registrar despesas (só se não registrou nada hoje)
+  if (!hasRecordedToday) {
+    smartSystemNotifications.push(NotificationTemplates.dailyRegisterReminder());
+  }
 
-  const notifications = [...activityNotifications, ...smartSystemNotifications].map((n) => ({
-    ...n,
-    icon: n.icon === 'Rocket-outline' ? 'rocket-outline' : n.icon,
-    read: readNotificationIds.includes(n.id),
-  }));
+  // 8. Lembrete de reengajamento caso esteja entre 3 e 7+ dias sem lançar
+  if ((transactions || []).length > 0 && !hasRecordedToday) {
+    const latestDateStr = transactions[0]?.date || transactions[0]?.createdAt;
+    if (latestDateStr) {
+      const diffMs = Date.now() - new Date(latestDateStr).getTime();
+      const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+      if (diffDays >= 3 && diffDays <= 14) {
+        smartSystemNotifications.push(
+          NotificationTemplates.reengagementReminder({
+            daysInactive: diffDays,
+          })
+        );
+      }
+    }
+  }
+
+  // 9. Sistema: App atualizado
+  smartSystemNotifications.push(NotificationTemplates.systemAppUpdated());
+
+  const normalizedActivityNotifs = (activityNotifications || []).map((n) =>
+    normalizeLegacyNotification(n)
+  );
+
+  const heroAiNotifs = smartSystemNotifications.filter((n) => n.isHeroAi);
+  const otherSmartNotifs = smartSystemNotifications.filter((n) => !n.isHeroAi);
+
+  // Deduplica por dedupeKey ou id e respeita as preferências de categoria do usuário
+  const rawCombined = [...heroAiNotifs, ...normalizedActivityNotifs, ...otherSmartNotifs];
+  const seenKeys = new Set();
+  const deduplicatedList = [];
+
+  for (const item of rawCombined) {
+    const catKey = normalizeNotificationCategory(item.category);
+    if (notificationPreferences?.categories?.[catKey] === false) {
+      continue;
+    }
+    const key = item.dedupeKey || item.id;
+    if (seenKeys.has(key)) continue;
+    seenKeys.add(key);
+    deduplicatedList.push({
+      ...item,
+      read: readNotificationIds.includes(item.id),
+    });
+  }
+
+  const notifications = groupInsightsNotifications(deduplicatedList);
 
   const unreadNotificationsCount = notifications.filter((n) => !n.read).length;
 
@@ -2307,32 +2824,20 @@ Responda de forma clara, motivadora e estruturada em tópicos!`;
   };
 
   const sendTestSmartNotification = async () => {
-    const title =
-      totalExpense > totalIncome && totalIncome > 0
-        ? '⚠️ Alerta FINN: Atenção aos gastos!'
-        : '🤖 FINN IA: Análise do seu dinheiro';
-    const body =
-      totalIncome > 0 || totalExpense > 0
-        ? `Saldo atual: R$ ${fmtMoneyNotif(totalBalance)} | Gastos no mês: R$ ${fmtMoneyNotif(totalExpense)}. Continue registrando tudo no FINN para economizar mais!`
-        : 'Não se esqueça de registrar suas movimentações de hoje no FINN e manter seu aplicativo atualizado!';
-
-    const sent = await sendInstantPhoneNotification({
-      title,
-      body,
-      data: { type: 'manual_smart_test' },
+    const testInApp = NotificationTemplates.aiSavingsOpportunity({
+      id: 'notif-smart-' + Date.now(),
+      savedPercent: savedPct,
+      freeBalance: Math.max(0, totalBalance),
+      month: selectedMonth,
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     });
 
-    const testInApp = {
-      id: 'notif-smart-' + Date.now(),
-      category: 'economy',
-      icon: 'notifications',
-      color: '#7C3AED',
-      title,
-      message: body,
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      createdAt: new Date().toISOString(),
-      targetScreen: 'Assistant',
-    };
+    const sent = await sendInstantPhoneNotification({
+      notification: testInApp,
+      userId: loggedInUser?.id || 'guest',
+      preferences: notificationPreferences,
+      data: { type: 'manual_smart_test' },
+    });
 
     setActivityNotifications((prev) => {
       const next = [testInApp, ...prev].slice(0, 25);
@@ -2358,6 +2863,8 @@ Responda de forma clara, motivadora e estruturada em tópicos!`;
         markNotificationAsRead,
         markAllNotificationsAsRead,
         sendTestSmartNotification,
+        notificationPreferences,
+        updateNotificationPreferences,
         transactions: filteredTransactions,
         allTransactions: transactions,
         accounts,

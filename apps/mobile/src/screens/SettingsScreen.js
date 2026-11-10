@@ -336,6 +336,31 @@ export default function SettingsScreen({ navigation }) {
                   </View>
                   <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
                 </TouchableOpacity>
+
+                {/* SUBMENU 4: PREFERÊNCIAS DE NOTIFICAÇÃO */}
+                <TouchableOpacity
+                  style={styles.submenuItem}
+                  activeOpacity={0.75}
+                  onPress={() => navigation?.navigate?.('NotificationPreferences')}
+                  accessibilityRole="button"
+                  accessibilityLabel="Abrir preferências de notificação"
+                >
+                  <View
+                    style={[
+                      styles.submenuIconBox,
+                      { backgroundColor: '#EDE9FE' },
+                    ]}
+                  >
+                    <Ionicons name="notifications-outline" size={18} color="#5B21B6" />
+                  </View>
+                  <View style={styles.submenuInfo}>
+                    <Text style={styles.submenuTitle}>Preferências de Notificação</Text>
+                    <Text style={styles.submenuSub}>
+                      Categorias, horário de silêncio e privacidade
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
+                </TouchableOpacity>
               </View>
             )}
           </View>

@@ -18,9 +18,13 @@ import OpenFinanceModal from '../components/OpenFinanceModal';
 
 export default function CardsAccountsScreen() {
   const insets = useSafeAreaInsets();
-  const { accounts, cards, updateAccountBalance } = useFinance();
+  const { accounts, cards, updateAccountBalance, updateCard } = useFinance();
   const [editingAcc, setEditingAcc] = useState(null);
   const [newBalance, setNewBalance] = useState('');
+  const [editingCard, setEditingCard] = useState(null);
+  const [editCardLimit, setEditCardLimit] = useState('');
+  const [editCardDueDay, setEditCardDueDay] = useState('');
+  const [editCardName, setEditCardName] = useState('');
   const [openFinanceVisible, setOpenFinanceVisible] = useState(false);
   const [connectedBanks, setConnectedBanks] = useState([]);
 
@@ -44,6 +48,33 @@ export default function CardsAccountsScreen() {
     setNewBalance('');
   };
 
+  const handleOpenEditCard = (card) => {
+    setEditingCard(card);
+    setEditCardName(card.name || card.bank || '');
+    setEditCardLimit(card.limit !== undefined && card.limit !== null ? String(card.limit) : '');
+    setEditCardDueDay(card.dueDay ? String(card.dueDay) : '10');
+  };
+
+  const handleSaveCard = async () => {
+    if (!editingCard || !updateCard) return;
+    const limitNum =
+      parseFloat(String(editCardLimit).replace(/\./g, '').replace(',', '.')) ||
+      parseFloat(String(editCardLimit).replace(',', '.')) ||
+      0;
+    const dueDayNum = Math.min(31, Math.max(1, parseInt(editCardDueDay, 10) || 10));
+    const currentInv = Number(editingCard.currentInvoice) || 0;
+    const used = limitNum > 0 ? Math.min(Math.round((currentInv / limitNum) * 100), 100) : 0;
+
+    await updateCard(editingCard.id, {
+      name: editCardName.trim() || editingCard.name || editingCard.bank,
+      limit: limitNum,
+      dueDay: dueDayNum,
+      dueDateText: `Vence dia ${dueDayNum}`,
+      usedPercent: used,
+    });
+    setEditingCard(null);
+  };
+
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <StatusBar barStyle="light-content" backgroundColor={COLORS.bg} />
@@ -53,60 +84,44 @@ export default function CardsAccountsScreen() {
           <Text style={styles.headerTitle}>Contas & Cartões</Text>
           <Text style={styles.headerSubtitle}>Gerenciamento bancário e Open Finance do casal</Text>
         </View>
-        <TouchableOpacity
-          style={styles.openFinanceHeaderBtn}
-          onPress={() => setOpenFinanceVisible(true)}
-        >
-          <Ionicons name="shield-checkmark" size={16} color={COLORS.primary} />
+        <View style={[styles.openFinanceHeaderBtn, { opacity: 0.45 }]}>
+          <Ionicons name="lock-closed" size={14} color={COLORS.primary} />
           <Text style={styles.openFinanceHeaderBtnText}>Open Finance</Text>
-        </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 90 }]}
       >
-        {/* BANNER OPEN FINANCE BRASIL */}
+        {/* BANNER OPEN FINANCE BRASIL (DESATIVADO / MEIO APAGADO) */}
         <View style={styles.openFinanceBanner}>
           <View style={styles.openFinanceTop}>
-            <View style={styles.ofIconWrap}>
+            <View style={[styles.ofIconWrap, { opacity: 0.55 }]}>
               <Ionicons name="link" size={20} color={COLORS.primary} />
             </View>
             <View style={{ flex: 1 }}>
               <View style={styles.ofTitleRow}>
                 <Text style={styles.ofTitle}>Open Finance Brasil</Text>
                 <View style={styles.readOnlyBadge}>
-                  <Text style={styles.readOnlyText}>Somente Leitura</Text>
+                  <Text style={styles.readOnlyText}>Em breve</Text>
                 </View>
               </View>
               <Text style={styles.ofSubtitle}>
-                {connectedBanks.length > 0
-                  ? `${connectedBanks.length} banco(s) conectado(s) e sincronizando transações`
-                  : 'Conecte seus bancos para leitura automática de saldo e extrato'}
+                Integração automática de saldo e extrato bancário estará disponível em breve
               </Text>
             </View>
           </View>
 
-          {connectedBanks.length > 0 && (
-            <View style={styles.connectedBankChips}>
-              {connectedBanks.map((b) => (
-                <View key={b.id} style={styles.bankChip}>
-                  <View style={[styles.bankChipDot, { backgroundColor: b.color }]} />
-                  <Text style={styles.bankChipName}>{b.name}</Text>
-                  <Ionicons name="checkmark-circle" size={14} color={COLORS.primary} />
-                </View>
-              ))}
-            </View>
-          )}
-
           <TouchableOpacity
-            style={styles.ofActionBtn}
-            onPress={() => setOpenFinanceVisible(true)}
+            style={styles.ofActionBtnDisabled}
+            disabled={true}
+            activeOpacity={1}
           >
-            <Text style={styles.ofActionBtnText}>
-              {connectedBanks.length > 0 ? 'Gerenciar Bancos Conectados' : 'Conectar Banco (Nubank, Inter, Itaú...)'}
+            <Ionicons name="lock-closed-outline" size={15} color="rgba(255,255,255,0.85)" />
+            <Text style={styles.ofActionBtnDisabledText}>
+              Gerenciar Bancos Conectados (Em breve)
             </Text>
-            <Ionicons name="arrow-forward" size={16} color={COLORS.white} />
           </TouchableOpacity>
         </View>
 
@@ -159,7 +174,24 @@ export default function CardsAccountsScreen() {
                 <View style={styles.cardChip}>
                   <Ionicons name="card" size={24} color={COLORS.purple} />
                 </View>
-                <Text style={styles.cardBank}>{card.bank}</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <Text style={styles.cardBank}>{card.bank}</Text>
+                  <TouchableOpacity
+                    onPress={() => handleOpenEditCard(card)}
+                    activeOpacity={0.75}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    style={{
+                      width: 32,
+                      height: 32,
+                      borderRadius: 16,
+                      backgroundColor: COLORS.primaryLight,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Ionicons name="pencil" size={15} color={COLORS.primary} />
+                  </TouchableOpacity>
+                </View>
               </View>
 
               <Text style={styles.cardName}>{card.name}</Text>
@@ -179,6 +211,59 @@ export default function CardsAccountsScreen() {
           ))}
         </View>
       </ScrollView>
+
+      {/* MODAL DE EDIÇÃO DE CARTÃO (LIMITE E VENCIMENTO) */}
+      <Modal visible={!!editingCard} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBox}>
+            <Text style={styles.modalTitle}>Editar Cartão</Text>
+            <Text style={styles.modalSub}>{editingCard?.name} ({editingCard?.bank})</Text>
+
+            <Text style={[styles.cardMetaLabel, { marginBottom: 6 }]}>Limite Total (R$)</Text>
+            <View style={[styles.modalInputWrap, { marginBottom: 14 }]}>
+              <Text style={styles.modalCurrency}>R$</Text>
+              <TextInput
+                style={styles.modalInput}
+                keyboardType="decimal-pad"
+                value={editCardLimit}
+                onChangeText={setEditCardLimit}
+                placeholder="0,00"
+                placeholderTextColor={COLORS.textMuted}
+              />
+            </View>
+
+            <Text style={[styles.cardMetaLabel, { marginBottom: 6 }]}>Dia de Vencimento da Fatura</Text>
+            <View style={styles.modalInputWrap}>
+              <Ionicons name="calendar-outline" size={20} color={COLORS.primary} style={{ marginRight: 8 }} />
+              <TextInput
+                style={[styles.modalInput, { fontSize: 20 }]}
+                keyboardType="number-pad"
+                maxLength={2}
+                value={editCardDueDay}
+                onChangeText={setEditCardDueDay}
+                placeholder="10"
+                placeholderTextColor={COLORS.textMuted}
+              />
+            </View>
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={styles.modalCancel}
+                onPress={() => setEditingCard(null)}
+              >
+                <Text style={styles.modalCancelText}>Cancelar</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.modalSave}
+                onPress={handleSaveCard}
+              >
+                <Text style={styles.modalSaveText}>Salvar Alterações</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* MODAL DE AJUSTE DE SALDO REAL */}
       <Modal visible={!!editingAcc} transparent animationType="fade">
@@ -365,6 +450,22 @@ const styles = StyleSheet.create({
     color: COLORS.white,
     fontSize: 13,
     fontWeight: '800',
+  },
+  ofActionBtnDisabled: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: COLORS.primary,
+    opacity: 0.42,
+    height: 44,
+    borderRadius: 12,
+    marginTop: 14,
+  },
+  ofActionBtnDisabledText: {
+    color: 'rgba(255, 255, 255, 0.9)',
+    fontSize: 13,
+    fontWeight: '700',
   },
   sectionHead: {
     marginBottom: 12,

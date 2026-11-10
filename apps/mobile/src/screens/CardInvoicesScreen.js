@@ -82,6 +82,7 @@ export default function CardInvoicesScreen({ navigation }) {
   const [editCardLimit, setEditCardLimit] = useState('');
   const [editCardInvoice, setEditCardInvoice] = useState('');
   const [editCardDueDay, setEditCardDueDay] = useState('10');
+  const [editCardClosingDay, setEditCardClosingDay] = useState('3');
 
   const formatMoney = (val) => {
     return (
@@ -395,16 +396,28 @@ export default function CardInvoicesScreen({ navigation }) {
 
   // Abertura do modal de edição
   const handleOpenEditModal = (card) => {
+    if (!card) return;
     const theme = getBankTheme(card.bankId || card.bank || card.name);
+    const dueNum = parseInt(card.dueDay, 10) || 10;
+    const closeNum =
+      card.closingDay !== undefined && card.closingDay !== null
+        ? parseInt(card.closingDay, 10)
+        : Math.max(1, dueNum - 7);
+
     setEditingCardId(card.id);
     setEditCardBankId(theme.bankId);
     setEditCardName(card.name || theme.name);
     setEditCardHolderName(card.holderName || defaultUserName);
     setEditCardLastFourDigits(card.lastFourDigits || '');
     setEditCardExpiry(`${card.expiryMonth || '12'}/${card.expiryYear || '28'}`);
-    setEditCardLimit(card.limit ? String(card.limit) : '');
-    setEditCardInvoice(card.currentInvoice ? String(card.currentInvoice) : '');
-    setEditCardDueDay(card.dueDay ? String(card.dueDay) : '10');
+    setEditCardLimit(card.limit !== undefined && card.limit !== null ? String(card.limit) : '');
+    setEditCardInvoice(
+      card.currentInvoice !== undefined && card.currentInvoice !== null
+        ? String(card.currentInvoice)
+        : ''
+    );
+    setEditCardDueDay(String(dueNum));
+    setEditCardClosingDay(String(closeNum));
     setModalEditCard(true);
   };
 
@@ -413,9 +426,13 @@ export default function CardInvoicesScreen({ navigation }) {
     if (!editingCardId) return;
     const theme = getBankTheme(editCardBankId);
     const cardTitle = editCardName.trim() || theme.name;
-    const limitNum = parseFloat(editCardLimit.replace(',', '.')) || 0;
-    const invNum = parseFloat(editCardInvoice.replace(',', '.')) || 0;
-    const dueDayNum = parseInt(editCardDueDay, 10) || 10;
+    const limitNum = parseFloat(String(editCardLimit).replace(/\./g, '').replace(',', '.')) || parseFloat(String(editCardLimit).replace(',', '.')) || 0;
+    const invNum = parseFloat(String(editCardInvoice).replace(/\./g, '').replace(',', '.')) || parseFloat(String(editCardInvoice).replace(',', '.')) || 0;
+    const dueDayNum = Math.min(31, Math.max(1, parseInt(editCardDueDay, 10) || 10));
+    const closingDayNum = Math.min(
+      31,
+      Math.max(1, parseInt(editCardClosingDay, 10) || Math.max(1, dueDayNum - 7))
+    );
     const used =
       limitNum > 0 ? Math.min(Math.round((invNum / limitNum) * 100), 100) : 0;
     const [expMonth, expYear] = (editCardExpiry || '12/28').split('/');
@@ -431,6 +448,7 @@ export default function CardInvoicesScreen({ navigation }) {
       limit: limitNum,
       currentInvoice: invNum,
       dueDay: dueDayNum,
+      closingDay: closingDayNum,
       dueDateText: `Vence dia ${dueDayNum}`,
       status: 'Em aberto',
       usedPercent: used,
@@ -733,16 +751,27 @@ export default function CardInvoicesScreen({ navigation }) {
                 end={{ x: 1, y: 1 }}
                 style={styles.photo3Card}
               >
-                {/* Topo do Cartão: Chip EMV + Nome do Banco */}
+                {/* Topo do Cartão: Chip EMV + Nome do Banco + Lápis de Edição no Canto Superior Direito */}
                 <View style={styles.photo3CardTopRow}>
-                  <View style={styles.photo3Chip}>
-                    <View style={styles.photo3ChipInner} />
-                    <View style={styles.photo3ChipLineH} />
-                    <View style={styles.photo3ChipLineV} />
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                    <View style={styles.photo3Chip}>
+                      <View style={styles.photo3ChipInner} />
+                      <View style={styles.photo3ChipLineH} />
+                      <View style={styles.photo3ChipLineV} />
+                    </View>
+                    <Text style={styles.photo3BankName}>
+                      {(focusedCard?.name || focusedCardTheme?.name || 'NUBANK').toUpperCase()}
+                    </Text>
                   </View>
-                  <Text style={styles.photo3BankName}>
-                    {(focusedCard?.name || focusedCardTheme?.name || 'NUBANK').toUpperCase()}
-                  </Text>
+
+                  <TouchableOpacity
+                    style={styles.photo3EditPencilBtn}
+                    onPress={() => focusedCard && handleOpenEditModal(focusedCard)}
+                    activeOpacity={0.75}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  >
+                    <Ionicons name="pencil" size={16} color="#FFFFFF" />
+                  </TouchableOpacity>
                 </View>
 
                 {/* Total da Fatura */}
@@ -760,7 +789,7 @@ export default function CardInvoicesScreen({ navigation }) {
                   <View style={styles.photo3DateCol}>
                     <Text style={styles.photo3DateLabel}>Fechamento</Text>
                     <Text style={styles.photo3DateValue}>
-                      {`0${focusedCard?.closingDay || 1}`.slice(-2)}/11/2026
+                      {`0${focusedCard?.closingDay || Math.max(1, (focusedCard?.dueDay || 10) - 7)}`.slice(-2)}/11/2026
                     </Text>
                   </View>
                   <View style={styles.photo3DateCol}>
@@ -1165,13 +1194,32 @@ export default function CardInvoicesScreen({ navigation }) {
                 </View>
               </View>
 
-              <Text style={styles.inputLabel}>Dia do Vencimento</Text>
-              <TextInput
-                style={styles.input}
-                value={editCardDueDay}
-                keyboardType="number-pad"
-                onChangeText={setEditCardDueDay}
-              />
+              <View style={styles.formRow}>
+                <View style={styles.formCol}>
+                  <Text style={styles.inputLabel}>Dia do Fechamento</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={editCardClosingDay}
+                    keyboardType="number-pad"
+                    maxLength={2}
+                    placeholder="Ex: 03"
+                    placeholderTextColor="#9CA3AF"
+                    onChangeText={setEditCardClosingDay}
+                  />
+                </View>
+                <View style={styles.formCol}>
+                  <Text style={styles.inputLabel}>Dia do Vencimento</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={editCardDueDay}
+                    keyboardType="number-pad"
+                    maxLength={2}
+                    placeholder="Ex: 10"
+                    placeholderTextColor="#9CA3AF"
+                    onChangeText={setEditCardDueDay}
+                  />
+                </View>
+              </View>
 
               <TouchableOpacity
                 style={styles.modalSaveBtn}
@@ -1346,8 +1394,18 @@ const styles = StyleSheet.create({
   photo3CardTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    justifyContent: 'space-between',
     marginBottom: 16,
+  },
+  photo3EditPencilBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: 'rgba(255, 255, 255, 0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.28)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   photo3Chip: {
     width: 38,

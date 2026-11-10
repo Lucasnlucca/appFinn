@@ -91,6 +91,7 @@ export class AuthService {
         id: user.id,
         email: user.email,
         fullName: user.fullName,
+        avatarUrl: user.avatarUrl || null,
       },
       token,
     };
@@ -127,10 +128,210 @@ export class AuthService {
         id: user.id,
         email: user.email,
         fullName: user.fullName,
+        avatarUrl: user.avatarUrl || null,
         activeHousehold: user.householdMemberships[0]?.household || null,
         roleInHousehold: user.householdMemberships[0]?.role || null,
       },
       token,
+    };
+  }
+
+  /**
+   * Verifica se um e-mail já está cadastrado no banco de dados (evita duplicidade de contas).
+   */
+  async checkEmailExists(rawEmail?: string) {
+    const cleanEmail = (rawEmail || '').toLowerCase().trim();
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      return { exists: false };
+    }
+
+    const existing = await this.prisma.user.findUnique({
+      where: { email: cleanEmail },
+      select: { id: true, email: true, fullName: true },
+    });
+
+    return {
+      exists: Boolean(existing),
+      email: cleanEmail,
+      message: existing
+        ? 'Já existe uma conta cadastrada com este e-mail. Não é permitido criar outra conta com o mesmo e-mail.'
+        : 'E-mail disponível.',
+    };
+  }
+
+  /**
+   * Autentica ou cria conta via Google OAuth 2.0 validando duplicidade no PostgreSQL.
+   */
+  async authenticateGoogle(body: {
+    idToken?: string;
+    accessToken?: string;
+    email?: string;
+    fullName?: string;
+    avatarUrl?: string;
+    mode?: 'login' | 'register';
+  }) {
+    let verifiedEmail = (body.email || '').toLowerCase().trim();
+    let verifiedName = (body.fullName || '').trim();
+    let verifiedAvatar = body.avatarUrl || null;
+
+    // 1. Se foi enviado idToken ou accessToken do Google OAuth 2.0, valida na API oficial do Google
+    if (body.idToken) {
+      try {
+        const res = await fetch(
+          `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(body.idToken)}`,
+        );
+        if (res.ok) {
+          const tokenInfo: any = await res.json();
+          if (tokenInfo?.email) {
+            verifiedEmail = String(tokenInfo.email).toLowerCase().trim();
+            verifiedName = tokenInfo.name || verifiedName;
+            verifiedAvatar = tokenInfo.picture || verifiedAvatar;
+          }
+        }
+      } catch (e: any) {
+        this.logger.warn(`Falha ao validar idToken Google: ${e?.message}`);
+      }
+    } else if (body.accessToken) {
+      try {
+        const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+          headers: { Authorization: `Bearer ${body.accessToken}` },
+        });
+        if (res.ok) {
+          const userInfo: any = await res.json();
+          if (userInfo?.email) {
+            verifiedEmail = String(userInfo.email).toLowerCase().trim();
+            verifiedName = userInfo.name || verifiedName;
+            verifiedAvatar = userInfo.picture || verifiedAvatar;
+          }
+        }
+      } catch (e: any) {
+        this.logger.warn(`Falha ao consultar userinfo Google: ${e?.message}`);
+      }
+    }
+
+    if (!verifiedEmail || !verifiedEmail.includes('@')) {
+      throw new UnauthorizedException('E-mail Google inválido ou não informado.');
+    }
+
+    const existingUser = await this.prisma.user.findUnique({
+      where: { email: verifiedEmail },
+      include: {
+        householdMemberships: {
+          include: { household: true },
+        },
+      },
+    });
+
+    // 2. Validação estrita contra duplicidade no modo de criação de conta
+    if (body.mode === 'register' && existingUser) {
+      throw new ConflictException(
+        'Já existe uma conta cadastrada com este e-mail. Não é permitido criar outra conta com o mesmo e-mail.',
+      );
+    }
+
+    // 3. Se a conta já existe no banco, autentica na MESMA conta (preservando ID, nome, foto e dados)
+    if (existingUser) {
+      if (!existingUser.isActive) {
+        throw new UnauthorizedException('Esta conta está desativada.');
+      }
+
+      const token = await this.generateToken(existingUser.id, existingUser.email);
+      return {
+        user: {
+          id: existingUser.id,
+          email: existingUser.email,
+          fullName: existingUser.fullName,
+          avatarUrl: existingUser.avatarUrl || verifiedAvatar || null,
+          activeHousehold: existingUser.householdMemberships[0]?.household || null,
+          roleInHousehold: existingUser.householdMemberships[0]?.role || null,
+        },
+        token,
+        isNewAccount: false,
+      };
+    }
+
+    // 4. Se não existe, cria a nova conta real no PostgreSQL vinculada ao Google
+    const fallbackName =
+      verifiedName ||
+      verifiedEmail
+        .split('@')[0]
+        .replace(/[._0-9-]+/g, ' ')
+        .trim()
+        .replace(/\b\w/g, (l) => l.toUpperCase()) ||
+      'Usuário Google';
+
+    const randomPass = crypto.randomBytes(24).toString('hex') + 'G1!';
+    const salt = await bcrypt.genSalt(12);
+    const passwordHash = await bcrypt.hash(randomPass, salt);
+
+    const newUser = await this.prisma.user.create({
+      data: {
+        email: verifiedEmail,
+        passwordHash,
+        fullName: fallbackName,
+        avatarUrl: verifiedAvatar,
+      },
+    });
+
+    const token = await this.generateToken(newUser.id, newUser.email);
+    return {
+      user: {
+        id: newUser.id,
+        email: newUser.email,
+        fullName: newUser.fullName,
+        avatarUrl: newUser.avatarUrl || null,
+      },
+      token,
+      isNewAccount: true,
+    };
+  }
+
+  /**
+   * Atualiza o perfil do usuário (Nome, Sobrenome e Foto de Perfil) no PostgreSQL.
+   */
+  async updateProfile(
+    userId: string,
+    body: {
+      fullName?: string;
+      firstName?: string;
+      lastName?: string;
+      avatarUrl?: string | null;
+      avatarUri?: string | null;
+      phone?: string;
+    },
+  ) {
+    const composedName =
+      body.fullName?.trim() ||
+      [body.firstName?.trim(), body.lastName?.trim()].filter(Boolean).join(' ');
+
+    const resolvedAvatar =
+      body.avatarUrl !== undefined
+        ? body.avatarUrl
+        : body.avatarUri !== undefined
+          ? body.avatarUri
+          : undefined;
+
+    const updated = await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        ...(composedName ? { fullName: composedName } : {}),
+        ...(resolvedAvatar !== undefined ? { avatarUrl: resolvedAvatar } : {}),
+        ...(body.phone !== undefined ? { phone: body.phone } : {}),
+      },
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        phone: true,
+        avatarUrl: true,
+      },
+    });
+
+    return {
+      user: {
+        ...updated,
+        avatarUri: updated.avatarUrl,
+      },
     };
   }
 

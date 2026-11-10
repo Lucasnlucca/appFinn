@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Put, Patch, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AccountsService } from './accounts.service';
 import { CreateAccountDto, FinancialScope } from '@finn-ai/shared';
@@ -37,6 +37,35 @@ export class AccountsController {
     @Param('id') accountId: string,
   ) {
     return this.accountsService.getAccount(user.id, accountId);
+  }
+
+  @Put(':id')
+  @ApiOperation({ summary: 'Atualizar dados e saldo de uma conta financeira' })
+  async updateAccountPut(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') accountId: string,
+    @Body() dto: { name?: string; currentBalance?: number; initialBalance?: number; colorHex?: string; isShared?: boolean },
+  ) {
+    return this.accountsService.updateAccount(user.id, accountId, dto);
+  }
+
+  @Patch(':id')
+  @ApiOperation({ summary: 'Atualizar parcialmente dados e saldo de uma conta financeira' })
+  async updateAccountPatch(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') accountId: string,
+    @Body() dto: { name?: string; currentBalance?: number; initialBalance?: number; colorHex?: string; isShared?: boolean },
+  ) {
+    return this.accountsService.updateAccount(user.id, accountId, dto);
+  }
+
+  @Delete(':id')
+  @ApiOperation({ summary: 'Remover (desativar) uma conta financeira' })
+  async deleteAccount(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') accountId: string,
+  ) {
+    return this.accountsService.deleteAccount(user.id, accountId);
   }
 }
 

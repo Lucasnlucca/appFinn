@@ -15,6 +15,7 @@ import {
   Image,
   AppState,
   Share,
+  ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -35,6 +36,9 @@ const heroSharedSource = require('../../assets/hero-robot-shared.jpg');
 const finnLogoSource = require('../../assets/finn-logo.png');
 
 const { width } = Dimensions.get('window');
+
+// Garante que a animação do card principal de saldo execute SOMENTE UMA VEZ ao entrar no aplicativo
+let hasPlayedHeroAnimationOnAppEntry = false;
 
 export default function HomeScreen({ navigation }) {
   const insets = useSafeAreaInsets();
@@ -80,6 +84,7 @@ export default function HomeScreen({ navigation }) {
     acceptGroupInvitation,
     isGroupCreator,
     cards = [],
+    loaded = true,
     notifications = [],
     unreadNotificationsCount = 0,
     markNotificationAsRead,
@@ -88,6 +93,7 @@ export default function HomeScreen({ navigation }) {
   } = useFinance();
 
   const [notificationsModalVisible, setNotificationsModalVisible] = useState(false);
+  const [notifFilterTab, setNotifFilterTab] = useState('Todas');
   const [groupModalVisible, setGroupModalVisible] = useState(false);
   const [modalQuickNewGroup, setModalQuickNewGroup] = useState(false);
   const [quickGroupTab, setQuickGroupTab] = useState('create'); // 'create' | 'join'
@@ -218,44 +224,29 @@ export default function HomeScreen({ navigation }) {
   const [newAccBank, setNewAccBank] = useState('');
   const [newAccBalance, setNewAccBalance] = useState('');
 
-  // Vídeo nativo do robô FINN com expo-video (executa 1x ao entrar, sem som, sem controles)
-  const [showStaticOverlay, setShowStaticOverlay] = useState(false);
+  // Vídeo nativo do robô FINN com expo-video (executa SOMENTE 1x ao entrar no aplicativo)
+  const [showStaticOverlay, setShowStaticOverlay] = useState(hasPlayedHeroAnimationOnAppEntry);
   const [videoError, setVideoError] = useState(false);
 
   const player = useVideoPlayer(heroVideoSource, (p) => {
     p.loop = false;
     p.muted = true;
-    p.play();
+    if (!hasPlayedHeroAnimationOnAppEntry) {
+      hasPlayedHeroAnimationOnAppEntry = true;
+      p.play();
+    } else {
+      p.pause();
+    }
   });
 
-  // Tocar no card ou focar na tela reinicia a reprodução do vídeo a partir do início
-  const playHeroAnimation = useCallback(() => {
-    setShowStaticOverlay(false);
-    setVideoError(false);
-    if (!player) return;
-    try {
-      player.currentTime = 0;
-      player.play();
-    } catch {
-      try {
-        player.replay();
-      } catch (err) {
-        console.warn('Erro ao reproduzir vídeo do mascote:', err);
-      }
-    }
-  }, [player]);
-
-  // Sempre que a HomeScreen entra em foco (após login, splash ou troca de abas), reproduz a animação
-  useFocusEffect(
-    useCallback(() => {
-      playHeroAnimation();
-    }, [playHeroAnimation])
-  );
-
-  // Gerencia eventos do player de vídeo (conclusão e erros)
+  // Gerencia eventos do player de vídeo (conclusão após a 1ª execução e erros)
   useEffect(() => {
     if (!player) return;
+    if (hasPlayedHeroAnimationOnAppEntry && showStaticOverlay) {
+      return;
+    }
     const playToEndSub = player.addListener('playToEnd', () => {
+      hasPlayedHeroAnimationOnAppEntry = true;
       setShowStaticOverlay(true);
     });
     const statusSub = player.addListener('statusChange', (payload) => {
@@ -268,7 +259,7 @@ export default function HomeScreen({ navigation }) {
       playToEndSub?.remove();
       statusSub?.remove();
     };
-  }, [player]);
+  }, [player, showStaticOverlay]);
 
   // Pausa a reprodução quando a tela perde o foco ou o app vai para segundo plano
   useEffect(() => {
@@ -277,14 +268,16 @@ export default function HomeScreen({ navigation }) {
     const unsubscribeBlur = navigation?.addListener?.('blur', () => {
       try {
         player.pause();
-      } catch (e) { }
+        setShowStaticOverlay(true);
+      } catch (e) {}
     });
 
     const appStateSub = AppState.addEventListener('change', (nextAppState) => {
       if (nextAppState.match(/inactive|background/)) {
         try {
           player.pause();
-        } catch (e) { }
+          setShowStaticOverlay(true);
+        } catch (e) {}
       }
     });
 
@@ -293,10 +286,6 @@ export default function HomeScreen({ navigation }) {
       appStateSub?.remove();
     };
   }, [player, navigation]);
-
-  const handleReplayHeroAnimation = () => {
-    playHeroAnimation();
-  };
 
   // Formatação em Real (com suporte a ocultar valores)
   const formatMoney = (val) => {
@@ -400,6 +389,12 @@ export default function HomeScreen({ navigation }) {
             style={styles.iconCircle}
             onPress={() => setNotificationsModalVisible(true)}
             activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel={
+              unreadNotificationsCount > 0
+                ? `Abrir notificações, ${unreadNotificationsCount} não lidas`
+                : 'Abrir notificações'
+            }
           >
             <Ionicons name="notifications-outline" size={19} color="#18181B" />
             {unreadNotificationsCount > 0 && <View style={styles.notificationDot} />}
@@ -409,6 +404,8 @@ export default function HomeScreen({ navigation }) {
             style={styles.avatarCircle}
             onPress={() => navigation.navigate('Profile')}
             activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel="Abrir meu perfil"
           >
             {loggedInUser?.avatarUri ? (
               <Image
@@ -610,12 +607,8 @@ export default function HomeScreen({ navigation }) {
               </TouchableOpacity>
             </View>
           ) : (
-            /* Camada 3: Overlay clicável individual padrão */
-            <TouchableOpacity
-              style={styles.heroOverlayTouch}
-              activeOpacity={0.92}
-              onPress={handleReplayHeroAnimation}
-            >
+            /* Camada 3: Overlay individual padrão (sem reiniciar animação ao tocar) */
+            <View style={styles.heroOverlayTouch}>
               <View style={styles.heroContentLeft}>
                 {/* Pill Saldo Atual com Carteira e Olho */}
                 <View style={styles.heroWalletPill}>
@@ -676,7 +669,7 @@ export default function HomeScreen({ navigation }) {
                   </View>
                 )}
               </View>
-            </TouchableOpacity>
+            </View>
           )}
         </View>
 
@@ -713,7 +706,7 @@ export default function HomeScreen({ navigation }) {
         <View style={{ gap: 8 }}>
           <Text style={styles.sectionHeaderTitle}>Visão geral</Text>
           <View style={styles.overviewGrid}>
-            {/* CARD 1: NAS CONTAS / FATURAS DOS CARTÕES */}
+            {/* CARD 1: FATURAS DOS CARTÕES */}
             <TouchableOpacity
               style={styles.overviewCard}
               onPress={() => navigation.navigate('CardInvoices')}
@@ -721,7 +714,7 @@ export default function HomeScreen({ navigation }) {
               <Ionicons name="card-outline" size={18} color={COLORS.textSecondary} />
               <Text style={styles.overviewLabel}>Faturas</Text>
               <Text style={styles.overviewValue} numberOfLines={1}>
-                {formatMoney(totalBalance)}
+                {formatMoney(totalOpenInvoices)}
               </Text>
             </TouchableOpacity>
 
@@ -1573,7 +1566,7 @@ export default function HomeScreen({ navigation }) {
         </TouchableOpacity>
       </Modal>
 
-      {/* MODAL CENTRAL DE NOTIFICAÇÕES INTELIGENTES (APP + CELULAR) */}
+      {/* MODAL CENTRAL DE NOTIFICAÇÕES (ETAPA 3 - NOVO VISUAL) */}
       <Modal
         visible={notificationsModalVisible}
         transparent
@@ -1588,193 +1581,566 @@ export default function HomeScreen({ navigation }) {
           <View
             style={[
               styles.groupModalSheet,
-              { maxHeight: '82%', paddingBottom: insets.bottom + 20 },
+              {
+                maxHeight: '92%',
+                backgroundColor: '#F4F1FB',
+                paddingHorizontal: 18,
+                paddingTop: 14,
+                paddingBottom: Math.max(insets.bottom + 20, 24),
+              },
             ]}
             onStartShouldSetResponder={() => true}
           >
             <View style={styles.groupModalHandle} />
 
+            {/* CABEÇALHO: Notificações + N não lidas + Marcar lidas + Preferências */}
             <View
               style={{
                 flexDirection: 'row',
                 alignItems: 'center',
                 justifyContent: 'space-between',
-                marginBottom: 6,
+                marginTop: 4,
+                marginBottom: 16,
+                gap: 8,
               }}
             >
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <View
+              <View style={{ flex: 1 }}>
+                <Text
                   style={{
-                    width: 34,
-                    height: 34,
-                    borderRadius: 11,
-                    backgroundColor: '#F3E8FF',
+                    fontSize: 28,
+                    fontWeight: '800',
+                    color: '#0F172A',
+                    letterSpacing: -0.5,
+                  }}
+                >
+                  Notificações
+                </Text>
+                <Text
+                  style={{
+                    fontSize: 13,
+                    color: '#475569',
+                    fontWeight: '500',
+                    marginTop: 2,
+                  }}
+                >
+                  {unreadNotificationsCount}{' '}
+                  {unreadNotificationsCount === 1 ? 'não lida' : 'não lidas'}
+                </Text>
+              </View>
+
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <TouchableOpacity
+                  onPress={() => markAllNotificationsAsRead && markAllNotificationsAsRead()}
+                  activeOpacity={0.8}
+                  accessibilityRole="button"
+                  accessibilityLabel="Marcar todas as notificações como lidas"
+                  style={{
+                    minHeight: 44,
+                    paddingHorizontal: 16,
+                    borderRadius: 999,
+                    backgroundColor: '#EDE9FE',
                     alignItems: 'center',
                     justifyContent: 'center',
                   }}
                 >
-                  <Ionicons name="notifications" size={18} color="#7C3AED" />
-                </View>
-                <View>
-                  <Text style={styles.groupModalTitle}>Notificações Inteligentes</Text>
-                  <Text style={{ fontSize: 11, color: '#64748B', fontWeight: '500' }}>
-                    Alertas no app e na barra do seu celular
-                  </Text>
-                </View>
-              </View>
-
-              {unreadNotificationsCount > 0 && (
-                <TouchableOpacity
-                  onPress={() => markAllNotificationsAsRead && markAllNotificationsAsRead()}
-                  style={{
-                    paddingHorizontal: 10,
-                    paddingVertical: 6,
-                    borderRadius: 999,
-                    backgroundColor: '#F3E8FF',
-                  }}
-                >
-                  <Text style={{ fontSize: 11, fontWeight: '700', color: '#7C3AED' }}>
-                    Marcar lidas ({unreadNotificationsCount})
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: '#5B21B6' }}>
+                    Marcar lidas
                   </Text>
                 </TouchableOpacity>
-              )}
-            </View>
 
-            {/* Botão para disparar alerta imediato no celular */}
-            <TouchableOpacity
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 8,
-                backgroundColor: '#7C3AED',
-                borderRadius: 12,
-                paddingVertical: 10,
-                paddingHorizontal: 14,
-                marginVertical: 10,
-              }}
-              onPress={async () => {
-                if (sendTestSmartNotification) {
-                  await sendTestSmartNotification();
-                }
-              }}
-              activeOpacity={0.85}
-            >
-              <Ionicons name="phone-portrait-outline" size={16} color="#FFFFFF" />
-              <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '700' }}>
-                Receber análise inteligente no celular agora
-              </Text>
-            </TouchableOpacity>
-
-            <ScrollView
-              showsVerticalScrollIndicator={false}
-              style={{ marginTop: 4 }}
-              contentContainerStyle={{ gap: 10, paddingBottom: 12 }}
-            >
-              {notifications.map((item) => (
                 <TouchableOpacity
-                  key={item.id}
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'flex-start',
-                    padding: 13,
-                    borderRadius: 16,
-                    backgroundColor: item.read ? '#F8FAFC' : '#F5F3FF',
-                    borderWidth: 1,
-                    borderColor: item.read ? '#E2E8F0' : '#DDD6FE',
-                    gap: 11,
+                  onPress={() => {
+                    setNotificationsModalVisible(false);
+                    navigation.navigate('NotificationPreferences');
                   }}
                   activeOpacity={0.8}
-                  onPress={() => {
-                    if (markNotificationAsRead) markNotificationAsRead(item.id);
-                    if (item.targetScreen) {
-                      setNotificationsModalVisible(false);
-                      navigation.navigate(item.targetScreen);
-                    }
+                  accessibilityRole="button"
+                  accessibilityLabel="Preferências de notificação"
+                  style={{
+                    width: 44,
+                    height: 44,
+                    borderRadius: 22,
+                    backgroundColor: '#FFFFFF',
+                    alignItems: 'center',
+                    justifyContent: 'center',
                   }}
                 >
-                  <View
-                    style={{
-                      width: 38,
-                      height: 38,
-                      borderRadius: 12,
-                      backgroundColor: (item.color || '#7C3AED') + '18',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      marginTop: 2,
-                    }}
-                  >
-                    <Ionicons
-                      name={item.icon || 'notifications-outline'}
-                      size={19}
-                      color={item.color || '#7C3AED'}
-                    />
-                  </View>
+                  <Ionicons name="options-outline" size={20} color="#5B21B6" />
+                </TouchableOpacity>
+              </View>
+            </View>
 
-                  <View style={{ flex: 1 }}>
-                    <View
+            {/* FILTROS EM PÍLULAS: Todas | IA | Gastos | Lembretes */}
+            <View style={{ marginBottom: 16 }}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 8,
+                }}
+              >
+                {['Todas', 'IA', 'Gastos', 'Lembretes'].map((tab) => {
+                  const isActive = notifFilterTab === tab;
+                  return (
+                    <TouchableOpacity
+                      key={tab}
+                      onPress={() => setNotifFilterTab(tab)}
+                      activeOpacity={0.85}
+                      accessibilityRole="tab"
+                      accessibilityState={{ selected: isActive }}
+                      accessibilityLabel={`Filtrar notificações por ${tab}`}
                       style={{
-                        flexDirection: 'row',
+                        minHeight: 44,
+                        paddingHorizontal: 18,
+                        borderRadius: 999,
+                        backgroundColor: isActive ? '#5B21B6' : '#FFFFFF',
                         alignItems: 'center',
-                        justifyContent: 'space-between',
-                        marginBottom: 3,
+                        justifyContent: 'center',
                       }}
                     >
                       <Text
                         style={{
-                          fontSize: 13,
-                          fontWeight: '800',
-                          color: '#0F172A',
-                          flex: 1,
-                          paddingRight: 6,
+                          fontSize: 13.5,
+                          fontWeight: isActive ? '700' : '500',
+                          color: isActive ? '#FFFFFF' : '#1E293B',
                         }}
                       >
-                        {item.title}
+                        {tab}
                       </Text>
-                      {!item.read && (
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            </View>
+
+            {!loaded ? (
+              /* ESTADO DE CARREGAMENTO */
+              <View
+                style={{
+                  paddingVertical: 56,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 12,
+                }}
+              >
+                <ActivityIndicator size="large" color="#5B21B6" />
+                <Text style={{ fontSize: 14, fontWeight: '600', color: '#475569' }}>
+                  Carregando notificações...
+                </Text>
+              </View>
+            ) : (
+              <ScrollView
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={{ paddingBottom: 16 }}
+              >
+                {(() => {
+                  const filtered = (notifications || []).filter((item) => {
+                    const cat = String(item.category || '').toLowerCase();
+                    if (notifFilterTab === 'Todas') return true;
+                    if (notifFilterTab === 'IA') {
+                      return item.isHeroAi || cat === 'ia' || cat === 'ai';
+                    }
+                    if (notifFilterTab === 'Gastos') {
+                      return cat === 'gastos' || cat === 'expense' || cat === 'income';
+                    }
+                    if (notifFilterTab === 'Lembretes') {
+                      return (
+                        cat === 'lembretes' ||
+                        cat === 'reminder' ||
+                        cat === 'sistema' ||
+                        cat === 'system' ||
+                        cat === 'group'
+                      );
+                    }
+                    return true;
+                  });
+
+                  if (filtered.length === 0) {
+                    /* ESTADO VAZIO ("Tudo em dia") */
+                    return (
+                      <View
+                        style={{
+                          backgroundColor: '#FFFFFF',
+                          borderRadius: 20,
+                          paddingVertical: 44,
+                          paddingHorizontal: 24,
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          marginTop: 8,
+                        }}
+                      >
                         <View
                           style={{
-                            width: 8,
-                            height: 8,
-                            borderRadius: 4,
-                            backgroundColor: '#EC4899',
+                            width: 52,
+                            height: 52,
+                            borderRadius: 16,
+                            backgroundColor: '#EDE9FE',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            marginBottom: 12,
                           }}
-                        />
-                      )}
-                    </View>
-
-                    <Text
-                      style={{
-                        fontSize: 12,
-                        color: '#475569',
-                        lineHeight: 17,
-                        fontWeight: '500',
-                      }}
-                    >
-                      {item.message}
-                    </Text>
-
-                    <View
-                      style={{
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        marginTop: 6,
-                      }}
-                    >
-                      <Text style={{ fontSize: 10, fontWeight: '700', color: '#94A3B8' }}>
-                        {item.time || 'Agora'}
-                      </Text>
-                      {item.targetScreen && (
-                        <Text style={{ fontSize: 11, fontWeight: '700', color: '#7C3AED' }}>
-                          Abrir →
+                        >
+                          <Ionicons
+                            name="checkmark-done-outline"
+                            size={26}
+                            color="#5B21B6"
+                          />
+                        </View>
+                        <Text
+                          style={{
+                            fontSize: 17,
+                            fontWeight: '800',
+                            color: '#0F172A',
+                          }}
+                        >
+                          Tudo em dia
                         </Text>
-                      )}
-                    </View>
-                  </View>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
+                        <Text
+                          style={{
+                            fontSize: 13.5,
+                            color: '#475569',
+                            textAlign: 'center',
+                            marginTop: 4,
+                            lineHeight: 19,
+                          }}
+                        >
+                          Nenhuma notificação pendente nesta categoria no momento.
+                        </Text>
+                      </View>
+                    );
+                  }
+
+                  // Agrupamento temporal: Hoje, Ontem, Esta semana, Sistema
+                  const now = new Date();
+                  const startOfToday = new Date(
+                    now.getFullYear(),
+                    now.getMonth(),
+                    now.getDate()
+                  ).getTime();
+
+                  const todayItems = [];
+                  const yesterdayItems = [];
+                  const weekItems = [];
+                  const systemItems = [];
+
+                  filtered.forEach((item) => {
+                    const cat = String(item.category || '').toLowerCase();
+                    if (item.section === 'SISTEMA' || cat === 'sistema' || cat === 'system') {
+                      systemItems.push(item);
+                      return;
+                    }
+                    if (item.isHeroAi || !item.createdAt) {
+                      todayItems.push(item);
+                      return;
+                    }
+                    const createdDate = new Date(item.createdAt);
+                    if (Number.isNaN(createdDate.getTime())) {
+                      todayItems.push(item);
+                      return;
+                    }
+                    const startOfItemDay = new Date(
+                      createdDate.getFullYear(),
+                      createdDate.getMonth(),
+                      createdDate.getDate()
+                    ).getTime();
+                    const diffDays = Math.round(
+                      (startOfToday - startOfItemDay) / (1000 * 60 * 60 * 24)
+                    );
+
+                    if (diffDays <= 0) {
+                      todayItems.push(item);
+                    } else if (diffDays === 1) {
+                      yesterdayItems.push(item);
+                    } else {
+                      weekItems.push(item);
+                    }
+                  });
+
+                  const handleOpenNotifItem = (item) => {
+                    if (markNotificationAsRead) markNotificationAsRead(item.id);
+                    const target = item.action?.targetScreen || item.targetScreen;
+                    if (target === 'Cofrinhos' || item.isHeroAi) {
+                      setNotificationsModalVisible(false);
+                      setModalCofrinhos(true);
+                      return;
+                    }
+                    if (target) {
+                      setNotificationsModalVisible(false);
+                      const targetMap = {
+                        Assistant: 'FinnAI',
+                        Categories: 'Transactions',
+                        Savings: 'Planning',
+                        Bills: 'MonthlyAgenda',
+                      };
+                      navigation.navigate(targetMap[target] || target);
+                    }
+                  };
+
+                  const renderNotificationCard = (item) => {
+                    if (item.isHeroAi) {
+                      return (
+                        <View
+                          key={item.id}
+                          style={{
+                            backgroundColor: '#4C1D95',
+                            borderRadius: 20,
+                            padding: 20,
+                          }}
+                        >
+                          <View
+                            style={{
+                              flexDirection: 'row',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                            }}
+                          >
+                            <Text
+                              style={{
+                                fontSize: 11,
+                                fontWeight: '700',
+                                color: '#DDD6FE',
+                                letterSpacing: 0.6,
+                              }}
+                            >
+                              {item.badge || 'INSIGHT DA FINN IA'}
+                            </Text>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                              {!item.read && (
+                                <View
+                                  style={{
+                                    width: 7,
+                                    height: 7,
+                                    borderRadius: 4,
+                                    backgroundColor: '#C4B5FD',
+                                  }}
+                                />
+                              )}
+                              <Text
+                                style={{
+                                  fontSize: 12,
+                                  fontWeight: '600',
+                                  color: '#E9D5FF',
+                                }}
+                              >
+                                {item.time || 'Agora'}
+                              </Text>
+                            </View>
+                          </View>
+
+                          <Text
+                            style={{
+                              fontSize: 19,
+                              fontWeight: '800',
+                              color: '#FFFFFF',
+                              lineHeight: 25,
+                              marginTop: 8,
+                            }}
+                          >
+                            {item.title}
+                          </Text>
+
+                          <Text
+                            numberOfLines={2}
+                            style={{
+                              fontSize: 14,
+                              color: '#EDE9FE',
+                              lineHeight: 20,
+                              marginTop: 8,
+                            }}
+                          >
+                            {item.body || item.message}
+                          </Text>
+
+                          <TouchableOpacity
+                            onPress={() => handleOpenNotifItem(item)}
+                            activeOpacity={0.88}
+                            accessibilityRole="button"
+                            accessibilityLabel={item.ctaLabel || 'Ver Cofrinhos'}
+                            style={{
+                              minHeight: 44,
+                              backgroundColor: '#FFFFFF',
+                              borderRadius: 999,
+                              paddingHorizontal: 18,
+                              paddingVertical: 10,
+                              alignSelf: 'flex-start',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              marginTop: 16,
+                            }}
+                          >
+                            <Text
+                              style={{
+                                fontSize: 13,
+                                fontWeight: '700',
+                                color: '#4C1D95',
+                              }}
+                            >
+                              {item.ctaLabel || 'Ver Cofrinhos'}
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
+                      );
+                    }
+
+                    const hasTarget = Boolean(item.action?.targetScreen || item.targetScreen);
+
+                    return (
+                      <TouchableOpacity
+                        key={item.id}
+                        activeOpacity={0.85}
+                        onPress={() => handleOpenNotifItem(item)}
+                        accessibilityRole={hasTarget ? 'button' : 'text'}
+                        accessibilityLabel={`${item.title}. ${item.body || item.message}`}
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'flex-start',
+                          padding: 16,
+                          borderRadius: 20,
+                          backgroundColor: '#FFFFFF',
+                          gap: 14,
+                        }}
+                      >
+                        <View
+                          style={{
+                            width: 44,
+                            height: 44,
+                            borderRadius: 14,
+                            backgroundColor: item.bgColor || '#FEE2E2',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}
+                        >
+                          <Ionicons
+                            name={item.icon || 'notifications-outline'}
+                            size={20}
+                            color={item.color || '#B91C1C'}
+                          />
+                        </View>
+
+                        <View style={{ flex: 1 }}>
+                          <View
+                            style={{
+                              flexDirection: 'row',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                            }}
+                          >
+                            <Text
+                              numberOfLines={1}
+                              style={{
+                                fontSize: 15,
+                                fontWeight: '800',
+                                color: '#0F172A',
+                                flex: 1,
+                                paddingRight: 8,
+                              }}
+                            >
+                              {item.title}
+                            </Text>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                              {!item.read && (
+                                <View
+                                  style={{
+                                    width: 8,
+                                    height: 8,
+                                    borderRadius: 4,
+                                    backgroundColor: '#5B21B6',
+                                  }}
+                                />
+                              )}
+                              {!!item.time && (
+                                <Text
+                                  style={{
+                                    fontSize: 12,
+                                    fontWeight: '500',
+                                    color: '#475569',
+                                  }}
+                                >
+                                  {item.time}
+                                </Text>
+                              )}
+                            </View>
+                          </View>
+
+                          <Text
+                            numberOfLines={2}
+                            style={{
+                              fontSize: 13.5,
+                              color: '#475569',
+                              lineHeight: 19,
+                              marginTop: 4,
+                            }}
+                          >
+                            {item.body || item.message}
+                          </Text>
+
+                          {hasTarget && (
+                            <TouchableOpacity
+                              onPress={() => handleOpenNotifItem(item)}
+                              activeOpacity={0.75}
+                              hitSlop={{ top: 10, bottom: 10, left: 10, right: 16 }}
+                              accessibilityRole="link"
+                              accessibilityLabel={`Abrir ${item.title}`}
+                              style={{
+                                minHeight: 32,
+                                justifyContent: 'center',
+                                marginTop: 8,
+                                alignSelf: 'flex-start',
+                              }}
+                            >
+                              <Text
+                                style={{
+                                  fontSize: 14,
+                                  fontWeight: '800',
+                                  color: '#5B21B6',
+                                }}
+                              >
+                                {item.action?.label || 'Abrir'}
+                              </Text>
+                            </TouchableOpacity>
+                          )}
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  };
+
+                  const sections = [
+                    { title: 'HOJE', items: todayItems },
+                    { title: 'ONTEM', items: yesterdayItems },
+                    { title: 'ESTA SEMANA', items: weekItems },
+                    { title: 'SISTEMA', items: systemItems },
+                  ].filter((sec) => sec.items.length > 0);
+
+                  return (
+                    <>
+                      {sections.map((sec, secIdx) => (
+                        <View
+                          key={sec.title}
+                          style={{ marginTop: secIdx === 0 ? 0 : 20 }}
+                        >
+                          <Text
+                            style={{
+                              fontSize: 12,
+                              fontWeight: '700',
+                              color: '#475569',
+                              letterSpacing: 0.8,
+                              marginBottom: 12,
+                            }}
+                          >
+                            {sec.title}
+                          </Text>
+                          <View style={{ gap: 12 }}>
+                            {sec.items.map((item) => renderNotificationCard(item))}
+                          </View>
+                        </View>
+                      ))}
+                    </>
+                  );
+                })()}
+              </ScrollView>
+            )}
           </View>
         </TouchableOpacity>
       </Modal>

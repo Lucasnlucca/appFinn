@@ -2,6 +2,8 @@ import {
   Controller,
   Post,
   Get,
+  Put,
+  Patch,
   Body,
   Res,
   UseGuards,
@@ -47,6 +49,33 @@ export class AuthController {
     return result;
   }
 
+  @Post('check-email')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Verificar se já existe conta cadastrada com o e-mail informado' })
+  async checkEmail(@Body() body: { email: string }) {
+    return this.authService.checkEmailExists(body?.email);
+  }
+
+  @Post('google')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Autenticação ou Criação de Conta via Google OAuth 2.0 com validação de duplicidade' })
+  async googleAuth(
+    @Body()
+    body: {
+      idToken?: string;
+      accessToken?: string;
+      email?: string;
+      fullName?: string;
+      avatarUrl?: string;
+      mode?: 'login' | 'register';
+    },
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const result = await this.authService.authenticateGoogle(body);
+    this.setAuthCookie(response, result.token);
+    return result;
+  }
+
   @Post('logout')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Encerramento de sessão (Logout)' })
@@ -66,6 +95,28 @@ export class AuthController {
   @ApiOperation({ summary: 'Obter dados do usuário autenticado' })
   async getMe(@CurrentUser() user: AuthenticatedUser) {
     return this.authService.getMe(user.id);
+  }
+
+  @Put('profile')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Atualizar nome, sobrenome e foto de perfil do usuário no banco' })
+  async updateProfilePut(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: { fullName?: string; firstName?: string; lastName?: string; avatarUrl?: string | null; avatarUri?: string | null; phone?: string },
+  ) {
+    return this.authService.updateProfile(user.id, body);
+  }
+
+  @Patch('profile')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Atualizar nome, sobrenome e foto de perfil do usuário no banco' })
+  async updateProfilePatch(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: { fullName?: string; firstName?: string; lastName?: string; avatarUrl?: string | null; avatarUri?: string | null; phone?: string },
+  ) {
+    return this.authService.updateProfile(user.id, body);
   }
 
   private setAuthCookie(response: Response, token: string) {

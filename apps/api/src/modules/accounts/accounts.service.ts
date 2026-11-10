@@ -130,5 +130,70 @@ export class AccountsService {
 
     return account;
   }
+
+  /**
+   * Atualiza o saldo ou dados de uma conta financeira no PostgreSQL
+   */
+  async updateAccount(
+    userId: string,
+    accountId: string,
+    dto: { name?: string; currentBalance?: number; initialBalance?: number; colorHex?: string; isShared?: boolean },
+  ) {
+    const account = await this.prisma.financialAccount.findUnique({
+      where: { id: accountId },
+    });
+
+    if (!account) {
+      throw new NotFoundException('Conta financeira não encontrada');
+    }
+
+    if (account.userId !== userId) {
+      throw new ForbiddenException('Apenas o titular pode alterar esta conta');
+    }
+
+    const updateData: Record<string, any> = {};
+    if (dto.name !== undefined && dto.name.trim()) {
+      updateData.name = dto.name.trim();
+    }
+    const rawBalance = dto.currentBalance !== undefined ? dto.currentBalance : dto.initialBalance;
+    if (rawBalance !== undefined && rawBalance !== null && !Number.isNaN(Number(rawBalance))) {
+      const decBal = new Decimal(Number(rawBalance));
+      updateData.currentBalance = decBal;
+      updateData.calculatedBalance = decBal;
+    }
+    if (dto.colorHex !== undefined) {
+      updateData.colorHex = dto.colorHex;
+    }
+    if (dto.isShared !== undefined) {
+      updateData.isShared = Boolean(dto.isShared);
+    }
+
+    return this.prisma.financialAccount.update({
+      where: { id: accountId },
+      data: updateData,
+    });
+  }
+
+  /**
+   * Desativa uma conta financeira no PostgreSQL
+   */
+  async deleteAccount(userId: string, accountId: string) {
+    const account = await this.prisma.financialAccount.findUnique({
+      where: { id: accountId },
+    });
+
+    if (!account) {
+      throw new NotFoundException('Conta financeira não encontrada');
+    }
+
+    if (account.userId !== userId) {
+      throw new ForbiddenException('Apenas o titular pode remover esta conta');
+    }
+
+    return this.prisma.financialAccount.update({
+      where: { id: accountId },
+      data: { isActive: false },
+    });
+  }
 }
 

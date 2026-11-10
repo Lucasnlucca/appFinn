@@ -101,5 +101,62 @@ export class CreditCardsService {
       orderBy: [{ year: 'desc' }, { month: 'desc' }],
     });
   }
+
+  /**
+   * Atualiza dados do cartão de crédito (limite, vencimento, fechamento, nome)
+   */
+  async updateCreditCard(
+    userId: string,
+    cardId: string,
+    dto: { name?: string; creditLimit?: number; closingDay?: number; dueDay?: number; colorHex?: string },
+  ) {
+    const card = await this.prisma.creditCard.findUnique({
+      where: { id: cardId },
+    });
+
+    if (!card || card.userId !== userId) {
+      throw new NotFoundException('Cartão de crédito não encontrado');
+    }
+
+    const updateData: Record<string, any> = {};
+    if (dto.name !== undefined && dto.name.trim()) {
+      updateData.name = dto.name.trim();
+    }
+    if (dto.creditLimit !== undefined && !Number.isNaN(Number(dto.creditLimit))) {
+      updateData.creditLimit = new Decimal(Number(dto.creditLimit));
+    }
+    if (dto.closingDay !== undefined && !Number.isNaN(Number(dto.closingDay))) {
+      updateData.closingDay = Math.min(31, Math.max(1, Math.round(Number(dto.closingDay))));
+    }
+    if (dto.dueDay !== undefined && !Number.isNaN(Number(dto.dueDay))) {
+      updateData.dueDay = Math.min(31, Math.max(1, Math.round(Number(dto.dueDay))));
+    }
+    if (dto.colorHex !== undefined) {
+      updateData.colorHex = dto.colorHex;
+    }
+
+    return this.prisma.creditCard.update({
+      where: { id: cardId },
+      data: updateData,
+    });
+  }
+
+  /**
+   * Desativa um cartão de crédito
+   */
+  async deleteCreditCard(userId: string, cardId: string) {
+    const card = await this.prisma.creditCard.findUnique({
+      where: { id: cardId },
+    });
+
+    if (!card || card.userId !== userId) {
+      throw new NotFoundException('Cartão de crédito não encontrado');
+    }
+
+    return this.prisma.creditCard.update({
+      where: { id: cardId },
+      data: { isActive: false },
+    });
+  }
 }
 

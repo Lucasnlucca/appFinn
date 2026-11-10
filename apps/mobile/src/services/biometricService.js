@@ -1,42 +1,49 @@
 import * as LocalAuthentication from 'expo-local-authentication';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getStoredToken, getStoredUser, saveAuthToken, saveAuthUser, getMe } from './apiService';
+import {
+  getStoredToken,
+  getStoredUser,
+  saveAuthToken,
+  saveAuthUser,
+  getMe,
+  mergeWithSavedProfile,
+} from './apiService';
 
 const STORAGE_KEYS = {
   BIOMETRIC_ENABLED: '@finn_biometric_enabled_v2',
   SAVED_EMAIL: '@finn_saved_email_v2',
   REMEMBER_ME: '@finn_remember_me_v2',
   BIOMETRIC_USER: '@finn_biometric_user_v2',
+  BIOMETRIC_TOKEN: '@finn_biometric_token_v2',
 };
 
 /**
- * Verifica se o dispositivo possui hardware de biometria e se há digitais cadastradas
+ * Verifica se o dispositivo possui sensor de impressão digital (biometria) ativo e cadastrado
  */
 export async function checkBiometricSupport() {
   try {
     const hasHardware = await LocalAuthentication.hasHardwareAsync();
     if (!hasHardware) {
-      return { available: false, enrolled: false, biometricType: 'Nenhum' };
+      return { available: false, enrolled: false, biometricType: 'Digital' };
     }
 
     const isEnrolled = await LocalAuthentication.isEnrolledAsync();
     const types = await LocalAuthentication.supportedAuthenticationTypesAsync();
-
-    let biometricType = 'Biometria';
-    if (types.includes(LocalAuthentication.AuthenticationType.FACIAL_RECOGNITION)) {
-      biometricType = 'FaceID';
-    } else if (types.includes(LocalAuthentication.AuthenticationType.FINGERPRINT)) {
-      biometricType = 'Digital';
-    }
+    const hasFingerprint =
+      !Array.isArray(types) ||
+      types.length === 0 ||
+      types.includes(LocalAuthentication.AuthenticationType.FINGERPRINT) ||
+      types.includes(LocalAuthentication.AuthenticationType.BIOMETRIC) ||
+      hasHardware;
 
     return {
-      available: hasHardware && isEnrolled,
-      enrolled: isEnrolled,
-      biometricType,
+      available: Boolean(hasHardware && isEnrolled && hasFingerprint),
+      enrolled: Boolean(isEnrolled),
+      biometricType: 'Digital',
     };
   } catch (err) {
-    console.warn('Erro ao verificar suporte à biometria:', err);
-    return { available: false, enrolled: false, biometricType: 'Biometria' };
+    console.warn('Erro ao verificar suporte à digital:', err);
+    return { available: false, enrolled: false, biometricType: 'Digital' };
   }
 }
 
@@ -53,18 +60,22 @@ export async function isBiometricLoginEnabled() {
 }
 
 /**
- * Ativa ou desativa o login por digital
+ * Ativa ou desativa o login por digital persistindo o usuário e o token de sessão
  */
-export async function setBiometricLoginEnabled(enabled, user = null) {
+export async function setBiometricLoginEnabled(enabled, user = null, explicitToken = null) {
   try {
     if (enabled) {
       await AsyncStorage.setItem(STORAGE_KEYS.BIOMETRIC_ENABLED, 'true');
       if (user) {
         await AsyncStorage.setItem(STORAGE_KEYS.BIOMETRIC_USER, JSON.stringify(user));
       }
+      const tokenToSave = explicitToken || (await getStoredToken());
+      if (tokenToSave) {
+        await AsyncStorage.setItem(STORAGE_KEYS.BIOMETRIC_TOKEN, tokenToSave);
+      }
     } else {
       await AsyncStorage.setItem(STORAGE_KEYS.BIOMETRIC_ENABLED, 'false');
-      await AsyncStorage.removeItem(STORAGE_KEYS.BIOMETRIC_USER);
+      await AsyncStorage.multiRemove([STORAGE_KEYS.BIOMETRIC_USER, STORAGE_KEYS.BIOMETRIC_TOKEN]);
     }
   } catch (e) {
     console.warn('Erro ao atualizar configuração de biometria:', e);
@@ -127,38 +138,69 @@ export async function authenticateWithBiometrics(promptMessage = 'Toque no senso
 }
 
 /**
- * Realiza o login direto via biometria caso já tenha logado uma primeira vez
+ * Realiza o login direto via digital caso já tenha sido habilitado pelo cliente
  */
 export async function performBiometricLogin() {
   const enabled = await isBiometricLoginEnabled();
   if (!enabled) {
-    return { success: false, reason: 'Biometria não habilitada neste dispositivo.' };
+    return { success: false, reason: 'Login por digital ainda não habilitado neste aparelho.' };
   }
 
-  const token = await getStoredToken();
-  const storedUserRaw = await AsyncStorage.getItem(STORAGE_KEYS.BIOMETRIC_USER);
-  const storedUser = storedUserRaw ? JSON.parse(storedUserRaw) : await getStoredUser();
+  const [activeToken, bioToken, storedUserRaw, activeUser] = await Promise.all([
+    getStoredToken(),
+    AsyncStorage.getItem(STORAGE_KEYS.BIOMETRIC_TOKEN),
+    AsyncStorage.getItem(STORAGE_KEYS.BIOMETRIC_USER),
+    getStoredUser(),
+  ]);
 
-  if (!token || !storedUser) {
+  const token = activeToken || bioToken;
+  const storedUser = storedUserRaw ? JSON.parse(storedUserRaw) : activeUser;
+
+  if (!storedUser) {
     return { success: false, reason: 'Faça login com sua senha uma primeira vez para ativar a digital.' };
   }
 
-  const authResult = await authenticateWithBiometrics('Confirme sua digital para acessar o FINN');
+  const authResult = await authenticateWithBiometrics('Coloque sua digital para entrar no FINN');
   if (!authResult.success) {
-    return { success: false, reason: 'Autenticação biométrica cancelada ou não reconhecida.' };
+    return { success: false, reason: 'Leitura da digital cancelada ou não reconhecida.' };
   }
 
-  // Tenta validar a sessão com a API da VPS de forma não-bloqueante
+  if (token) {
+    await saveAuthToken(token);
+    await AsyncStorage.setItem(STORAGE_KEYS.BIOMETRIC_TOKEN, token);
+  }
+
+  // Restaura a sessão preservando o perfil salvo pelo cliente
+  const mergedLocalUser = await mergeWithSavedProfile(storedUser);
+  const savedFinal = await saveAuthUser(mergedLocalUser, token);
+  await AsyncStorage.setItem(STORAGE_KEYS.BIOMETRIC_USER, JSON.stringify(savedFinal));
+
   try {
-    const freshUser = await getMe().catch(() => storedUser);
+    const freshUser = await getMe().catch(() => null);
     if (freshUser) {
-      await saveAuthUser(freshUser);
-      return { success: true, user: freshUser, token };
+      const finalUser = await saveAuthUser(
+        {
+          ...savedFinal,
+          ...freshUser,
+          firstName: savedFinal?.firstName || freshUser?.firstName,
+          lastName:
+            savedFinal?.lastName !== undefined ? savedFinal.lastName : freshUser?.lastName,
+          fullName: savedFinal?.fullName || freshUser?.fullName,
+          name: savedFinal?.fullName || savedFinal?.name || freshUser?.fullName,
+          avatarUri:
+            savedFinal?.avatarUri !== undefined
+              ? savedFinal.avatarUri
+              : freshUser?.avatarUri || freshUser?.avatarUrl || null,
+        },
+        token
+      );
+      await AsyncStorage.setItem(STORAGE_KEYS.BIOMETRIC_USER, JSON.stringify(finalUser));
+      return { success: true, user: finalUser, token };
     }
   } catch {
-    // Modo offline resiliente: se a rede falhar, aceita a credencial segura já autenticada localmente
+    // Modo offline resiliente
   }
 
-  return { success: true, user: storedUser, token };
+  return { success: true, user: savedFinal, token };
 }
 

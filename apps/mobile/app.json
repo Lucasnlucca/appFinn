@@ -12,7 +12,11 @@
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#F8FAFC"
+      "backgroundColor": "#FFFFFF"
+    },
+    "notification": {
+      "icon": "./assets/notification-icon.png",
+      "color": "#7C3AED"
     },
     "ios": {
       "supportsTablet": true,
@@ -27,8 +31,9 @@
       "versionCode": 1,
       "allowBackup": false,
       "adaptiveIcon": {
-        "backgroundColor": "#0B0F19",
-        "foregroundImage": "./assets/android-icon-foreground.png"
+        "backgroundColor": "#FFFFFF",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "permissions": [
         "RECORD_AUDIO",
@@ -44,6 +49,15 @@
       "expo-video",
       "expo-font",
       "expo-asset",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "largeIcon": "./assets/splash-icon.png",
+          "color": "#7C3AED",
+          "defaultChannel": "finn-smart-alerts"
+        }
+      ],
       [
         "expo-image-picker",
         {

@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Put, Patch, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { CreditCardsService } from './credit-cards.service';
 import { CreateCreditCardDto, FinancialScope } from '@finn-ai/shared';
@@ -37,6 +37,35 @@ export class CreditCardsController {
     @Param('id') cardId: string,
   ) {
     return this.creditCardsService.getBills(user.id, cardId);
+  }
+
+  @Put(':id')
+  @ApiOperation({ summary: 'Atualizar limite, vencimento e dados do cartão de crédito' })
+  async updateCreditCardPut(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') cardId: string,
+    @Body() dto: { name?: string; creditLimit?: number; closingDay?: number; dueDay?: number; colorHex?: string },
+  ) {
+    return this.creditCardsService.updateCreditCard(user.id, cardId, dto);
+  }
+
+  @Patch(':id')
+  @ApiOperation({ summary: 'Atualizar parcialmente dados do cartão de crédito' })
+  async updateCreditCardPatch(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') cardId: string,
+    @Body() dto: { name?: string; creditLimit?: number; closingDay?: number; dueDay?: number; colorHex?: string },
+  ) {
+    return this.creditCardsService.updateCreditCard(user.id, cardId, dto);
+  }
+
+  @Delete(':id')
+  @ApiOperation({ summary: 'Remover (desativar) cartão de crédito' })
+  async deleteCreditCard(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') cardId: string,
+  ) {
+    return this.creditCardsService.deleteCreditCard(user.id, cardId);
   }
 }
 

@@ -17,7 +17,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Path } from 'react-native-svg';
 import { COLORS } from '../theme/colors';
-import { loginUser, registerUser, loginWithGoogleAccount } from '../services/apiService';
+import {
+  loginUser,
+  registerUser,
+  loginWithGoogleAccount,
+  registerWithGoogleAccount,
+  checkEmailExistsApi,
+  getIndexedAccountByEmail,
+} from '../services/apiService';
 import {
   checkBiometricSupport,
   isBiometricLoginEnabled,
@@ -91,11 +98,15 @@ export default function LoginScreen({ onLoginSuccess }) {
   const [showRegConfirmPassword, setShowRegConfirmPassword] = useState(false);
   const [loadingRegister, setLoadingRegister] = useState(false);
 
-  // Google Sign-In
+  // Google Sign-In & Criação de Conta Google
   const [googleModalVisible, setGoogleModalVisible] = useState(false);
+  const [googleAuthMode, setGoogleAuthMode] = useState('login'); // 'login' | 'register'
+  const [googleShowCustomForm, setGoogleShowCustomForm] = useState(false);
+  const [savedGoogleAccount, setSavedGoogleAccount] = useState(null);
   const [googleEmail, setGoogleEmail] = useState('');
   const [googleName, setGoogleName] = useState('');
   const [loadingGoogle, setLoadingGoogle] = useState(false);
+  const [checkingStep1Email, setCheckingStep1Email] = useState(false);
 
   // Regras de validação de senha em tempo real
   const hasMinLength = regPassword.length >= 8;
@@ -105,9 +116,10 @@ export default function LoginScreen({ onLoginSuccess }) {
   const isPasswordValid = hasMinLength && hasUppercase && hasNumber && passwordsMatch;
 
   // ==========================================
-  // INICIALIZAÇÃO: BIOMETRIA E LEMBRAR DE MIM
+  // INICIALIZAÇÃO: DETECÇÃO DE DIGITAL E SOLICITAÇÃO AUTOMÁTICA DE CARA
   // ==========================================
   useEffect(() => {
+    let timerId = null;
     async function initAuth() {
       // 1. Carrega credenciais salvas de "Lembrar de mim"
       const remembered = await getRememberedCredentials();
@@ -118,21 +130,26 @@ export default function LoginScreen({ onLoginSuccess }) {
         setLoginEmail('');
       }
 
-      // 2. Verifica suporte a biometria no aparelho
+      // 2. Detecta se o telefone possui leitor de digital
       const support = await checkBiometricSupport();
       setBiometricsSupported(support.available);
-      setBiometricType(support.biometricType || 'Digital');
+      setBiometricType('Digital');
 
-      // 3. Se o usuário já ativou a biometria anteriormente, dispara automaticamente
+      // 3. Se o cliente já habilitou a digital no primeiro login, dispara DE CARA a solicitação da digital!
       const isBioOn = await isBiometricLoginEnabled();
       setBiometricEnabled(isBioOn);
 
       if (support.available && isBioOn) {
-        triggerAutoBiometrics();
+        timerId = setTimeout(() => {
+          triggerAutoBiometrics();
+        }, 160);
       }
     }
 
     initAuth();
+    return () => {
+      if (timerId) clearTimeout(timerId);
+    };
   }, []);
 
   const triggerAutoBiometrics = async () => {
@@ -144,30 +161,57 @@ export default function LoginScreen({ onLoginSuccess }) {
         if (onLoginSuccess) onLoginSuccess(res.user);
       }
     } catch {
-      // Ignora falha silenciosa para deixar o usuário digitar a senha
+      // Se cancelar a leitura da digital, permanece na tela para digitar a senha
     } finally {
       setAuthenticatingBiometric(false);
     }
   };
 
-  const handleManualBiometricLogin = async () => {
-    setAuthenticatingBiometric(true);
-    try {
-      const res = await performBiometricLogin();
-      if (res.success && res.user) {
-        setLoggedInUser(res.user);
-        if (onLoginSuccess) onLoginSuccess(res.user);
-      } else {
-        Alert.alert(
-          'Login com Digital',
-          res.reason || 'Não foi possível reconhecer a digital. Por favor digite sua senha.'
-        );
-      }
-    } catch (err) {
-      Alert.alert('Erro na biometria', err.message || 'Falha ao autenticar.');
-    } finally {
-      setAuthenticatingBiometric(false);
+  /**
+   * Ao fazer login pela primeira vez em um telefone com digital, exibe o pop-up
+   * perguntando se deseja permitir logar pela digital nas próximas vezes.
+   */
+  const completeLoginWithDigitalPrompt = async (userObj, tokenObj = null) => {
+    const support = await checkBiometricSupport();
+    const alreadyEnabled = await isBiometricLoginEnabled();
+
+    if (support.available && alreadyEnabled) {
+      await setBiometricLoginEnabled(true, userObj, tokenObj);
+      setBiometricEnabled(true);
+      setLoggedInUser(userObj);
+      if (onLoginSuccess) onLoginSuccess(userObj);
+      return;
     }
+
+    if (support.available && !alreadyEnabled) {
+      Alert.alert(
+        'Permitir Login pela Digital?',
+        'Detectamos que o seu telefone possui sensor de digital. Deseja habilitar o login pela digital para que ela seja solicitada automaticamente nas próximas vezes que entrar no app?',
+        [
+          {
+            text: 'Agora não',
+            style: 'cancel',
+            onPress: () => {
+              setLoggedInUser(userObj);
+              if (onLoginSuccess) onLoginSuccess(userObj);
+            },
+          },
+          {
+            text: 'Permitir Digital',
+            onPress: async () => {
+              await setBiometricLoginEnabled(true, userObj, tokenObj);
+              setBiometricEnabled(true);
+              setLoggedInUser(userObj);
+              if (onLoginSuccess) onLoginSuccess(userObj);
+            },
+          },
+        ]
+      );
+      return;
+    }
+
+    setLoggedInUser(userObj);
+    if (onLoginSuccess) onLoginSuccess(userObj);
   };
 
   // ==========================================
@@ -185,37 +229,8 @@ export default function LoginScreen({ onLoginSuccess }) {
       const res = await loginUser(cleanEmail, loginPassword);
 
       if (res?.user) {
-        // Salva preferência de lembrar e-mail
         await setRememberedCredentials(cleanEmail, rememberMe);
-
-        // Se o aparelho suportar biometria e ainda não estiver ativada, oferece ativação
-        if (biometricsSupported && !biometricEnabled) {
-          Alert.alert(
-            `Ativar Login com ${biometricType}?`,
-            `Deseja usar sua ${biometricType.toLowerCase()} para acessar o FINN nos próximos logins sem precisar digitar sua senha?`,
-            [
-              {
-                text: 'Agora não',
-                style: 'cancel',
-                onPress: () => {
-                  setLoggedInUser(res.user);
-                  if (onLoginSuccess) onLoginSuccess(res.user);
-                },
-              },
-              {
-                text: 'Ativar',
-                onPress: async () => {
-                  await setBiometricLoginEnabled(true, res.user);
-                  setLoggedInUser(res.user);
-                  if (onLoginSuccess) onLoginSuccess(res.user);
-                },
-              },
-            ]
-          );
-        } else {
-          setLoggedInUser(res.user);
-          if (onLoginSuccess) onLoginSuccess(res.user);
-        }
+        await completeLoginWithDigitalPrompt(res.user, res.token);
       } else {
         Alert.alert('Erro ao entrar', 'Não foi possível validar suas credenciais.');
       }
@@ -230,21 +245,47 @@ export default function LoginScreen({ onLoginSuccess }) {
   };
 
   // ==========================================
-  // AÇÕES DE CADASTRO (REGISTRO EM 2 PASSOS)
+  // AÇÕES DE CADASTRO (REGISTRO EM 2 PASSOS COM VALIDAÇÃO DE DUPLICIDADE)
   // ==========================================
-  const handleContinueStep1 = () => {
+  const handleContinueStep1 = async () => {
     if (!regName.trim() || regName.trim().length < 3) {
       Alert.alert('Nome inválido', 'Por favor digite seu nome completo.');
       return;
     }
 
+    const cleanRegEmail = regEmail.trim().toLowerCase();
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!regEmail.trim() || !emailRegex.test(regEmail.trim())) {
+    if (!cleanRegEmail || !emailRegex.test(cleanRegEmail)) {
       Alert.alert('E-mail inválido', 'Por favor digite um endereço de e-mail válido.');
       return;
     }
 
-    setMode('register_step2');
+    setCheckingStep1Email(true);
+    try {
+      const dupCheck = await checkEmailExistsApi(cleanRegEmail);
+      if (dupCheck.exists) {
+        Alert.alert(
+          'Conta já existente',
+          `Já existe uma conta cadastrada com o e-mail ${cleanRegEmail}. Não é permitido criar outra conta com o mesmo e-mail.`,
+          [
+            { text: 'Alterar e-mail', style: 'cancel' },
+            {
+              text: 'Ir para o Login',
+              onPress: () => {
+                setLoginEmail(cleanRegEmail);
+                setMode('login');
+              },
+            },
+          ]
+        );
+        return;
+      }
+      setMode('register_step2');
+    } catch {
+      setMode('register_step2');
+    } finally {
+      setCheckingStep1Email(false);
+    }
   };
 
   const handleRegister = async () => {
@@ -256,10 +297,11 @@ export default function LoginScreen({ onLoginSuccess }) {
       return;
     }
 
+    const cleanRegEmail = regEmail.trim().toLowerCase();
     setLoadingRegister(true);
     try {
       const res = await registerUser(
-        regEmail.trim().toLowerCase(),
+        cleanRegEmail,
         regPassword,
         regName.trim(),
         regPhone.trim() || undefined
@@ -267,42 +309,31 @@ export default function LoginScreen({ onLoginSuccess }) {
 
       if (res?.user) {
         // Sucesso no registro
-        await setRememberedCredentials(regEmail.trim().toLowerCase(), true);
-
-        // Se suportar biometria, sugere ativação
-        if (biometricsSupported) {
-          Alert.alert(
-            'Conta Criada com Sucesso!',
-            `Deseja ativar o acesso com a sua ${biometricType.toLowerCase()} no seu celular para os próximos logins?`,
-            [
-              {
-                text: 'Depois',
-                style: 'cancel',
-                onPress: () => {
-                  setLoggedInUser(res.user);
-                  if (onLoginSuccess) onLoginSuccess(res.user);
-                },
-              },
-              {
-                text: 'Sim, ativar',
-                onPress: async () => {
-                  await setBiometricLoginEnabled(true, res.user);
-                  setLoggedInUser(res.user);
-                  if (onLoginSuccess) onLoginSuccess(res.user);
-                },
-              },
-            ]
-          );
-        } else {
-          Alert.alert('Conta Criada!', 'Bem-vindo ao FINN!');
-          setLoggedInUser(res.user);
-          if (onLoginSuccess) onLoginSuccess(res.user);
-        }
+        await setRememberedCredentials(cleanRegEmail, true);
+        await completeLoginWithDigitalPrompt(res.user, res.token);
       } else {
         Alert.alert('Erro ao registrar', 'Não foi possível concluir o cadastro.');
       }
     } catch (err) {
-      Alert.alert('Erro no cadastro', err.message || 'Tente novamente mais tarde.');
+      const msg = String(err?.message || '');
+      if (msg.toLowerCase().includes('já existe')) {
+        Alert.alert(
+          'Conta já existente',
+          `Já existe uma conta cadastrada com o e-mail ${cleanRegEmail}. Não é permitido criar outra conta com o mesmo e-mail.`,
+          [
+            { text: 'Voltar', style: 'cancel' },
+            {
+              text: 'Ir para o Login',
+              onPress: () => {
+                setLoginEmail(cleanRegEmail);
+                setMode('login');
+              },
+            },
+          ]
+        );
+      } else {
+        Alert.alert('Erro no cadastro', msg || 'Tente novamente mais tarde.');
+      }
     } finally {
       setLoadingRegister(false);
     }
@@ -316,44 +347,96 @@ export default function LoginScreen({ onLoginSuccess }) {
     );
   };
 
-  const handleGoogleLogin = () => {
-    const initialEmail = loginEmail.trim() || regEmail.trim() || '';
-    setGoogleEmail(initialEmail);
-    if (!googleName && initialEmail.includes('@')) {
-      const prefix = initialEmail
-        .split('@')[0]
-        .replace(/[._0-9-]+/g, ' ')
-        .trim()
-        .replace(/\b\w/g, (l) => l.toUpperCase());
-      setGoogleName(prefix || '');
+  const handleGoogleLogin = async (targetMode = 'login') => {
+    setGoogleAuthMode(targetMode);
+    const candidateEmail = (loginEmail.trim() || regEmail.trim() || '').toLowerCase();
+    const indexed = candidateEmail ? await getIndexedAccountByEmail(candidateEmail) : null;
+    setSavedGoogleAccount(indexed || null);
+
+    if (targetMode === 'register') {
+      setGoogleEmail(regEmail.trim().toLowerCase());
+      setGoogleName(regName.trim());
+      setGoogleShowCustomForm(true);
+    } else {
+      setGoogleEmail(candidateEmail);
+      setGoogleName(indexed?.fullName || indexed?.name || '');
+      setGoogleShowCustomForm(!candidateEmail);
     }
     setGoogleModalVisible(true);
   };
 
-  const handleConfirmGoogleLogin = async (customEmail, customName) => {
+  const handleConfirmGoogleLogin = async (customEmail, customName, explicitMode) => {
+    const activeMode = explicitMode || googleAuthMode || 'login';
     const targetEmail = (customEmail !== undefined ? customEmail : googleEmail).trim().toLowerCase();
     const targetName = (customName !== undefined ? customName : googleName).trim();
 
-    if (!targetEmail || !targetEmail.includes('@')) {
-      Alert.alert('Conta Google', 'Informe seu endereço de e-mail do Google (ex: voce@gmail.com).');
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!targetEmail || !emailRegex.test(targetEmail)) {
+      Alert.alert('Conta Google', 'Informe um endereço de e-mail Google válido (ex: voce@gmail.com).');
+      return;
+    }
+
+    if (activeMode === 'register' && (!targetName || targetName.length < 2)) {
+      Alert.alert('Nome obrigatório', 'Informe seu nome e sobrenome para criar sua conta com o Google.');
       return;
     }
 
     setLoadingGoogle(true);
     try {
-      const res = await loginWithGoogleAccount({
-        email: targetEmail,
-        name: targetName,
-      });
+      // Se estiver criando uma nova conta com o Google, valida duplicidade rigorosamente!
+      if (activeMode === 'register') {
+        const dup = await checkEmailExistsApi(targetEmail);
+        if (dup.exists) {
+          setLoadingGoogle(false);
+          Alert.alert(
+            'Conta já existente',
+            `Já existe uma conta cadastrada com o e-mail ${targetEmail}. Não é permitido criar outra conta com o mesmo e-mail.`,
+            [
+              { text: 'Usar outro e-mail', style: 'cancel' },
+              {
+                text: 'Entrar na conta existente',
+                onPress: () => handleConfirmGoogleLogin(targetEmail, targetName, 'login'),
+              },
+            ]
+          );
+          return;
+        }
+      }
+
+      const res =
+        activeMode === 'register'
+          ? await registerWithGoogleAccount({
+              email: targetEmail,
+              name: targetName,
+            })
+          : await loginWithGoogleAccount({
+              email: targetEmail,
+              name: targetName,
+              mode: 'login',
+            });
 
       if (res?.user) {
         await setRememberedCredentials(targetEmail, true);
         setGoogleModalVisible(false);
-        setLoggedInUser(res.user);
-        if (onLoginSuccess) onLoginSuccess(res.user);
+        await completeLoginWithDigitalPrompt(res.user, res.token);
       }
     } catch (err) {
-      Alert.alert('Erro ao conectar com Google', err.message || 'Tente novamente.');
+      const msg = String(err?.message || '');
+      if (msg.toLowerCase().includes('já existe') && activeMode === 'register') {
+        Alert.alert(
+          'Conta já existente',
+          `Já existe uma conta cadastrada com o e-mail ${targetEmail}. Não é permitido criar outra conta com o mesmo e-mail.`,
+          [
+            { text: 'Usar outro e-mail', style: 'cancel' },
+            {
+              text: 'Entrar na conta existente',
+              onPress: () => handleConfirmGoogleLogin(targetEmail, targetName, 'login'),
+            },
+          ]
+        );
+      } else {
+        Alert.alert('Autenticação Google', msg || 'Tente novamente.');
+      }
     } finally {
       setLoadingGoogle(false);
     }
@@ -541,27 +624,6 @@ export default function LoginScreen({ onLoginSuccess }) {
               )}
             </TouchableOpacity>
 
-            {/* BOTÃO DE LOGIN BIOMÉTRICO (DIGITAL) */}
-            {biometricsSupported && (
-              <TouchableOpacity
-                style={styles.biometricBtn}
-                onPress={handleManualBiometricLogin}
-                disabled={authenticatingBiometric || loadingLogin}
-                activeOpacity={0.8}
-              >
-                {authenticatingBiometric ? (
-                  <ActivityIndicator size="small" color="#7C3AED" />
-                ) : (
-                  <>
-                    <Ionicons name="finger-print-outline" size={22} color="#7C3AED" />
-                    <Text style={styles.biometricBtnText}>
-                      Entrar com {biometricType}
-                    </Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            )}
-
             {/* DIVISOR "OU" */}
             <View style={styles.dividerRow}>
               <View style={styles.dividerLine} />
@@ -572,7 +634,7 @@ export default function LoginScreen({ onLoginSuccess }) {
             {/* BOTÃO GOOGLE */}
             <TouchableOpacity
               style={styles.googleButton}
-              onPress={handleGoogleLogin}
+              onPress={() => handleGoogleLogin('login')}
               disabled={loadingGoogle || loadingLogin}
               activeOpacity={0.8}
             >
@@ -594,7 +656,7 @@ export default function LoginScreen({ onLoginSuccess }) {
           </View>
         </ScrollView>
 
-        {/* MODAL DE CONEXÃO COM CONTA GOOGLE */}
+        {/* MODAL DE AUTENTICAÇÃO E CRIAÇÃO DE CONTA GOOGLE (OAUTH 2.0) */}
         <Modal
           visible={googleModalVisible}
           transparent
@@ -609,97 +671,210 @@ export default function LoginScreen({ onLoginSuccess }) {
             <View style={styles.googleModalCard} onStartShouldSetResponder={() => true}>
               <View style={styles.googleModalHeader}>
                 <GoogleColorLogo size={28} />
-                <Text style={styles.googleModalBrandText}>Fazer login com o Google</Text>
+                <Text style={styles.googleModalBrandText}>
+                  {googleAuthMode === 'register'
+                    ? 'Criar conta com o Google'
+                    : 'Escolha uma conta do Google'}
+                </Text>
                 <Text style={styles.googleModalSubText}>
-                  Escolha ou informe sua conta Google para prosseguir para o{' '}
+                  {googleAuthMode === 'register'
+                    ? 'Vincule seu e-mail Google para criar sua conta única no '
+                    : 'Para prosseguir para o '}
                   <Text style={{ fontWeight: '800', color: '#7C3AED' }}>FINN</Text>
                 </Text>
               </View>
 
-              {/* Se já houver um e-mail preenchido/lembrado, exibe como opção rápida de 1 toque */}
-              {loginEmail.trim().includes('@') && (
-                <TouchableOpacity
-                  style={styles.googleQuickAccountBtn}
-                  onPress={() => handleConfirmGoogleLogin(loginEmail.trim(), googleName)}
-                  disabled={loadingGoogle}
-                  activeOpacity={0.8}
-                >
-                  <View style={styles.googleQuickAvatar}>
-                    <Text style={styles.googleQuickAvatarLetter}>
-                      {loginEmail.trim()[0].toUpperCase()}
-                    </Text>
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.googleQuickName} numberOfLines={1}>
-                      {googleName ||
-                        loginEmail
-                          .trim()
-                          .split('@')[0]
-                          .replace(/[._0-9-]+/g, ' ')
-                          .trim()
-                          .replace(/\b\w/g, (l) => l.toUpperCase()) ||
-                        'Minha Conta Google'}
-                    </Text>
-                    <Text style={styles.googleQuickEmail} numberOfLines={1}>
-                      {loginEmail.trim().toLowerCase()}
-                    </Text>
-                  </View>
-                  <Ionicons name="chevron-forward" size={18} color="#64748B" />
-                </TouchableOpacity>
-              )}
+              {/* MODO SELETOR DE CONTA CONHECIDA NO APARELHO */}
+              {googleAuthMode === 'login' && !googleShowCustomForm && loginEmail.trim().includes('@') ? (
+                <View>
+                  <TouchableOpacity
+                    style={styles.googleQuickAccountBtn}
+                    onPress={() =>
+                      handleConfirmGoogleLogin(
+                        loginEmail.trim(),
+                        savedGoogleAccount?.fullName || savedGoogleAccount?.name || googleName,
+                        'login'
+                      )
+                    }
+                    disabled={loadingGoogle}
+                    activeOpacity={0.8}
+                  >
+                    {savedGoogleAccount?.avatarUri ? (
+                      <Image
+                        source={{ uri: savedGoogleAccount.avatarUri }}
+                        style={styles.googleQuickAvatar}
+                      />
+                    ) : (
+                      <View style={styles.googleQuickAvatar}>
+                        <Text style={styles.googleQuickAvatarLetter}>
+                          {(savedGoogleAccount?.fullName || loginEmail.trim())[0].toUpperCase()}
+                        </Text>
+                      </View>
+                    )}
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.googleQuickName} numberOfLines={1}>
+                        {savedGoogleAccount?.fullName ||
+                          savedGoogleAccount?.name ||
+                          googleName ||
+                          'Conta Conectada'}
+                      </Text>
+                      <Text style={styles.googleQuickEmail} numberOfLines={1}>
+                        {loginEmail.trim().toLowerCase()}
+                      </Text>
+                    </View>
+                    {loadingGoogle ? (
+                      <ActivityIndicator size="small" color="#4285F4" />
+                    ) : (
+                      <Ionicons name="chevron-forward" size={18} color="#64748B" />
+                    )}
+                  </TouchableOpacity>
 
-              <View style={styles.googleModalForm}>
-                <Text style={styles.googleInputLabel}>E-MAIL GOOGLE</Text>
-                <View style={styles.inputContainer}>
-                  <GoogleColorLogo size={18} style={{ marginRight: 10 }} />
-                  <TextInput
-                    style={styles.inputField}
-                    placeholder="seuemail@gmail.com"
-                    placeholderTextColor="#9CA3AF"
-                    keyboardType="email-address"
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    value={googleEmail}
-                    onChangeText={setGoogleEmail}
-                  />
+                  <TouchableOpacity
+                    style={[
+                      styles.googleQuickAccountBtn,
+                      { backgroundColor: '#FFFFFF', marginBottom: 10 },
+                    ]}
+                    onPress={() => {
+                      setGoogleEmail('');
+                      setGoogleName('');
+                      setGoogleAuthMode('login');
+                      setGoogleShowCustomForm(true);
+                    }}
+                    disabled={loadingGoogle}
+                    activeOpacity={0.8}
+                  >
+                    <View
+                      style={[
+                        styles.googleQuickAvatar,
+                        { backgroundColor: '#F1F5F9' },
+                      ]}
+                    >
+                      <Ionicons name="person-outline" size={18} color="#475569" />
+                    </View>
+                    <Text style={[styles.googleQuickName, { flex: 1, fontSize: 13.5 }]}>
+                      Usar outra conta Google
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.googleQuickAccountBtn,
+                      { backgroundColor: '#F5F3FF', borderColor: '#DDD6FE', marginBottom: 6 },
+                    ]}
+                    onPress={() => {
+                      setGoogleEmail('');
+                      setGoogleName('');
+                      setGoogleAuthMode('register');
+                      setGoogleShowCustomForm(true);
+                    }}
+                    disabled={loadingGoogle}
+                    activeOpacity={0.8}
+                  >
+                    <View
+                      style={[
+                        styles.googleQuickAvatar,
+                        { backgroundColor: '#EDE9FE' },
+                      ]}
+                    >
+                      <Ionicons name="person-add-outline" size={18} color="#7C3AED" />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.googleQuickName, { color: '#6D28D9', fontSize: 13.5 }]}>
+                        Criar nova conta com o Google
+                      </Text>
+                      <Text style={styles.googleQuickEmail}>
+                        Valida se o e-mail já está em uso no banco
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.googleCancelBtn}
+                    onPress={() => setGoogleModalVisible(false)}
+                    disabled={loadingGoogle}
+                  >
+                    <Text style={styles.googleCancelBtnText}>Cancelar</Text>
+                  </TouchableOpacity>
                 </View>
-
-                <Text style={styles.googleInputLabel}>SEU NOME (OPCIONAL)</Text>
-                <View style={styles.inputContainer}>
-                  <Ionicons name="person-outline" size={19} color="#4285F4" style={styles.inputIcon} />
-                  <TextInput
-                    style={styles.inputField}
-                    placeholder="Como quer ser chamado no FINN"
-                    placeholderTextColor="#9CA3AF"
-                    autoCapitalize="words"
-                    value={googleName}
-                    onChangeText={setGoogleName}
-                  />
-                </View>
-
-                <TouchableOpacity
-                  style={[styles.googleConfirmBtn, loadingGoogle && styles.buttonDisabled]}
-                  onPress={() => handleConfirmGoogleLogin()}
-                  disabled={loadingGoogle}
-                  activeOpacity={0.85}
-                >
-                  {loadingGoogle ? (
-                    <ActivityIndicator color="#FFFFFF" />
-                  ) : (
+              ) : (
+                <View style={styles.googleModalForm}>
+                  {googleAuthMode === 'register' && (
                     <>
-                      <Text style={styles.googleConfirmBtnText}>Conectar Conta Google</Text>
+                      <Text style={styles.googleInputLabel}>NOME E SOBRENOME</Text>
+                      <View style={styles.inputContainer}>
+                        <Ionicons
+                          name="person-outline"
+                          size={19}
+                          color="#4285F4"
+                          style={styles.inputIcon}
+                        />
+                        <TextInput
+                          style={styles.inputField}
+                          placeholder="Seu nome e sobrenome"
+                          placeholderTextColor="#9CA3AF"
+                          autoCapitalize="words"
+                          value={googleName}
+                          onChangeText={setGoogleName}
+                        />
+                      </View>
                     </>
                   )}
-                </TouchableOpacity>
 
-                <TouchableOpacity
-                  style={styles.googleCancelBtn}
-                  onPress={() => setGoogleModalVisible(false)}
-                  disabled={loadingGoogle}
-                >
-                  <Text style={styles.googleCancelBtnText}>Cancelar</Text>
-                </TouchableOpacity>
-              </View>
+                  <Text style={styles.googleInputLabel}>E-MAIL DA CONTA GOOGLE</Text>
+                  <View style={styles.inputContainer}>
+                    <GoogleColorLogo size={18} style={{ marginRight: 10 }} />
+                    <TextInput
+                      style={styles.inputField}
+                      placeholder="seuemail@gmail.com"
+                      placeholderTextColor="#9CA3AF"
+                      keyboardType="email-address"
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      value={googleEmail}
+                      onChangeText={setGoogleEmail}
+                    />
+                  </View>
+
+                  <TouchableOpacity
+                    style={[styles.googleConfirmBtn, loadingGoogle && styles.buttonDisabled]}
+                    onPress={() => handleConfirmGoogleLogin(googleEmail, googleName, googleAuthMode)}
+                    disabled={loadingGoogle}
+                    activeOpacity={0.85}
+                  >
+                    {loadingGoogle ? (
+                      <ActivityIndicator color="#FFFFFF" />
+                    ) : (
+                      <Text style={styles.googleConfirmBtnText}>
+                        {googleAuthMode === 'register'
+                          ? 'Criar Conta com Google'
+                          : 'Prosseguir com Google'}
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={{ alignItems: 'center', paddingVertical: 8, marginTop: 4 }}
+                    onPress={() =>
+                      setGoogleAuthMode((prev) => (prev === 'register' ? 'login' : 'register'))
+                    }
+                    disabled={loadingGoogle}
+                  >
+                    <Text style={{ color: '#4285F4', fontSize: 12.5, fontWeight: '700' }}>
+                      {googleAuthMode === 'register'
+                        ? 'Já possui conta? Entrar com Google'
+                        : 'Novo por aqui? Criar conta com o Google'}
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.googleCancelBtn}
+                    onPress={() => setGoogleModalVisible(false)}
+                    disabled={loadingGoogle}
+                  >
+                    <Text style={styles.googleCancelBtnText}>Cancelar</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
             </View>
           </TouchableOpacity>
         </Modal>
@@ -777,13 +952,39 @@ export default function LoginScreen({ onLoginSuccess }) {
               />
             </View>
 
-            {/* BOTÃO CONTINUAR */}
+            {/* BOTÃO CONTINUAR (VALIDA DUPLICIDADE DE E-MAIL NO BANCO) */}
             <TouchableOpacity
-              style={styles.primaryButton}
+              style={[styles.primaryButton, checkingStep1Email && styles.buttonDisabled]}
               onPress={handleContinueStep1}
+              disabled={checkingStep1Email}
               activeOpacity={0.85}
             >
-              <Text style={styles.primaryButtonText}>Continuar</Text>
+              {checkingStep1Email ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <Text style={styles.primaryButtonText}>Continuar</Text>
+              )}
+            </TouchableOpacity>
+
+            {/* DIVISOR "OU" */}
+            <View style={styles.dividerRow}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>ou</Text>
+              <View style={styles.dividerLine} />
+            </View>
+
+            {/* BOTÃO CRIAR CONTA COM GOOGLE */}
+            <TouchableOpacity
+              style={styles.googleButton}
+              onPress={async () => {
+                setMode('login');
+                setTimeout(() => handleGoogleLogin('register'), 80);
+              }}
+              disabled={loadingGoogle || checkingStep1Email}
+              activeOpacity={0.8}
+            >
+              <GoogleColorLogo size={20} style={{ marginRight: 10 }} />
+              <Text style={styles.googleButtonText}>Criar conta com o Google</Text>
             </TouchableOpacity>
 
             {/* LINK RETORNAR AO LOGIN */}
