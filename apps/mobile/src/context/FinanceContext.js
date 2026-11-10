@@ -40,6 +40,10 @@ import {
   deleteHouseholdApi,
   leaveHouseholdApi,
   kickHouseholdMemberApi,
+  fetchNotificationsApi,
+  createNotificationApi,
+  markNotificationReadApi,
+  markAllNotificationsReadApi,
 } from '../services/apiService';
 import {
   publishCloudInvite,
@@ -404,6 +408,34 @@ export function FinanceProvider({ children }) {
         setReadNotificationIds(savedReadNotifs ? JSON.parse(savedReadNotifs) : []);
         const loadedPrefs = await loadUserNotificationPreferences(uid);
         setNotificationPreferences(loadedPrefs);
+
+        // Busca notificações salvas no PostgreSQL e reconcilia com o histórico local
+        fetchNotificationsApi(50)
+          .then((remoteNotifs) => {
+            if (Array.isArray(remoteNotifs) && remoteNotifs.length > 0) {
+              setActivityNotifications((prev) => {
+                const byKey = new Map();
+                for (const item of [...remoteNotifs, ...(prev || [])]) {
+                  if (!item) continue;
+                  const k = item.dedupeKey || item.id;
+                  if (k && !byKey.has(k)) byKey.set(k, item);
+                }
+                const merged = Array.from(byKey.values()).slice(0, 40);
+                saveUserItem('activity_notifications', merged);
+                return merged;
+              });
+
+              const remoteReadIds = remoteNotifs.filter((r) => r.read || r.isRead).map((r) => r.id);
+              if (remoteReadIds.length > 0) {
+                setReadNotificationIds((prev) => {
+                  const next = Array.from(new Set([...(prev || []), ...remoteReadIds]));
+                  saveUserItem('read_notifications', next);
+                  return next;
+                });
+              }
+            }
+          })
+          .catch(() => {});
 
         // Dispara sincronização bi-direcional passando exatamente os dados carregados do banco local
         await syncWithPostgres({
@@ -2815,12 +2847,14 @@ Responda de forma clara, motivadora e estruturada em tópicos!`;
     const next = [...readNotificationIds, notifId];
     setReadNotificationIds(next);
     await saveUserItem('read_notifications', next);
+    markNotificationReadApi(notifId).catch(() => {});
   };
 
   const markAllNotificationsAsRead = async () => {
     const allIds = notifications.map((n) => n.id);
     setReadNotificationIds(allIds);
     await saveUserItem('read_notifications', allIds);
+    markAllNotificationsReadApi(allIds).catch(() => {});
   };
 
   const sendTestSmartNotification = async () => {

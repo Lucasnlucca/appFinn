@@ -1255,3 +1255,71 @@ export async function kickHouseholdMemberApi(householdId, memberId) {
   });
 }
 
+// ==========================================
+// NOTIFICAÇÕES, PREFERÊNCIAS E PUSH TOKENS (POSTGRESQL)
+// ==========================================
+
+export async function fetchNotificationsApi(limit = 50) {
+  await ensureAuthenticated();
+  return apiRequest(`notifications?limit=${encodeURIComponent(limit)}`);
+}
+
+export async function createNotificationApi(notification) {
+  await ensureAuthenticated();
+  return apiRequest('notifications', {
+    method: 'POST',
+    body: {
+      id: notification.id,
+      title: notification.title,
+      body: notification.body || notification.message,
+      message: notification.body || notification.message,
+      type: notification.type || 'ALERT',
+      category: notification.category || 'sistema',
+      priority: notification.priority || 'normal',
+      action: notification.action || (notification.targetScreen ? { label: 'Abrir', targetScreen: notification.targetScreen } : null),
+      dedupeKey: notification.dedupeKey,
+      meta: notification.meta || {},
+      read: Boolean(notification.read),
+      sendPush: Boolean(notification.sendPush),
+    },
+  });
+}
+
+export async function markNotificationReadApi(notificationId) {
+  await ensureAuthenticated();
+  return apiRequest(`notifications/${encodeURIComponent(notificationId)}/read`, {
+    method: 'PATCH',
+  });
+}
+
+export async function markAllNotificationsReadApi(ids = []) {
+  await ensureAuthenticated();
+  return apiRequest('notifications/read-all', {
+    method: 'POST',
+    body: { ids },
+  });
+}
+
+export async function fetchNotificationPreferencesApi() {
+  await ensureAuthenticated();
+  return apiRequest('notifications/preferences');
+}
+
+export async function updateNotificationPreferencesApi(preferences) {
+  await ensureAuthenticated();
+  return apiRequest('notifications/preferences', {
+    method: 'PUT',
+    body: preferences,
+  });
+}
+
+export async function registerPushTokenApi({ pushToken, platform = 'android', deviceName = null }) {
+  if (!pushToken) return null;
+  await ensureAuthenticated();
+  return apiRequest('notifications/push-token', {
+    method: 'POST',
+    body: { pushToken, platform, deviceName },
+  });
+}
+
+

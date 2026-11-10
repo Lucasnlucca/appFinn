@@ -8,6 +8,12 @@ import {
   normalizeNotificationCategory,
   sanitizeNotificationText,
 } from './notificationTemplates';
+import {
+  fetchNotificationPreferencesApi,
+  updateNotificationPreferencesApi,
+  registerPushTokenApi,
+  createNotificationApi,
+} from './apiService';
 
 const CHANNEL_ID = 'finn-smart-alerts';
 const MAX_DAILY_PUSHES = 3;
@@ -280,28 +286,50 @@ export function canSendPushNotification(
 }
 
 /**
- * Carrega as preferências de notificação salvas para o usuário
+ * Carrega as preferências de notificação salvas para o usuário (sincronizando com o PostgreSQL)
  */
 export async function loadUserNotificationPreferences(userId = 'guest') {
+  let localPrefs = { ...DEFAULT_NOTIFICATION_PREFERENCES };
   try {
     const raw = await AsyncStorage.getItem(getPrefsStorageKey(userId));
-    if (!raw) return { ...DEFAULT_NOTIFICATION_PREFERENCES };
-    const parsed = JSON.parse(raw);
-    return {
-      ...DEFAULT_NOTIFICATION_PREFERENCES,
-      ...parsed,
-      categories: {
-        ...DEFAULT_NOTIFICATION_PREFERENCES.categories,
-        ...(parsed?.categories || {}),
-      },
-    };
-  } catch (e) {
-    return { ...DEFAULT_NOTIFICATION_PREFERENCES };
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      localPrefs = {
+        ...DEFAULT_NOTIFICATION_PREFERENCES,
+        ...parsed,
+        categories: {
+          ...DEFAULT_NOTIFICATION_PREFERENCES.categories,
+          ...(parsed?.categories || {}),
+        },
+      };
+    }
+  } catch (e) {}
+
+  if (userId && userId !== 'guest') {
+    try {
+      const remotePrefs = await fetchNotificationPreferencesApi();
+      if (remotePrefs && typeof remotePrefs === 'object') {
+        const merged = {
+          ...localPrefs,
+          ...remotePrefs,
+          categories: {
+            ...localPrefs.categories,
+            ...(remotePrefs?.categories || {}),
+          },
+        };
+        await AsyncStorage.setItem(getPrefsStorageKey(userId), JSON.stringify(merged));
+        return merged;
+      }
+    } catch (e) {
+      // Offline fallback para o estado local
+    }
   }
+
+  return localPrefs;
 }
 
 /**
- * Salva as preferências de notificação do usuário
+ * Salva as preferências de notificação do usuário localmente e no PostgreSQL
  */
 export async function saveUserNotificationPreferences(userId = 'guest', preferences = {}) {
   const merged = {
@@ -317,6 +345,11 @@ export async function saveUserNotificationPreferences(userId = 'guest', preferen
   } catch (e) {
     console.warn('Erro ao salvar preferências de notificação:', e?.message);
   }
+
+  if (userId && userId !== 'guest') {
+    updateNotificationPreferencesApi(merged).catch(() => {});
+  }
+
   return merged;
 }
 
@@ -381,7 +414,29 @@ export async function initPhoneNotifications() {
       finalStatus = status;
     }
 
-    return finalStatus === 'granted';
+    const granted = finalStatus === 'granted';
+    if (granted) {
+      // Obtém e registra o token de push (Expo / FCM / APNs) no PostgreSQL
+      try {
+        let tokenStr = null;
+        if (typeof Notifications.getExpoPushTokenAsync === 'function') {
+          const expoToken = await Notifications.getExpoPushTokenAsync().catch(() => null);
+          tokenStr = expoToken?.data || null;
+        }
+        if (!tokenStr && typeof Notifications.getDevicePushTokenAsync === 'function') {
+          const devToken = await Notifications.getDevicePushTokenAsync().catch(() => null);
+          tokenStr = devToken?.data ? String(devToken.data) : null;
+        }
+        if (tokenStr) {
+          registerPushTokenApi({
+            pushToken: tokenStr,
+            platform: Platform.OS,
+          }).catch(() => {});
+        }
+      } catch (e) {}
+    }
+
+    return granted;
   } catch (err) {
     console.warn('Erro ao inicializar permissões de notificação:', err?.message);
     return false;
@@ -469,6 +524,13 @@ export async function sendInstantPhoneNotification({
       dayKey: check.dayKey,
       dedupeKey: check.dedupeKey,
     });
+
+    if (userId && userId !== 'guest') {
+      createNotificationApi({
+        ...model,
+        sendPush: false,
+      }).catch(() => {});
+    }
 
     return id;
   } catch (err) {

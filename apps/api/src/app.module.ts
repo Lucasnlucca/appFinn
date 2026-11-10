@@ -19,6 +19,7 @@ import { BudgetsModule } from './modules/budgets/budgets.module';
 import { PlanningModule } from './modules/planning/planning.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { PrivacyModule } from './modules/privacy/privacy.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { PrivacyModule } from './modules/privacy/privacy.module';
     PrismaModule,
     AuditModule,
     PrivacyModule,
+    NotificationsModule,
     HealthModule,
     AuthModule,
     HouseholdsModule,
