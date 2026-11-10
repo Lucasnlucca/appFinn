@@ -168,6 +168,7 @@ export default function App() {
           require('./assets/finn-hero-poster.jpg'),
           require('./assets/hero-robot-bg.jpg'),
           require('./assets/finn-logo.png'),
+          require('./assets/finn-login-robot.png'),
           require('./assets/agenda-robot-happy.png'),
           require('./assets/agenda-robot-sad.png'),
           require('./assets/card-invoices-waves.png'),

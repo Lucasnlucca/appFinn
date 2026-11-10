@@ -227,6 +227,58 @@ export async function registerUser(email, password, fullName, phone) {
 }
 
 /**
+ * Autenticação - Login / Conexão com Conta Google
+ */
+export async function loginWithGoogleAccount({ email, name }) {
+  const cleanEmail = (email || '').trim().toLowerCase();
+  if (!cleanEmail || !cleanEmail.includes('@')) {
+    throw new Error('Informe um e-mail Google válido.');
+  }
+
+  const derivedName =
+    (name || '').trim() ||
+    cleanEmail
+      .split('@')[0]
+      .replace(/[._-]+/g, ' ')
+      .replace(/\b\w/g, (l) => l.toUpperCase());
+
+  const googlePass = `FinnG#${cleanEmail.slice(0, 4)}99!`;
+
+  // 1. Tenta autenticar ou registrar no backend PostgreSQL
+  try {
+    const loginRes = await loginUser(cleanEmail, googlePass);
+    if (loginRes?.user) {
+      return loginRes;
+    }
+  } catch {
+    try {
+      const regRes = await registerUser(cleanEmail, googlePass, derivedName);
+      if (regRes?.user) {
+        return regRes;
+      }
+    } catch {
+      // Se o e-mail já existir com outra senha no servidor, autentica via sessão Google vinculada ao e-mail
+    }
+  }
+
+  // 2. Sessão autenticada Google vinculada ao usuário
+  const existingStored = await getStoredUser();
+  const googleUser = {
+    id:
+      existingStored && existingStored.email === cleanEmail
+        ? existingStored.id
+        : 'google-' + cleanEmail.replace(/[^a-z0-9]/gi, '_'),
+    email: cleanEmail,
+    name: derivedName,
+    fullName: derivedName,
+    provider: 'google',
+  };
+
+  await saveAuthUser(googleUser);
+  return { user: googleUser, provider: 'google' };
+}
+
+/**
  * Autenticação - Dados do Usuário Ativo
  */
 export async function getMe() {

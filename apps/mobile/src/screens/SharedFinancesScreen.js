@@ -41,10 +41,15 @@ export default function SharedFinancesScreen({ navigation, route }) {
     transactions,
     viewMode,
     setViewMode,
+    notifications = [],
+    unreadNotificationsCount = 0,
+    markNotificationAsRead,
+    markAllNotificationsAsRead,
   } = useFinance();
 
   // Abas: 'dashboard' | 'divisao' | 'acertos' | 'membros'
   const [activeTab, setActiveTab] = useState(route?.params?.initialTab || 'dashboard');
+  const [modalGroupNotifs, setModalGroupNotifs] = useState(false);
 
   useEffect(() => {
     if (route?.params?.initialTab) {
@@ -927,6 +932,29 @@ export default function SharedFinancesScreen({ navigation, route }) {
         </View>
 
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <TouchableOpacity
+            style={[styles.inviteHeaderBtn, { position: 'relative' }]}
+            onPress={() => setModalGroupNotifs(true)}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="notifications-outline" size={17} color="#7C3AED" />
+            {unreadNotificationsCount > 0 && (
+              <View
+                style={{
+                  position: 'absolute',
+                  top: 6,
+                  right: 6,
+                  width: 8,
+                  height: 8,
+                  borderRadius: 4,
+                  backgroundColor: '#EC4899',
+                  borderWidth: 1.5,
+                  borderColor: '#FFFFFF',
+                }}
+              />
+            )}
+          </TouchableOpacity>
+
           <TouchableOpacity
             style={styles.headerActionPill}
             onPress={() => setModalNewGroup(true)}
@@ -2576,6 +2604,142 @@ export default function SharedFinancesScreen({ navigation, route }) {
             </View>
           </View>
         </TouchableOpacity>
+      </Modal>
+
+      {/* ============================================================== */}
+      {/* MODAL 7: NOTIFICAÇÕES DO GRUPO (CONVITES, VALORES E ACERTOS)   */}
+      {/* ============================================================== */}
+      <Modal
+        visible={modalGroupNotifs}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setModalGroupNotifs(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalSheet, { maxHeight: '80%' }]}>
+            <View style={styles.modalHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Ionicons name="notifications" size={20} color="#7C3AED" />
+                <Text style={styles.modalTitle}>Notificações de Grupo</Text>
+              </View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                {unreadNotificationsCount > 0 && (
+                  <TouchableOpacity
+                    onPress={() => markAllNotificationsAsRead && markAllNotificationsAsRead()}
+                    style={{
+                      backgroundColor: '#F3E8FF',
+                      paddingHorizontal: 10,
+                      paddingVertical: 5,
+                      borderRadius: 999,
+                    }}
+                  >
+                    <Text style={{ fontSize: 11, fontWeight: '700', color: '#7C3AED' }}>
+                      Ler todas
+                    </Text>
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity onPress={() => setModalGroupNotifs(false)}>
+                  <Ionicons name="close" size={24} color="#6B7280" />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <Text style={{ fontSize: 12, color: '#64748B', marginBottom: 12 }}>
+              Alertas sobre convites, alterações de valores, divisões de conta e acertos do grupo (também enviados ao seu celular).
+            </Text>
+
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ gap: 10, paddingBottom: 16 }}
+            >
+              {notifications.map((item) => (
+                <TouchableOpacity
+                  key={item.id}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'flex-start',
+                    padding: 13,
+                    borderRadius: 15,
+                    backgroundColor: item.read ? '#F8FAFC' : '#F5F3FF',
+                    borderWidth: 1,
+                    borderColor: item.read ? '#E2E8F0' : '#DDD6FE',
+                    gap: 10,
+                  }}
+                  activeOpacity={0.8}
+                  onPress={() => {
+                    if (markNotificationAsRead) markNotificationAsRead(item.id);
+                    if (item.groupId && setActiveGroupId) {
+                      setActiveGroupId(item.groupId);
+                    }
+                    setModalGroupNotifs(false);
+                  }}
+                >
+                  <View
+                    style={{
+                      width: 36,
+                      height: 36,
+                      borderRadius: 11,
+                      backgroundColor: (item.color || '#7C3AED') + '18',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Ionicons
+                      name={item.icon || 'notifications-outline'}
+                      size={18}
+                      color={item.color || '#7C3AED'}
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <View
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        marginBottom: 3,
+                      }}
+                    >
+                      <Text
+                        style={{
+                          fontSize: 13,
+                          fontWeight: '800',
+                          color: '#0F172A',
+                          flex: 1,
+                          paddingRight: 6,
+                        }}
+                      >
+                        {item.title}
+                      </Text>
+                      {!item.read && (
+                        <View
+                          style={{
+                            width: 8,
+                            height: 8,
+                            borderRadius: 4,
+                            backgroundColor: '#EC4899',
+                          }}
+                        />
+                      )}
+                    </View>
+                    <Text style={{ fontSize: 12, color: '#475569', lineHeight: 17 }}>
+                      {item.message}
+                    </Text>
+                    <Text
+                      style={{
+                        fontSize: 10,
+                        fontWeight: '700',
+                        color: '#94A3B8',
+                        marginTop: 5,
+                      }}
+                    >
+                      {item.time || 'Agora'}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
       </Modal>
     </View>
   );

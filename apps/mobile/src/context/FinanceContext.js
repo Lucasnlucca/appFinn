@@ -37,6 +37,11 @@ import {
   publishCloudInvite,
   resolveCloudInvite,
 } from '../services/inviteRelayService';
+import {
+  initPhoneNotifications,
+  sendInstantPhoneNotification,
+  scheduleSmartPhoneNotifications,
+} from '../services/notificationService';
 import { getBankTheme } from '../constants/BankThemeRegistry';
 
 const FinanceContext = createContext(null);
@@ -118,6 +123,8 @@ export function FinanceProvider({ children }) {
   const [activeGroupId, setActiveGroupIdState] = useState(null);
   const [groupInvitations, setGroupInvitations] = useState([]);
   const [settlements, setSettlements] = useState([]);
+  const [activityNotifications, setActivityNotifications] = useState([]);
+  const [readNotificationIds, setReadNotificationIds] = useState([]);
   const [loaded, setLoaded] = useState(false);
 
   // Helper para persistir dados no namespace isolado do usuário conectado (Ambiente Separado)
@@ -199,6 +206,8 @@ export function FinanceProvider({ children }) {
           savedInvs,
           savedSettles,
           savedMode,
+          savedActNotifs,
+          savedReadNotifs,
         ] = await Promise.all([
           AsyncStorage.getItem(getUserStorageKey(uid, 'transactions')),
           AsyncStorage.getItem(getUserStorageKey(uid, 'accounts')),
@@ -215,6 +224,8 @@ export function FinanceProvider({ children }) {
           AsyncStorage.getItem(getUserStorageKey(uid, 'group_invitations')),
           AsyncStorage.getItem(getUserStorageKey(uid, 'settlements')),
           AsyncStorage.getItem(getUserStorageKey(uid, 'view_mode')),
+          AsyncStorage.getItem(getUserStorageKey(uid, 'activity_notifications')),
+          AsyncStorage.getItem(getUserStorageKey(uid, 'read_notifications')),
         ]);
 
         const parsedTrans = savedTrans ? JSON.parse(savedTrans) : [];
@@ -258,34 +269,40 @@ export function FinanceProvider({ children }) {
         if (savedSkin) setAiSkin(savedSkin);
 
         let parsedGroups = savedGroups ? JSON.parse(savedGroups) : [];
-        if (!parsedGroups || parsedGroups.length === 0) {
-          const ownerName = loggedInUser?.fullName || loggedInUser?.name || 'Você';
-          const defaultGroup = {
-            id: 'grp-casal-default',
-            name: 'Finanças do Casal',
-            type: 'Casal',
-            description: 'Espaço compartilhado do casal',
-            createdAt: new Date().toISOString(),
-            inviteCode: generateGroupInviteCode(),
-            inviteCodeExpiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
-            members: [
-              { id: loggedInUser?.id || 'admin', name: ownerName, email: loggedInUser?.email || '', role: 'ADMIN' },
-              { id: 'partner', name: 'Parceiro(a)', email: '', role: 'MEMBER' },
-            ],
-          };
-          parsedGroups = [defaultGroup];
-          saveUserItem('shared_groups', parsedGroups);
+        if (Array.isArray(parsedGroups)) {
+          // Remove qualquer grupo pré-montado padrão que possa ter sido salvo em versões anteriores
+          const cleanedGroups = parsedGroups.filter(
+            (g) =>
+              g &&
+              g.id !== 'grp-casal-default' &&
+              g.id !== 'default-casal' &&
+              g.description !== 'Espaço compartilhado do casal' &&
+              g.description !== 'Grupo conectado ao PostgreSQL' &&
+              !(
+                Array.isArray(g.members) &&
+                g.members.some((m) => m.id === 'partner' || m.name === 'Parceiro(a)')
+              )
+          );
+          if (cleanedGroups.length !== parsedGroups.length) {
+            parsedGroups = cleanedGroups;
+            saveUserItem('shared_groups', parsedGroups);
+          }
+        } else {
+          parsedGroups = [];
         }
         setSharedGroups(parsedGroups);
-        const resolvedActiveId = savedActiveGrpId && parsedGroups.some((g) => g.id === savedActiveGrpId)
-          ? savedActiveGrpId
-          : parsedGroups[0]?.id;
+        const resolvedActiveId =
+          savedActiveGrpId && parsedGroups.some((g) => g.id === savedActiveGrpId)
+            ? savedActiveGrpId
+            : parsedGroups[0]?.id || null;
         setActiveGroupIdState(resolvedActiveId);
-        if (resolvedActiveId) saveUserItem('active_group_id', resolvedActiveId);
+        saveUserItem('active_group_id', resolvedActiveId);
 
         if (savedInvs) setGroupInvitations(JSON.parse(savedInvs));
         if (savedSettles) setSettlements(JSON.parse(savedSettles));
         if (savedMode) setViewModeState(savedMode);
+        setActivityNotifications(savedActNotifs ? JSON.parse(savedActNotifs) : []);
+        setReadNotificationIds(savedReadNotifs ? JSON.parse(savedReadNotifs) : []);
 
         // Dispara sincronização silenciosa para obter cartões/contas do PostgreSQL deste usuário
         syncWithPostgres();
@@ -412,6 +429,40 @@ export function FinanceProvider({ children }) {
     }
   }, [loaded]);
 
+  // Helper para disparar notificações de Finanças em Grupo (In-App + Barra do Celular)
+  const pushGroupNotification = ({
+    title,
+    message,
+    icon = 'people',
+    color = '#7C3AED',
+    groupId = null,
+  }) => {
+    const newNotif = {
+      id: 'notif-grp-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+      category: 'group',
+      icon,
+      color,
+      title,
+      message,
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      createdAt: new Date().toISOString(),
+      targetScreen: 'SharedFinances',
+      groupId,
+    };
+
+    setActivityNotifications((prev) => {
+      const next = [newNotif, ...prev].slice(0, 35);
+      saveUserItem('activity_notifications', next);
+      return next;
+    });
+
+    sendInstantPhoneNotification({
+      title,
+      body: message,
+      data: { type: 'shared_group', groupId },
+    }).catch(() => {});
+  };
+
   // Sincronização em Livetime das Finanças Compartilhadas (Membros e Grupo em tempo real)
   useEffect(() => {
     if (!loggedInUser?.id) return;
@@ -434,20 +485,7 @@ export function FinanceProvider({ children }) {
           setSharedGroups((prev) => {
             const existing = prev.find((g) => g.remoteId === hh.id || g.id === hh.id);
             if (!existing) {
-              const newG = {
-                id: hh.id,
-                remoteId: hh.id,
-                name: hh.name || 'Finanças Compartilhadas',
-                type: 'Casal',
-                description: 'Grupo conectado ao PostgreSQL',
-                createdAt: new Date().toISOString(),
-                creatorId: ownerMember?.id,
-                creatorName: ownerMember?.fullName || 'Organizador(a)',
-                members: mappedMembers,
-              };
-              const next = [newG, ...prev];
-              saveUserItem('shared_groups', next);
-              return next;
+              return prev;
             }
 
             const existingCount = existing.members?.length || 0;
@@ -458,6 +496,36 @@ export function FinanceProvider({ children }) {
               existing.name !== hh.name;
 
             if (hasChanged) {
+              const grpTitle = hh.name || existing.name || 'Grupo';
+              if (newCount > existingCount) {
+                const existingIds = new Set((existing.members || []).map((m) => m.id || m.email));
+                const joinedMember = mappedMembers.find((m) => !existingIds.has(m.id || m.email));
+                const joinedName = joinedMember?.name || 'Um novo participante';
+                pushGroupNotification({
+                  title: `🎉 Convite aceito no grupo ${grpTitle}!`,
+                  message: `${joinedName} aceitou o convite e entrou no grupo '${grpTitle}'. Agora vocês podem dividir contas em tempo real!`,
+                  icon: 'person-add',
+                  color: '#10B981',
+                  groupId: existing.id,
+                });
+              } else if (newCount < existingCount) {
+                pushGroupNotification({
+                  title: `👋 Participante saiu de ${grpTitle}`,
+                  message: `Houve uma atualização nos membros do grupo '${grpTitle}' (${newCount} participante${newCount > 1 ? 's' : ''}).`,
+                  icon: 'person-remove',
+                  color: '#F59E0B',
+                  groupId: existing.id,
+                });
+              } else if (existing.name && hh.name && existing.name !== hh.name) {
+                pushGroupNotification({
+                  title: `✏️ Grupo atualizado: ${hh.name}`,
+                  message: `O nome do grupo compartilhado foi alterado de '${existing.name}' para '${hh.name}'.`,
+                  icon: 'create-outline',
+                  color: '#7C3AED',
+                  groupId: existing.id,
+                });
+              }
+
               const updated = prev.map((g) => {
                 if (g.id === existing.id || g.remoteId === hh.id) {
                   return {
@@ -683,6 +751,46 @@ export function FinanceProvider({ children }) {
       apiCreateTransaction(tx).catch((e) => console.log('Offline queue for Postgres tx:', e.message));
     }
 
+    // Dispara notificação inteligente sobre a movimentação do dinheiro (In-App + Celular)
+    if (newTxs.length > 0) {
+      const firstTx = newTxs[0];
+      const isIncome = firstTx.type === 'income';
+      const formattedVal = Number(firstTx.amount || 0).toLocaleString('pt-BR', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      });
+      const notifTitle = isIncome
+        ? `💰 Entrada registrada: R$ ${formattedVal}`
+        : `💸 Gasto registrado: R$ ${formattedVal}`;
+      const notifBody = isIncome
+        ? `Você recebeu R$ ${formattedVal} (${firstTx.title}). Aproveite para guardar pelo menos 20% em um Cofrinho e fazer seu dinheiro render!`
+        : `Movimentação em ${firstTx.category || 'Outros'} (${firstTx.title}). Fique atento ao limite mensal para continuar economizando!`;
+
+      const newNotif = {
+        id: 'notif-tx-' + Date.now(),
+        category: isIncome ? 'income' : 'economy',
+        icon: isIncome ? 'trending-up' : 'trending-down',
+        color: isIncome ? '#10B981' : '#EF4444',
+        title: notifTitle,
+        message: notifBody,
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        createdAt: new Date().toISOString(),
+        targetScreen: 'Categories',
+      };
+
+      setActivityNotifications((prev) => {
+        const next = [newNotif, ...prev].slice(0, 25);
+        saveUserItem('activity_notifications', next);
+        return next;
+      });
+
+      sendInstantPhoneNotification({
+        title: notifTitle,
+        body: notifBody,
+        data: { type: 'transaction_movement', txId: firstTx.id },
+      }).catch(() => {});
+    }
+
     return newTxs;
   };
 
@@ -714,6 +822,21 @@ export function FinanceProvider({ children }) {
         saveUserItem('accounts', updated);
         return updated;
       });
+
+      const fmtOld = Number(oldTx.amount || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      const fmtNew = Number(updatedTx.amount || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      if (updatedTx.isShared || updatedTx.groupId || updatedTx.sharedGroupId) {
+        const gId = updatedTx.groupId || updatedTx.sharedGroupId;
+        const grp = sharedGroups.find((g) => g.id === gId);
+        const grpName = grp?.name || updatedTx.groupName || 'Grupo Compartilhado';
+        pushGroupNotification({
+          title: `🔄 Valor alterado no grupo ${grpName}`,
+          message: `O lançamento '${updatedTx.title || updatedTx.description}' mudou de R$ ${fmtOld} para R$ ${fmtNew}. O saldo e a divisão do grupo foram atualizados!`,
+          icon: 'sync-outline',
+          color: '#7C3AED',
+          groupId: gId,
+        });
+      }
     }
 
     syncTransactionToAppwrite(updatedTx).catch(() => {});
@@ -738,6 +861,20 @@ export function FinanceProvider({ children }) {
         saveUserItem('accounts', updated);
         return updated;
       });
+
+      if (target.isShared || target.groupId || target.sharedGroupId) {
+        const gId = target.groupId || target.sharedGroupId;
+        const grp = sharedGroups.find((g) => g.id === gId);
+        const grpName = grp?.name || target.groupName || 'Grupo Compartilhado';
+        const fmtVal = Number(target.amount || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        pushGroupNotification({
+          title: `🗑️ Valor do grupo atualizado: ${grpName}`,
+          message: `O item '${target.title || target.description}' (R$ ${fmtVal}) foi removido e o total do grupo '${grpName}' foi recalculado.`,
+          icon: 'trash-outline',
+          color: '#EF4444',
+          groupId: gId,
+        });
+      }
     }
   };
 
@@ -1050,6 +1187,14 @@ export function FinanceProvider({ children }) {
     await saveUserItem('active_group_id', newGroup.id);
     await saveUserItem('view_mode', 'shared');
 
+    pushGroupNotification({
+      title: `👥 Novo grupo criado: ${newGroup.name}`,
+      message: `O grupo '${newGroup.name}' (${newGroup.type}) está ativo! Envie o código de convite ${newGroup.inviteCode} (válido por 30 min) para quem vai dividir as finanças com você.`,
+      icon: 'people',
+      color: '#7C3AED',
+      groupId: newGroup.id,
+    });
+
     return newGroup;
   };
 
@@ -1135,6 +1280,14 @@ export function FinanceProvider({ children }) {
     setSharedGroups(updatedGroups);
     await saveUserItem('shared_groups', updatedGroups);
 
+    pushGroupNotification({
+      title: `🔑 Novo código de convite: ${finalCode}`,
+      message: `Um novo código de convite (${finalCode}) válido por 30 minutos foi gerado para o grupo '${targetGroup.name}'.`,
+      icon: 'key-outline',
+      color: '#0EA5E9',
+      groupId: targetGroup.id,
+    });
+
     return {
       inviteCode: finalCode,
       expiresAt: newExpiresAt,
@@ -1168,6 +1321,14 @@ export function FinanceProvider({ children }) {
       setActiveGroupIdState(nextId);
       await saveUserItem('active_group_id', nextId);
     }
+
+    pushGroupNotification({
+      title: `🗑️ Grupo encerrado: ${targetGroup.name}`,
+      message: `O grupo compartilhado '${targetGroup.name}' foi excluído permanentemente.`,
+      icon: 'trash-outline',
+      color: '#EF4444',
+      groupId: null,
+    });
 
     return { success: true };
   };
@@ -1220,6 +1381,14 @@ export function FinanceProvider({ children }) {
       setActiveGroupIdState(nextId);
       await saveUserItem('active_group_id', nextId);
     }
+
+    pushGroupNotification({
+      title: `👋 Você saiu do grupo ${targetGroup.name}`,
+      message: `Sua saída do grupo '${targetGroup.name}' foi concluída e o criador foi notificado.`,
+      icon: 'exit-outline',
+      color: '#F59E0B',
+      groupId: null,
+    });
 
     return {
       success: true,
@@ -1317,6 +1486,14 @@ export function FinanceProvider({ children }) {
       }
     }
 
+    pushGroupNotification({
+      title: `🚫 Participante removido de ${targetGroup.name}`,
+      message: `${targetMember.name || 'Participante'} foi removido do grupo '${targetGroup.name}'.`,
+      icon: 'person-remove-outline',
+      color: '#EF4444',
+      groupId: targetGroupId,
+    });
+
     return {
       success: true,
       memberName: targetMember.name || 'Participante',
@@ -1328,6 +1505,7 @@ export function FinanceProvider({ children }) {
   const invitePersonToGroup = async ({ groupId, email, type = 'Casal', message = '' }) => {
     const code = generateGroupInviteCode();
     const targetGroupId = groupId || activeGroupId || sharedGroups[0]?.id;
+    const targetGroup = sharedGroups.find((g) => g.id === targetGroupId);
     const inv = {
       id: 'inv-' + Date.now(),
       groupId: targetGroupId,
@@ -1352,6 +1530,15 @@ export function FinanceProvider({ children }) {
     const nextInvitations = [inv, ...groupInvitations];
     setGroupInvitations(nextInvitations);
     await saveUserItem('group_invitations', nextInvitations);
+
+    pushGroupNotification({
+      title: `📩 Convite enviado para ${email.trim()}`,
+      message: `Convite gerado para o grupo '${targetGroup?.name || 'Compartilhado'}'. Código de acesso: ${inv.token} (válido por 30 min).`,
+      icon: 'mail-unread-outline',
+      color: '#7C3AED',
+      groupId: targetGroupId,
+    });
+
     return inv;
   };
 
@@ -1472,6 +1659,14 @@ export function FinanceProvider({ children }) {
     await saveUserItem('active_group_id', joinedGroup.id);
     await saveUserItem('view_mode', 'shared');
 
+    pushGroupNotification({
+      title: `🎉 Convite aceito: ${joinedGroup.name}`,
+      message: `Você entrou no grupo '${joinedGroup.name}'! Agora você será avisado sempre que o valor do grupo for alterado ou uma conta for dividida.`,
+      icon: 'checkmark-circle',
+      color: '#10B981',
+      groupId: joinedGroup.id,
+    });
+
     return joinedGroup;
   };
 
@@ -1505,6 +1700,26 @@ export function FinanceProvider({ children }) {
     const nextTxs = [newTx, ...transactions];
     setTransactions(nextTxs);
     await saveUserItem('transactions', nextTxs);
+
+    const fmtAmt = Number(newTx.amount || 0).toLocaleString('pt-BR', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+    const grpTitle = targetGroup?.name || 'Grupo Compartilhado';
+    const isBillSplit = !!expData.splitDetails;
+
+    pushGroupNotification({
+      title: isBillSplit
+        ? `🧾 Nova divisão no grupo ${grpTitle}: R$ ${fmtAmt}`
+        : `💸 Valor alterado no grupo ${grpTitle}: R$ ${fmtAmt}`,
+      message: isBillSplit
+        ? `${payer} dividiu a conta '${newTx.description}' (R$ ${fmtAmt}) entre ${expData.splitDetails?.members?.length || 2} participantes no grupo '${grpTitle}'.`
+        : `${payer} registrou '${newTx.description}' de R$ ${fmtAmt} no grupo '${grpTitle}'. O total e os saldos do grupo foram atualizados!`,
+      icon: isBillSplit ? 'pie-chart' : 'cash-outline',
+      color: '#7C3AED',
+      groupId: targetGroupId,
+    });
+
     return newTx;
   };
 
@@ -1524,6 +1739,21 @@ export function FinanceProvider({ children }) {
     const nextSettlements = [newSettlement, ...settlements];
     setSettlements(nextSettlements);
     await saveUserItem('settlements', nextSettlements);
+
+    const targetGrp = sharedGroups.find((g) => g.id === newSettlement.groupId);
+    const fmtSettle = Number(newSettlement.amount || 0).toLocaleString('pt-BR', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+
+    pushGroupNotification({
+      title: `🤝 Acerto de contas em ${targetGrp?.name || 'Grupo'}: R$ ${fmtSettle}`,
+      message: `${newSettlement.fromMember} pagou R$ ${fmtSettle} para ${newSettlement.toMember}. O saldo devedor do grupo foi atualizado!`,
+      icon: 'swap-horizontal',
+      color: '#10B981',
+      groupId: newSettlement.groupId,
+    });
+
     return newSettlement;
   };
 
@@ -1914,6 +2144,205 @@ Responda de forma clara, motivadora e estruturada em tópicos!`;
     await saveUserItem('ai_skin', skinId);
   };
 
+  // Agenda notificações inteligentes nativas no celular sempre que os saldos mudarem
+  useEffect(() => {
+    if (!loaded || !loggedInUser?.id) return;
+    initPhoneNotifications().then(() => {
+      scheduleSmartPhoneNotifications({
+        userName: loggedInUser?.name,
+        totalIncome,
+        totalExpense,
+        totalBalance,
+        pendingBillsAmount,
+      });
+    });
+  }, [loaded, loggedInUser?.id, totalIncome, totalExpense, totalBalance, pendingBillsAmount]);
+
+  // Central de Notificações Inteligentes (In-App + Celular)
+  const fmtMoneyNotif = (val) =>
+    Number(val || 0).toLocaleString('pt-BR', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+
+  const smartSystemNotifications = [];
+
+  // 1. Notificação Inteligente sobre Movimento do Dinheiro e Economia
+  const expenseRatio = totalIncome > 0 ? Math.round((totalExpense / totalIncome) * 100) : 0;
+  if (totalIncome > 0 && expenseRatio >= 75) {
+    smartSystemNotifications.push({
+      id: `smart-economy-high-${selectedMonth}`,
+      category: 'economy',
+      icon: 'warning-outline',
+      color: '#EF4444',
+      title: '⚠️ Alerta do FINN: Hora de economizar!',
+      message: `Seus gastos (R$ ${fmtMoneyNotif(totalExpense)}) já consumiram ${expenseRatio}% da sua renda deste mês. Reduza gastos variáveis esta semana para proteger seu saldo.`,
+      time: 'Hoje',
+      targetScreen: 'Categories',
+    });
+  } else if (totalIncome > 0 || totalExpense > 0) {
+    smartSystemNotifications.push({
+      id: `smart-economy-status-${selectedMonth}`,
+      category: 'economy',
+      icon: 'sparkles',
+      color: '#7C3AED',
+      title: '📊 Movimento do seu dinheiro e economia',
+      message:
+        economizadoPercent > 0
+          ? `Parabéns! Você está economizando ${economizadoPercent}% da sua renda neste mês (Saldo livre: R$ ${fmtMoneyNotif(resultadoDoMes)}). Que tal guardar uma parte nos Cofrinhos?`
+          : `Seu balanço atual está em R$ ${fmtMoneyNotif(totalBalance)}. Acompanhe seus lançamentos e tente reservar ao menos 15% da renda para economizar.`,
+      time: 'Agora',
+      targetScreen: 'Savings',
+    });
+  } else {
+    smartSystemNotifications.push({
+      id: 'smart-economy-welcome',
+      category: 'economy',
+      icon: 'wallet-outline',
+      color: '#7C3AED',
+      title: '💡 Dica Inteligente de Economia FINN',
+      message:
+        'Registre suas entradas e saídas para o FINN analisar o movimento do seu dinheiro em tempo real e avisar quando e onde você deve economizar.',
+      time: 'Hoje',
+      targetScreen: 'Assistant',
+    });
+  }
+
+  // 2. Contas / Faturas pendentes
+  if (pendingBillsAmount > 0) {
+    smartSystemNotifications.push({
+      id: `smart-bills-${selectedMonth}`,
+      category: 'bills',
+      icon: 'calendar-outline',
+      color: '#F59E0B',
+      title: '📅 Contas pendentes neste mês',
+      message: `Você possui R$ ${fmtMoneyNotif(pendingBillsAmount)} em contas a pagar. Não se esqueça de dar baixa no app assim que realizar o pagamento!`,
+      time: 'Este mês',
+      targetScreen: 'Bills',
+    });
+  }
+
+  // 2.5. Notificações Inteligentes de Grupos e Convites
+  const pendingInvites = (groupInvitations || []).filter((inv) => inv.status === 'PENDING');
+  if (pendingInvites.length > 0) {
+    smartSystemNotifications.push({
+      id: `smart-group-invites-${pendingInvites.length}`,
+      category: 'group',
+      icon: 'mail-unread-outline',
+      color: '#7C3AED',
+      title: `📩 Convites de Grupo Ativos (${pendingInvites.length})`,
+      message: `Último convite enviado para ${pendingInvites[0].email} (Código: ${pendingInvites[0].token}). Toque para gerenciar convites e membros do grupo.`,
+      time: 'Convite de grupo',
+      targetScreen: 'SharedFinances',
+    });
+  }
+
+  if (sharedGroups && sharedGroups.length > 0) {
+    const activeGrp = sharedGroups.find((g) => g.id === activeGroupId) || sharedGroups[0];
+    if (activeGrp) {
+      const grpTotal = transactions
+        .filter((t) => t.isShared && (t.groupId === activeGrp.id || t.sharedGroupId === activeGrp.id))
+        .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+      smartSystemNotifications.push({
+        id: `smart-group-summary-${activeGrp.id}-${grpTotal}`,
+        category: 'group',
+        icon: 'people-outline',
+        color: '#8B5CF6',
+        title: `👥 Resumo do grupo: ${activeGrp.name}`,
+        message:
+          grpTotal > 0
+            ? `Total movimentado no grupo '${activeGrp.name}': R$ ${fmtMoneyNotif(grpTotal)} (${activeGrp.members?.length || 1} participante${(activeGrp.members?.length || 1) > 1 ? 's' : ''}). Toque para ver divisões e acertos.`
+            : `O grupo '${activeGrp.name}' está ativo (${activeGrp.members?.length || 1} participante${(activeGrp.members?.length || 1) > 1 ? 's' : ''}). Qualquer convite ou alteração de valor será notificado aqui e no celular.`,
+        time: 'Finanças em Grupo',
+        targetScreen: 'SharedFinances',
+      });
+    }
+  }
+
+  // 3. Lembrete para não esquecer de usar o app
+  smartSystemNotifications.push({
+    id: 'smart-reminder-daily',
+    category: 'reminder',
+    icon: 'notifications-outline',
+    color: '#0EA5E9',
+    title: '📲 Não se esqueça de usar o FINN hoje!',
+    message:
+      'Fez alguma compra no Pix, cartão ou dinheiro? Mande um áudio ou foto do comprovante para o FINN IA e mantenha seu controle financeiro 100% em dia.',
+    time: 'Lembrete diário',
+    targetScreen: 'Assistant',
+  });
+
+  // 4. Lembrete de atualização do aplicativo
+  smartSystemNotifications.push({
+    id: 'smart-update-app',
+    category: 'update',
+    icon: 'Rocket-outline',
+    color: '#10B981',
+    title: '🚀 Mantenha seu FINN sempre atualizado',
+    message:
+      'Novas melhorias na Carteira FINN Wallet, Finanças Compartilhadas e Inteligência Artificial estão ativas. Verifique sempre se você está com a versão mais recente instalada!',
+    time: 'Sistema',
+    targetScreen: null,
+  });
+
+  const notifications = [...activityNotifications, ...smartSystemNotifications].map((n) => ({
+    ...n,
+    icon: n.icon === 'Rocket-outline' ? 'rocket-outline' : n.icon,
+    read: readNotificationIds.includes(n.id),
+  }));
+
+  const unreadNotificationsCount = notifications.filter((n) => !n.read).length;
+
+  const markNotificationAsRead = async (notifId) => {
+    if (!notifId || readNotificationIds.includes(notifId)) return;
+    const next = [...readNotificationIds, notifId];
+    setReadNotificationIds(next);
+    await saveUserItem('read_notifications', next);
+  };
+
+  const markAllNotificationsAsRead = async () => {
+    const allIds = notifications.map((n) => n.id);
+    setReadNotificationIds(allIds);
+    await saveUserItem('read_notifications', allIds);
+  };
+
+  const sendTestSmartNotification = async () => {
+    const title =
+      totalExpense > totalIncome && totalIncome > 0
+        ? '⚠️ Alerta FINN: Atenção aos gastos!'
+        : '🤖 FINN IA: Análise do seu dinheiro';
+    const body =
+      totalIncome > 0 || totalExpense > 0
+        ? `Saldo atual: R$ ${fmtMoneyNotif(totalBalance)} | Gastos no mês: R$ ${fmtMoneyNotif(totalExpense)}. Continue registrando tudo no FINN para economizar mais!`
+        : 'Não se esqueça de registrar suas movimentações de hoje no FINN e manter seu aplicativo atualizado!';
+
+    const sent = await sendInstantPhoneNotification({
+      title,
+      body,
+      data: { type: 'manual_smart_test' },
+    });
+
+    const testInApp = {
+      id: 'notif-smart-' + Date.now(),
+      category: 'economy',
+      icon: 'notifications',
+      color: '#7C3AED',
+      title,
+      message: body,
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      createdAt: new Date().toISOString(),
+      targetScreen: 'Assistant',
+    };
+
+    setActivityNotifications((prev) => {
+      const next = [testInApp, ...prev].slice(0, 25);
+      saveUserItem('activity_notifications', next);
+      return next;
+    });
+
+    return sent;
+  };
+
   return (
     <FinanceContext.Provider
       value={{
@@ -1924,6 +2353,11 @@ Responda de forma clara, motivadora e estruturada em tópicos!`;
         deleteAccount,
         aiSkin,
         setAiSkin: updateAiSkin,
+        notifications,
+        unreadNotificationsCount,
+        markNotificationAsRead,
+        markAllNotificationsAsRead,
+        sendTestSmartNotification,
         transactions: filteredTransactions,
         allTransactions: transactions,
         accounts,

@@ -11,11 +11,13 @@ import {
   Alert,
   Image,
   ScrollView,
+  Modal,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import Svg, { Path } from 'react-native-svg';
 import { COLORS } from '../theme/colors';
-import { loginUser, registerUser } from '../services/apiService';
+import { loginUser, registerUser, loginWithGoogleAccount } from '../services/apiService';
 import {
   checkBiometricSupport,
   isBiometricLoginEnabled,
@@ -27,7 +29,33 @@ import {
 import { useFinance } from '../context/FinanceContext';
 
 const finnLogoSource = require('../../assets/finn-logo.png');
-const robotMascotSource = require('../../assets/agenda-robot-happy.png');
+const robotMascotSource = require('../../assets/finn-login-robot.png');
+
+// Logo oficial do "G" do Google com as 4 cores oficiais (#4285F4, #34A853, #FBBC05, #EA4335)
+function GoogleColorLogo({ size = 20, style }) {
+  return (
+    <View style={[{ width: size, height: size }, style]}>
+      <Svg width={size} height={size} viewBox="0 0 24 24">
+        <Path
+          fill="#4285F4"
+          d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17z"
+        />
+        <Path
+          fill="#34A853"
+          d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.11-6.72-4.96H1.29v3.14C3.26 21.3 7.31 24 12 24z"
+        />
+        <Path
+          fill="#FBBC05"
+          d="M5.28 14.24c-.24-.72-.38-1.49-.38-2.24s.14-1.52.38-2.24V6.62H1.29C.47 8.24 0 10.06 0 12s.47 3.76 1.29 5.38l3.99-3.14z"
+        />
+        <Path
+          fill="#EA4335"
+          d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.7 1.29 6.62l3.99 3.14c.95-2.85 3.6-4.96 6.72-4.96z"
+        />
+      </Svg>
+    </View>
+  );
+}
 
 export default function LoginScreen({ onLoginSuccess }) {
   const insets = useSafeAreaInsets();
@@ -62,6 +90,12 @@ export default function LoginScreen({ onLoginSuccess }) {
   const [showRegPassword, setShowRegPassword] = useState(false);
   const [showRegConfirmPassword, setShowRegConfirmPassword] = useState(false);
   const [loadingRegister, setLoadingRegister] = useState(false);
+
+  // Google Sign-In
+  const [googleModalVisible, setGoogleModalVisible] = useState(false);
+  const [googleEmail, setGoogleEmail] = useState('');
+  const [googleName, setGoogleName] = useState('');
+  const [loadingGoogle, setLoadingGoogle] = useState(false);
 
   // Regras de validação de senha em tempo real
   const hasMinLength = regPassword.length >= 8;
@@ -283,7 +317,46 @@ export default function LoginScreen({ onLoginSuccess }) {
   };
 
   const handleGoogleLogin = () => {
-    Alert.alert('Google Sign-In', 'O login direto com conta Google estará disponível na próxima atualização.');
+    const initialEmail = loginEmail.trim() || regEmail.trim() || '';
+    setGoogleEmail(initialEmail);
+    if (!googleName && initialEmail.includes('@')) {
+      const prefix = initialEmail
+        .split('@')[0]
+        .replace(/[._0-9-]+/g, ' ')
+        .trim()
+        .replace(/\b\w/g, (l) => l.toUpperCase());
+      setGoogleName(prefix || '');
+    }
+    setGoogleModalVisible(true);
+  };
+
+  const handleConfirmGoogleLogin = async (customEmail, customName) => {
+    const targetEmail = (customEmail !== undefined ? customEmail : googleEmail).trim().toLowerCase();
+    const targetName = (customName !== undefined ? customName : googleName).trim();
+
+    if (!targetEmail || !targetEmail.includes('@')) {
+      Alert.alert('Conta Google', 'Informe seu endereço de e-mail do Google (ex: voce@gmail.com).');
+      return;
+    }
+
+    setLoadingGoogle(true);
+    try {
+      const res = await loginWithGoogleAccount({
+        email: targetEmail,
+        name: targetName,
+      });
+
+      if (res?.user) {
+        await setRememberedCredentials(targetEmail, true);
+        setGoogleModalVisible(false);
+        setLoggedInUser(res.user);
+        if (onLoginSuccess) onLoginSuccess(res.user);
+      }
+    } catch (err) {
+      Alert.alert('Erro ao conectar com Google', err.message || 'Tente novamente.');
+    } finally {
+      setLoadingGoogle(false);
+    }
   };
 
   // ==========================================
@@ -500,9 +573,14 @@ export default function LoginScreen({ onLoginSuccess }) {
             <TouchableOpacity
               style={styles.googleButton}
               onPress={handleGoogleLogin}
+              disabled={loadingGoogle || loadingLogin}
               activeOpacity={0.8}
             >
-              <Ionicons name="logo-google" size={18} color="#EA4335" style={{ marginRight: 8 }} />
+              {loadingGoogle ? (
+                <ActivityIndicator size="small" color="#4285F4" style={{ marginRight: 10 }} />
+              ) : (
+                <GoogleColorLogo size={20} style={{ marginRight: 10 }} />
+              )}
               <Text style={styles.googleButtonText}>Continuar com Google</Text>
             </TouchableOpacity>
 
@@ -515,6 +593,116 @@ export default function LoginScreen({ onLoginSuccess }) {
             </View>
           </View>
         </ScrollView>
+
+        {/* MODAL DE CONEXÃO COM CONTA GOOGLE */}
+        <Modal
+          visible={googleModalVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => !loadingGoogle && setGoogleModalVisible(false)}
+        >
+          <TouchableOpacity
+            style={styles.googleModalOverlay}
+            activeOpacity={1}
+            onPress={() => !loadingGoogle && setGoogleModalVisible(false)}
+          >
+            <View style={styles.googleModalCard} onStartShouldSetResponder={() => true}>
+              <View style={styles.googleModalHeader}>
+                <GoogleColorLogo size={28} />
+                <Text style={styles.googleModalBrandText}>Fazer login com o Google</Text>
+                <Text style={styles.googleModalSubText}>
+                  Escolha ou informe sua conta Google para prosseguir para o{' '}
+                  <Text style={{ fontWeight: '800', color: '#7C3AED' }}>FINN</Text>
+                </Text>
+              </View>
+
+              {/* Se já houver um e-mail preenchido/lembrado, exibe como opção rápida de 1 toque */}
+              {loginEmail.trim().includes('@') && (
+                <TouchableOpacity
+                  style={styles.googleQuickAccountBtn}
+                  onPress={() => handleConfirmGoogleLogin(loginEmail.trim(), googleName)}
+                  disabled={loadingGoogle}
+                  activeOpacity={0.8}
+                >
+                  <View style={styles.googleQuickAvatar}>
+                    <Text style={styles.googleQuickAvatarLetter}>
+                      {loginEmail.trim()[0].toUpperCase()}
+                    </Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.googleQuickName} numberOfLines={1}>
+                      {googleName ||
+                        loginEmail
+                          .trim()
+                          .split('@')[0]
+                          .replace(/[._0-9-]+/g, ' ')
+                          .trim()
+                          .replace(/\b\w/g, (l) => l.toUpperCase()) ||
+                        'Minha Conta Google'}
+                    </Text>
+                    <Text style={styles.googleQuickEmail} numberOfLines={1}>
+                      {loginEmail.trim().toLowerCase()}
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color="#64748B" />
+                </TouchableOpacity>
+              )}
+
+              <View style={styles.googleModalForm}>
+                <Text style={styles.googleInputLabel}>E-MAIL GOOGLE</Text>
+                <View style={styles.inputContainer}>
+                  <GoogleColorLogo size={18} style={{ marginRight: 10 }} />
+                  <TextInput
+                    style={styles.inputField}
+                    placeholder="seuemail@gmail.com"
+                    placeholderTextColor="#9CA3AF"
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    value={googleEmail}
+                    onChangeText={setGoogleEmail}
+                  />
+                </View>
+
+                <Text style={styles.googleInputLabel}>SEU NOME (OPCIONAL)</Text>
+                <View style={styles.inputContainer}>
+                  <Ionicons name="person-outline" size={19} color="#4285F4" style={styles.inputIcon} />
+                  <TextInput
+                    style={styles.inputField}
+                    placeholder="Como quer ser chamado no FINN"
+                    placeholderTextColor="#9CA3AF"
+                    autoCapitalize="words"
+                    value={googleName}
+                    onChangeText={setGoogleName}
+                  />
+                </View>
+
+                <TouchableOpacity
+                  style={[styles.googleConfirmBtn, loadingGoogle && styles.buttonDisabled]}
+                  onPress={() => handleConfirmGoogleLogin()}
+                  disabled={loadingGoogle}
+                  activeOpacity={0.85}
+                >
+                  {loadingGoogle ? (
+                    <ActivityIndicator color="#FFFFFF" />
+                  ) : (
+                    <>
+                      <Text style={styles.googleConfirmBtnText}>Conectar Conta Google</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.googleCancelBtn}
+                  onPress={() => setGoogleModalVisible(false)}
+                  disabled={loadingGoogle}
+                >
+                  <Text style={styles.googleCancelBtnText}>Cancelar</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </TouchableOpacity>
+        </Modal>
 
         {/* Onda decorativa de fundo suave */}
         <View style={styles.bottomWave} pointerEvents="none" />
@@ -829,19 +1017,19 @@ const styles = StyleSheet.create({
   mascotWrapper: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 8,
-    marginBottom: 8,
+    marginTop: 6,
+    marginBottom: 10,
   },
   mascotGlow: {
     position: 'absolute',
-    width: 150,
-    height: 150,
-    borderRadius: 75,
+    width: 158,
+    height: 158,
+    borderRadius: 79,
     backgroundColor: 'rgba(124, 58, 237, 0.08)',
   },
   mascotImage: {
-    width: 140,
-    height: 140,
+    width: 162,
+    height: 150,
   },
 
   // TÍTULO E SUBTÍTULO
@@ -1062,6 +1250,110 @@ const styles = StyleSheet.create({
     color: '#374151',
     fontSize: 14,
     fontWeight: '600',
+  },
+  googleModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 22,
+  },
+  googleModalCard: {
+    width: '100%',
+    maxWidth: 400,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 22,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.15,
+    shadowRadius: 20,
+    elevation: 8,
+  },
+  googleModalHeader: {
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  googleModalBrandText: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#1E293B',
+    marginTop: 10,
+  },
+  googleModalSubText: {
+    fontSize: 13,
+    color: '#64748B',
+    textAlign: 'center',
+    marginTop: 4,
+    lineHeight: 18,
+  },
+  googleQuickAccountBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 14,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginBottom: 14,
+    gap: 12,
+  },
+  googleQuickAvatar: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#4285F4',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  googleQuickAvatarLetter: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  googleQuickName: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  googleQuickEmail: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 1,
+  },
+  googleModalForm: {
+    width: '100%',
+  },
+  googleInputLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#64748B',
+    marginBottom: 6,
+    letterSpacing: 0.5,
+  },
+  googleConfirmBtn: {
+    backgroundColor: '#4285F4',
+    height: 48,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 4,
+  },
+  googleConfirmBtnText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  googleCancelBtn: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    marginTop: 4,
+  },
+  googleCancelBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#64748B',
   },
 
   // FOOTER

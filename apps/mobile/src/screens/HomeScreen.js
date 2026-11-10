@@ -80,8 +80,14 @@ export default function HomeScreen({ navigation }) {
     acceptGroupInvitation,
     isGroupCreator,
     cards = [],
+    notifications = [],
+    unreadNotificationsCount = 0,
+    markNotificationAsRead,
+    markAllNotificationsAsRead,
+    sendTestSmartNotification,
   } = useFinance();
 
+  const [notificationsModalVisible, setNotificationsModalVisible] = useState(false);
   const [groupModalVisible, setGroupModalVisible] = useState(false);
   const [modalQuickNewGroup, setModalQuickNewGroup] = useState(false);
   const [quickGroupTab, setQuickGroupTab] = useState('create'); // 'create' | 'join'
@@ -93,33 +99,15 @@ export default function HomeScreen({ navigation }) {
     if (sharedGroups && sharedGroups.length > 0) {
       return sharedGroups.find((g) => g.id === activeGroupId) || sharedGroups[0];
     }
-    return {
-      id: 'default-casal',
-      name: 'Finanças do Casal',
-      type: 'Casal',
-      members: [
-        { id: '1', name: loggedInUser?.name || 'Você' },
-        { id: '2', name: 'Parceiro(a)' },
-      ],
-    };
-  }, [sharedGroups, activeGroupId, loggedInUser]);
+    return null;
+  }, [sharedGroups, activeGroupId]);
 
   const displayGroups = useMemo(() => {
     if (sharedGroups && sharedGroups.length > 0) {
       return sharedGroups;
     }
-    return [
-      {
-        id: 'default-casal',
-        name: 'Finanças do Casal',
-        type: 'Casal',
-        members: [
-          { id: '1', name: loggedInUser?.name || 'Você' },
-          { id: '2', name: 'Parceiro(a)' },
-        ],
-      },
-    ];
-  }, [sharedGroups, loggedInUser]);
+    return [];
+  }, [sharedGroups]);
 
   // Saldo 100% isolado do grupo ativo: apenas receitas e despesas vinculadas a este grupo
   const sharedGroupBalance = useMemo(() => {
@@ -408,9 +396,13 @@ export default function HomeScreen({ navigation }) {
 
         {/* ÍCONES DA DIREITA: NOTIFICAÇÃO E AVATAR */}
         <View style={styles.rightIcons}>
-          <TouchableOpacity style={styles.iconCircle}>
+          <TouchableOpacity
+            style={styles.iconCircle}
+            onPress={() => setNotificationsModalVisible(true)}
+            activeOpacity={0.8}
+          >
             <Ionicons name="notifications-outline" size={19} color="#18181B" />
-            <View style={styles.notificationDot} />
+            {unreadNotificationsCount > 0 && <View style={styles.notificationDot} />}
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -590,7 +582,7 @@ export default function HomeScreen({ navigation }) {
               >
                 <Ionicons name="people" size={17} color="#FFFFFF" />
                 <Text style={styles.heroSharedTopPillText} numberOfLines={1}>
-                  Finanças compartilhadas
+                  {activeSharedGroup?.name || 'Finanças compartilhadas'}
                 </Text>
                 <Ionicons name="chevron-down" size={15} color="#FFFFFF" />
               </TouchableOpacity>
@@ -611,7 +603,9 @@ export default function HomeScreen({ navigation }) {
               >
                 <Ionicons name="people" size={15} color="#D8B4FE" />
                 <Text style={styles.heroSharedBottomPillText}>
-                  {activeSharedGroup?.members?.length || 2} participante{activeSharedGroup?.members?.length !== 1 ? 's' : ''}
+                  {activeSharedGroup
+                    ? `${activeSharedGroup.members?.length || 1} participante${(activeSharedGroup.members?.length || 1) !== 1 ? 's' : ''}`
+                    : 'Nenhum grupo • Toque para criar'}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -1252,59 +1246,71 @@ export default function HomeScreen({ navigation }) {
             </View>
 
             <ScrollView style={styles.groupModalList} showsVerticalScrollIndicator={false}>
-              {displayGroups.map((grp) => {
-                const isSelected = activeSharedGroup?.id === grp.id;
-                const memberCount = grp.members?.length || 2;
-                return (
-                  <TouchableOpacity
-                    key={grp.id}
-                    style={[styles.groupItemRow, isSelected && styles.groupItemRowActive]}
-                    onPress={() => {
-                      if (setActiveGroupId) setActiveGroupId(grp.id);
-                      setGroupModalVisible(false);
-                    }}
-                    activeOpacity={0.75}
-                  >
-                    <View style={[styles.groupItemAvatar, isSelected && styles.groupItemAvatarActive]}>
-                      <Ionicons
-                        name={grp.type === 'Casal' ? 'heart' : 'people'}
-                        size={18}
-                        color={isSelected ? '#FFFFFF' : '#7C3AED'}
-                      />
-                    </View>
+              {displayGroups.length === 0 ? (
+                <View style={{ paddingVertical: 24, alignItems: 'center', gap: 6 }}>
+                  <Ionicons name="people-outline" size={32} color="#94A3B8" />
+                  <Text style={{ fontSize: 14, fontWeight: '700', color: '#1E293B', textAlign: 'center' }}>
+                    Nenhum grupo criado ainda
+                  </Text>
+                  <Text style={{ fontSize: 12, color: '#64748B', textAlign: 'center', paddingHorizontal: 16 }}>
+                    Crie um novo grupo ou entre com um código de convite para dividir e organizar finanças.
+                  </Text>
+                </View>
+              ) : (
+                displayGroups.map((grp) => {
+                  const isSelected = activeSharedGroup?.id === grp.id;
+                  const memberCount = grp.members?.length || 1;
+                  return (
+                    <TouchableOpacity
+                      key={grp.id}
+                      style={[styles.groupItemRow, isSelected && styles.groupItemRowActive]}
+                      onPress={() => {
+                        if (setActiveGroupId) setActiveGroupId(grp.id);
+                        setGroupModalVisible(false);
+                      }}
+                      activeOpacity={0.75}
+                    >
+                      <View style={[styles.groupItemAvatar, isSelected && styles.groupItemAvatarActive]}>
+                        <Ionicons
+                          name={grp.type === 'Casal' ? 'heart' : 'people'}
+                          size={18}
+                          color={isSelected ? '#FFFFFF' : '#7C3AED'}
+                        />
+                      </View>
 
-                    <View style={{ flex: 1 }}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                        <Text style={[styles.groupItemName, isSelected && styles.groupItemNameActive]}>
-                          {grp.name}
-                        </Text>
-                        <View style={styles.groupItemTypeBadge}>
-                          <Text style={styles.groupItemTypeBadgeText}>{grp.type || 'Casal'}</Text>
-                        </View>
-                        {isGroupCreator && isGroupCreator(grp) && (
-                          <View style={styles.groupItemOwnerBadge}>
-                            <Text style={styles.groupItemOwnerBadgeText}>👑 Criador</Text>
+                      <View style={{ flex: 1 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          <Text style={[styles.groupItemName, isSelected && styles.groupItemNameActive]}>
+                            {grp.name}
+                          </Text>
+                          <View style={styles.groupItemTypeBadge}>
+                            <Text style={styles.groupItemTypeBadgeText}>{grp.type || 'Casal'}</Text>
                           </View>
-                        )}
+                          {isGroupCreator && isGroupCreator(grp) && (
+                            <View style={styles.groupItemOwnerBadge}>
+                              <Text style={styles.groupItemOwnerBadgeText}>👑 Criador</Text>
+                            </View>
+                          )}
+                        </View>
+                        <Text style={styles.groupItemMembersText}>
+                          {memberCount} {memberCount === 1 ? 'participante' : 'participantes'}
+                          {grp.members && grp.members.length > 0
+                            ? ` • ${grp.members.map((m) => m.name || m.email).slice(0, 2).join(', ')}`
+                            : ''}
+                        </Text>
                       </View>
-                      <Text style={styles.groupItemMembersText}>
-                        {memberCount} {memberCount === 1 ? 'participante' : 'participantes'}
-                        {grp.members && grp.members.length > 0
-                          ? ` • ${grp.members.map((m) => m.name || m.email).slice(0, 2).join(', ')}`
-                          : ''}
-                      </Text>
-                    </View>
 
-                    {isSelected ? (
-                      <View style={styles.groupItemCheckCircle}>
-                        <Ionicons name="checkmark" size={16} color="#FFFFFF" />
-                      </View>
-                    ) : (
-                      <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
-                    )}
-                  </TouchableOpacity>
-                );
-              })}
+                      {isSelected ? (
+                        <View style={styles.groupItemCheckCircle}>
+                          <Ionicons name="checkmark" size={16} color="#FFFFFF" />
+                        </View>
+                      ) : (
+                        <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
+                      )}
+                    </TouchableOpacity>
+                  );
+                })
+              )}
             </ScrollView>
 
             <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
@@ -1563,6 +1569,212 @@ export default function HomeScreen({ navigation }) {
                 </TouchableOpacity>
               </View>
             )}
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* MODAL CENTRAL DE NOTIFICAÇÕES INTELIGENTES (APP + CELULAR) */}
+      <Modal
+        visible={notificationsModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setNotificationsModalVisible(false)}
+      >
+        <TouchableOpacity
+          style={styles.groupModalOverlay}
+          activeOpacity={1}
+          onPress={() => setNotificationsModalVisible(false)}
+        >
+          <View
+            style={[
+              styles.groupModalSheet,
+              { maxHeight: '82%', paddingBottom: insets.bottom + 20 },
+            ]}
+            onStartShouldSetResponder={() => true}
+          >
+            <View style={styles.groupModalHandle} />
+
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginBottom: 6,
+              }}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <View
+                  style={{
+                    width: 34,
+                    height: 34,
+                    borderRadius: 11,
+                    backgroundColor: '#F3E8FF',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Ionicons name="notifications" size={18} color="#7C3AED" />
+                </View>
+                <View>
+                  <Text style={styles.groupModalTitle}>Notificações Inteligentes</Text>
+                  <Text style={{ fontSize: 11, color: '#64748B', fontWeight: '500' }}>
+                    Alertas no app e na barra do seu celular
+                  </Text>
+                </View>
+              </View>
+
+              {unreadNotificationsCount > 0 && (
+                <TouchableOpacity
+                  onPress={() => markAllNotificationsAsRead && markAllNotificationsAsRead()}
+                  style={{
+                    paddingHorizontal: 10,
+                    paddingVertical: 6,
+                    borderRadius: 999,
+                    backgroundColor: '#F3E8FF',
+                  }}
+                >
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: '#7C3AED' }}>
+                    Marcar lidas ({unreadNotificationsCount})
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {/* Botão para disparar alerta imediato no celular */}
+            <TouchableOpacity
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8,
+                backgroundColor: '#7C3AED',
+                borderRadius: 12,
+                paddingVertical: 10,
+                paddingHorizontal: 14,
+                marginVertical: 10,
+              }}
+              onPress={async () => {
+                if (sendTestSmartNotification) {
+                  await sendTestSmartNotification();
+                }
+              }}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="phone-portrait-outline" size={16} color="#FFFFFF" />
+              <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '700' }}>
+                Receber análise inteligente no celular agora
+              </Text>
+            </TouchableOpacity>
+
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              style={{ marginTop: 4 }}
+              contentContainerStyle={{ gap: 10, paddingBottom: 12 }}
+            >
+              {notifications.map((item) => (
+                <TouchableOpacity
+                  key={item.id}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'flex-start',
+                    padding: 13,
+                    borderRadius: 16,
+                    backgroundColor: item.read ? '#F8FAFC' : '#F5F3FF',
+                    borderWidth: 1,
+                    borderColor: item.read ? '#E2E8F0' : '#DDD6FE',
+                    gap: 11,
+                  }}
+                  activeOpacity={0.8}
+                  onPress={() => {
+                    if (markNotificationAsRead) markNotificationAsRead(item.id);
+                    if (item.targetScreen) {
+                      setNotificationsModalVisible(false);
+                      navigation.navigate(item.targetScreen);
+                    }
+                  }}
+                >
+                  <View
+                    style={{
+                      width: 38,
+                      height: 38,
+                      borderRadius: 12,
+                      backgroundColor: (item.color || '#7C3AED') + '18',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      marginTop: 2,
+                    }}
+                  >
+                    <Ionicons
+                      name={item.icon || 'notifications-outline'}
+                      size={19}
+                      color={item.color || '#7C3AED'}
+                    />
+                  </View>
+
+                  <View style={{ flex: 1 }}>
+                    <View
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        marginBottom: 3,
+                      }}
+                    >
+                      <Text
+                        style={{
+                          fontSize: 13,
+                          fontWeight: '800',
+                          color: '#0F172A',
+                          flex: 1,
+                          paddingRight: 6,
+                        }}
+                      >
+                        {item.title}
+                      </Text>
+                      {!item.read && (
+                        <View
+                          style={{
+                            width: 8,
+                            height: 8,
+                            borderRadius: 4,
+                            backgroundColor: '#EC4899',
+                          }}
+                        />
+                      )}
+                    </View>
+
+                    <Text
+                      style={{
+                        fontSize: 12,
+                        color: '#475569',
+                        lineHeight: 17,
+                        fontWeight: '500',
+                      }}
+                    >
+                      {item.message}
+                    </Text>
+
+                    <View
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        marginTop: 6,
+                      }}
+                    >
+                      <Text style={{ fontSize: 10, fontWeight: '700', color: '#94A3B8' }}>
+                        {item.time || 'Agora'}
+                      </Text>
+                      {item.targetScreen && (
+                        <Text style={{ fontSize: 11, fontWeight: '700', color: '#7C3AED' }}>
+                          Abrir →
+                        </Text>
+                      )}
+                    </View>
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
           </View>
         </TouchableOpacity>
       </Modal>
