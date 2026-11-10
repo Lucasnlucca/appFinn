@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   View,
   Text,
@@ -231,7 +232,6 @@ export default function HomeScreen({ navigation }) {
 
   // Vídeo nativo do robô FINN com expo-video (executa 1x ao entrar, sem som, sem controles)
   const [showStaticOverlay, setShowStaticOverlay] = useState(false);
-  const [isFirstFrameRendered, setIsFirstFrameRendered] = useState(false);
   const [videoError, setVideoError] = useState(false);
 
   const player = useVideoPlayer(heroVideoSource, (p) => {
@@ -239,6 +239,30 @@ export default function HomeScreen({ navigation }) {
     p.muted = true;
     p.play();
   });
+
+  // Tocar no card ou focar na tela reinicia a reprodução do vídeo a partir do início
+  const playHeroAnimation = useCallback(() => {
+    setShowStaticOverlay(false);
+    setVideoError(false);
+    if (!player) return;
+    try {
+      player.currentTime = 0;
+      player.play();
+    } catch {
+      try {
+        player.replay();
+      } catch (err) {
+        console.warn('Erro ao reproduzir vídeo do mascote:', err);
+      }
+    }
+  }, [player]);
+
+  // Sempre que a HomeScreen entra em foco (após login, splash ou troca de abas), reproduz a animação
+  useFocusEffect(
+    useCallback(() => {
+      playHeroAnimation();
+    }, [playHeroAnimation])
+  );
 
   // Gerencia eventos do player de vídeo (conclusão e erros)
   useEffect(() => {
@@ -282,20 +306,8 @@ export default function HomeScreen({ navigation }) {
     };
   }, [player, navigation]);
 
-  // Tocar no card reinicia a reprodução do vídeo a partir do início
   const handleReplayHeroAnimation = () => {
-    setShowStaticOverlay(false);
-    if (!player) return;
-    try {
-      player.replay();
-    } catch {
-      try {
-        player.currentTime = 0;
-        player.play();
-      } catch (err) {
-        console.warn('Erro ao reiniciar vídeo do mascote:', err);
-      }
-    }
+    playHeroAnimation();
   };
 
   // Formatação em Real (com suporte a ocultar valores)
@@ -545,26 +557,18 @@ export default function HomeScreen({ navigation }) {
             />
           ) : (
             <>
-              {/* Camada 1: Vídeo nativo expo-video (sempre montado em background, não intercepta toques) */}
+              {/* Camada 1: Vídeo nativo expo-video (reproduz a animação do mascote) */}
               <VideoView
                 style={styles.heroMedia}
                 player={player}
                 contentFit="contain"
                 nativeControls={false}
                 surfaceType="textureView"
-                onFirstFrameRender={() => setIsFirstFrameRendered(true)}
                 pointerEvents="none"
               />
 
-              {/* Camada 2: Imagem de cobertura perfeitamente alinhada para eliminar flash ou exibir quadro final */}
-              {(!isFirstFrameRendered || videoError) ? (
-                <Image
-                  source={heroPosterSource}
-                  style={styles.heroMedia}
-                  resizeMode="contain"
-                  pointerEvents="none"
-                />
-              ) : showStaticOverlay ? (
+              {/* Camada 2: Imagem estática do robô somente após o término do vídeo ou em caso de erro */}
+              {(showStaticOverlay || videoError) ? (
                 <Image
                   source={heroBgSource}
                   style={styles.heroMedia}

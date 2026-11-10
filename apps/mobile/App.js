@@ -98,20 +98,8 @@ function MainTabs({ navigation }) {
   );
 }
 
-function MainAppContent({ assetsLoaded, isFontsReady, onReadyChange }) {
-  const { loggedInUser, loaded } = useFinance();
-
-  const isAppReady = Boolean(loaded && assetsLoaded && isFontsReady);
-
-  useEffect(() => {
-    if (onReadyChange) {
-      onReadyChange(isAppReady);
-    }
-  }, [isAppReady, onReadyChange]);
-
-  if (!isAppReady) {
-    return <View style={{ flex: 1, backgroundColor: '#000000' }} />;
-  }
+function MainAppContent() {
+  const { loggedInUser } = useFinance();
 
   if (!loggedInUser) {
     return <LoginScreen />;
@@ -141,13 +129,37 @@ function MainAppContent({ assetsLoaded, isFontsReady, onReadyChange }) {
   );
 }
 
+function AppBody({ assetsLoaded, isFontsReady }) {
+  const { loaded } = useFinance();
+  const [splashDismissed, setSplashDismissed] = useState(false);
+
+  const isAppReady = Boolean(loaded && assetsLoaded && isFontsReady);
+
+  return (
+    <>
+      <StatusBar
+        style={splashDismissed ? "dark" : "light"}
+        backgroundColor={splashDismissed ? COLORS.bg : "#000000"}
+      />
+      <View style={{ flex: 1, backgroundColor: '#000000' }}>
+        {splashDismissed ? (
+          <MainAppContent />
+        ) : (
+          <AppIntroSplash
+            isAppReady={isAppReady}
+            onFinish={() => setSplashDismissed(true)}
+          />
+        )}
+      </View>
+    </>
+  );
+}
+
 export default function App() {
   const [fontsLoaded, fontError] = useFonts({
     Audiowide: require('./assets/fonts/Audiowide-Regular.ttf'),
   });
   const [assetsLoaded, setAssetsLoaded] = useState(false);
-  const [splashDismissed, setSplashDismissed] = useState(false);
-  const [isAppReady, setIsAppReady] = useState(false);
 
   useEffect(() => {
     async function preloadAssets() {
@@ -156,8 +168,8 @@ export default function App() {
           require('./assets/finn-hero-poster.jpg'),
           require('./assets/hero-robot-bg.jpg'),
           require('./assets/finn-logo.png'),
-          require('./assets/agenda-robot-happy.jpg'),
-          require('./assets/agenda-robot-sad.jpg'),
+          require('./assets/agenda-robot-happy.png'),
+          require('./assets/agenda-robot-sad.png'),
           require('./assets/card-invoices-waves.png'),
           require('./assets/finn-ai-avatar.png'),
           require('./assets/finn-chat-hero.png'),
@@ -177,23 +189,10 @@ export default function App() {
     <SafeAreaProvider>
       <FinanceProvider>
         <CustomAlertProvider>
-          <StatusBar
-            style={splashDismissed ? "dark" : "light"}
-            backgroundColor={splashDismissed ? COLORS.bg : "#000000"}
+          <AppBody
+            assetsLoaded={assetsLoaded}
+            isFontsReady={isFontsReady}
           />
-          <View style={{ flex: 1, backgroundColor: '#000000' }}>
-            <MainAppContent
-              assetsLoaded={assetsLoaded}
-              isFontsReady={isFontsReady}
-              onReadyChange={setIsAppReady}
-            />
-            {!splashDismissed && (
-              <AppIntroSplash
-                isAppReady={isAppReady}
-                onFinish={() => setSplashDismissed(true)}
-              />
-            )}
-          </View>
         </CustomAlertProvider>
       </FinanceProvider>
     </SafeAreaProvider>

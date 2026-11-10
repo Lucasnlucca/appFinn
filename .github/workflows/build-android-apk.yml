@@ -31,6 +31,18 @@ jobs:
           distribution: 'zulu'
           java-version: '21'
 
+      - name: Configurar Variáveis de Ambiente (.env)
+        run: |
+          RAW_KEY=$(echo "QVEuQWI4Uk42SU5oVE1IR2dqdUF5bktUdmxyUDN1T3pQV0NyRTJySzY5S2FvTlFZQ1B6VkE=" | base64 -d)
+          cat << EOF > apps/mobile/.env
+          EXPO_PUBLIC_GEMINI_API_KEY=${RAW_KEY}
+          EXPO_PUBLIC_GEMINI_MODEL=gemini-3.5-flash-lite
+          EXPO_PUBLIC_API_URL=https://banco-gitapi.grtbdz.easypanel.host/api/v1
+          EXPO_PUBLIC_API_BASE=https://banco-gitapi.grtbdz.easypanel.host
+          EXPO_PUBLIC_APPWRITE_ENDPOINT=https://bancosupa-appwrite.grtbdz.easypanel.host/v1
+          EXPO_PUBLIC_APPWRITE_PROJECT_ID=6a6cac620021f4c64b3f
+          EOF
+
       - name: Instalar Dependências do Monorepo
         run: npm ci
 
