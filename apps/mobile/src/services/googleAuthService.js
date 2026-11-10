@@ -5,7 +5,7 @@ import { apiRequest, saveAuthToken, saveAuthUser, setRememberedCredentials } fro
 // Web Client ID oficial do Google Cloud Console ("Web application")
 export const GOOGLE_WEB_CLIENT_ID =
   process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ||
-  '612345678901-abcdefghijklmnopqrstuvwxyz123456.apps.googleusercontent.com';
+  '633573458015-t6vg6msh5goa9aehacg6pcgct6519l56.apps.googleusercontent.com';
 
 let isConfigured = false;
 
