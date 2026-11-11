@@ -325,113 +325,115 @@ export class AuthService implements OnModuleInit {
       throw new UnauthorizedException('Identificador de usuário do Google inválido.');
     }
 
-    // 2. Transação atômica no PostgreSQL com 3 casos obrigatórios
-    const result = await this.prisma.$transaction(async (tx) => {
-      // Caso 1: Identidade (google, sub) já existe na auth_identities -> Login direto
-      const identityRows: any[] = await tx.$queryRawUnsafe(
-        `SELECT "id", "user_id", "email" FROM "auth_identities" WHERE "provider" = $1 AND "provider_sub" = $2 LIMIT 1`,
-        'google',
-        sub,
-      );
+    // Garante que a estrutura de banco e auth_identities esteja pronta
+    await this.ensureDatabaseSchema();
 
-      let targetUserId: string | null = null;
-      let isNewUser = false;
+    try {
+      // 2. Transação atômica no PostgreSQL com 3 casos obrigatórios
+      const result = await this.prisma.$transaction(async (tx) => {
+        // Caso 1: Identidade (google, sub) já existe na auth_identities -> Login direto
+        const identityRows: any[] = await tx.$queryRawUnsafe(
+          `SELECT "id", "user_id", "email" FROM "auth_identities" WHERE "provider" = $1 AND "provider_sub" = $2 LIMIT 1`,
+          'google',
+          sub,
+        );
 
-      if (identityRows && identityRows.length > 0) {
-        targetUserId = identityRows[0].user_id;
-      } else {
-        // Caso 2: Identidade ainda não existe para este sub, mas o e-mail já pertence a usuário existente
-        const existingUser = await tx.user.findUnique({
-          where: { email: verifiedEmail },
-          select: { id: true, emailVerified: true, avatarUrl: true },
+        let targetUserId: string | null = null;
+        let isNewUser = false;
+
+        if (identityRows && identityRows.length > 0) {
+          targetUserId = identityRows[0].user_id;
+        } else {
+          // Caso 2: Identidade ainda não existe para este sub, mas o e-mail já pertence a usuário existente
+          const existingUser = await tx.user.findUnique({
+            where: { email: verifiedEmail },
+            select: { id: true, avatarUrl: true },
+          });
+
+          if (existingUser) {
+            targetUserId = existingUser.id;
+            // Vincula a identidade Google ao usuário existente
+            await tx.$executeRawUnsafe(
+              `INSERT INTO "auth_identities" ("user_id", "provider", "provider_sub", "email")
+               VALUES ($1::uuid, $2, $3, $4)
+               ON CONFLICT ("provider", "provider_sub") DO NOTHING`,
+              targetUserId,
+              'google',
+              sub,
+              verifiedEmail,
+            );
+            // Atualiza avatar se não tiver e marca email como verificado
+            await tx.$executeRawUnsafe(
+              `UPDATE "users" SET "email_verified" = true ${verifiedPicture && !existingUser.avatarUrl ? ', "avatar_url" = $2' : ''} WHERE "id" = $1::uuid`,
+              ...(verifiedPicture && !existingUser.avatarUrl ? [targetUserId, verifiedPicture] : [targetUserId]),
+            );
+          } else {
+            // Caso 3: Não existe usuário nem identidade -> Cria novo usuário com password_hash nulo
+            isNewUser = true;
+            const termsVersion = (body?.termsAcceptedVersion || '1.0').trim();
+
+            const createdRows: any[] = await tx.$queryRawUnsafe(
+              `INSERT INTO "users" ("id", "email", "password_hash", "full_name", "avatar_url", "email_verified", "terms_accepted_at", "terms_accepted_version", "created_at", "updated_at")
+               VALUES (gen_random_uuid(), $1, NULL, $2, $3, true, NOW(), $4, NOW(), NOW())
+               RETURNING "id"`,
+              verifiedEmail,
+              verifiedName,
+              verifiedPicture,
+              termsVersion,
+            );
+
+            targetUserId = createdRows[0]?.id;
+
+            await tx.$executeRawUnsafe(
+              `INSERT INTO "auth_identities" ("user_id", "provider", "provider_sub", "email")
+               VALUES ($1::uuid, $2, $3, $4)`,
+              targetUserId,
+              'google',
+              sub,
+              verifiedEmail,
+            );
+          }
+        }
+
+        // Busca dados completos do usuário
+        if (!targetUserId) {
+          throw new UnauthorizedException('Erro ao vincular usuário.');
+        }
+
+        const user = await tx.user.findUnique({
+          where: { id: targetUserId },
+          include: {
+            householdMemberships: {
+              include: { household: true },
+            },
+          },
         });
 
-        if (existingUser) {
-          targetUserId = existingUser.id;
-          // Vincula a identidade Google ao usuário existente
-          await tx.$executeRawUnsafe(
-            `INSERT INTO "auth_identities" ("user_id", "provider", "provider_sub", "email")
-             VALUES ($1::uuid, $2, $3, $4)
-             ON CONFLICT ("provider", "provider_sub") DO NOTHING`,
-            targetUserId,
-            'google',
-            sub,
-            verifiedEmail,
-          );
-          // Marca email como verificado e atualiza avatar se não tiver
-          await tx.user.update({
-            where: { id: targetUserId },
-            data: {
-              emailVerified: true,
-              ...(verifiedPicture && !existingUser.avatarUrl ? { avatarUrl: verifiedPicture } : {}),
-            },
-          });
-        } else {
-          // Caso 3: Não existe usuário nem identidade -> Cria novo usuário com password_hash nulo
-          isNewUser = true;
-          const termsVersion = (body?.termsAcceptedVersion || '1.0').trim();
-
-          const createdUser = await tx.user.create({
-            data: {
-              email: verifiedEmail,
-              passwordHash: null,
-              fullName: verifiedName,
-              avatarUrl: verifiedPicture,
-              emailVerified: true,
-              termsAcceptedAt: new Date(),
-              termsAcceptedVersion: termsVersion,
-            },
-            select: { id: true },
-          });
-
-          targetUserId = createdUser.id;
-
-          await tx.$executeRawUnsafe(
-            `INSERT INTO "auth_identities" ("user_id", "provider", "provider_sub", "email")
-             VALUES ($1::uuid, $2, $3, $4)`,
-            targetUserId,
-            'google',
-            sub,
-            verifiedEmail,
-          );
+        if (!user || !user.isActive) {
+          throw new UnauthorizedException('Esta conta está desativada ou não foi encontrada.');
         }
-      }
 
-      // Busca dados completos do usuário
-      if (!targetUserId) {
-        throw new UnauthorizedException('Erro ao vincular usuário.');
-      }
-
-      const user = await tx.user.findUnique({
-        where: { id: targetUserId },
-        include: {
-          householdMemberships: {
-            include: { household: true },
-          },
-        },
+        return { user, isNewUser };
       });
 
-      if (!user || !user.isActive) {
-        throw new UnauthorizedException('Esta conta está desativada ou não foi encontrada.');
-      }
+      const token = await this.generateToken(result.user.id, result.user.email);
 
-      return { user, isNewUser };
-    });
-
-    const token = await this.generateToken(result.user.id, result.user.email);
-
-    return {
-      user: {
-        id: result.user.id,
-        email: result.user.email,
-        fullName: result.user.fullName,
-        avatarUrl: result.user.avatarUrl || null,
-        activeHousehold: result.user.householdMemberships[0]?.household || null,
-        roleInHousehold: result.user.householdMemberships[0]?.role || null,
-      },
-      token,
-      isNewUser: result.isNewUser,
-    };
+      return {
+        user: {
+          id: result.user.id,
+          email: result.user.email,
+          fullName: result.user.fullName,
+          avatarUrl: result.user.avatarUrl || null,
+          activeHousehold: result.user.householdMemberships[0]?.household || null,
+          roleInHousehold: result.user.householdMemberships[0]?.role || null,
+        },
+        token,
+        isNewUser: result.isNewUser,
+      };
+    } catch (dbErr: any) {
+      this.logger.error(`Erro ao autenticar com o Google no banco: ${dbErr?.message}`);
+      throw new BadRequestException(`Erro no banco de dados ao salvar autenticação Google: ${dbErr?.message}`);
+    }
   }
 
   /**
