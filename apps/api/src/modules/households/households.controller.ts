@@ -57,17 +57,31 @@ export class HouseholdsController {
   async generateInviteCode(
     @CurrentUser() user: AuthenticatedUser,
     @Body('householdId') householdId?: string,
+    @Body('code') code?: string,
   ) {
-    return this.householdsService.generateGroupInviteCode(user.id, householdId);
+    return this.householdsService.generateGroupInviteCode(user.id, householdId, code);
+  }
+
+  @Get('invitations/info')
+  @ApiOperation({ summary: 'Consultar informações do convite ou código de 30 min' })
+  async getInvitationInfo(
+    @Query('token') token?: string,
+    @Query('code') code?: string,
+  ) {
+    return this.householdsService.getInvitationInfo(token || code || '');
   }
 
   @Post('invitations/accept')
   @ApiOperation({ summary: 'Aceitar convite para ingressar em um núcleo familiar' })
   async acceptInvitation(
     @CurrentUser() user: AuthenticatedUser,
-    @Query('token') token: string,
+    @Query('token') token?: string,
+    @Query('code') code?: string,
+    @Body('token') bodyToken?: string,
+    @Body('code') bodyCode?: string,
   ) {
-    return this.householdsService.acceptInvitation(user.id, token);
+    const effectiveToken = token || code || bodyToken || bodyCode || '';
+    return this.householdsService.acceptInvitation(user.id, effectiveToken);
   }
 
   @Delete(':id')

@@ -14,6 +14,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import { useFinance } from '../context/FinanceContext';
 import { updatePasswordApi } from '../services/apiService';
 
@@ -79,16 +80,22 @@ export default function ProfileScreen({ navigation }) {
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
         aspect: [1, 1],
-        quality: 0.55,
-        base64: true,
+        quality: 0.7,
       });
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
         const asset = result.assets[0];
-        const mimeType = asset.mimeType || 'image/jpeg';
-        const persistentAvatarUri = asset.base64
-          ? `data:${mimeType};base64,${asset.base64}`
-          : asset.uri;
+
+        // Redimensiona para foto de perfil de 280x280 e comprime para evitar estourar o limite de armazenamento local
+        const manipulated = await manipulateAsync(
+          asset.uri,
+          [{ resize: { width: 280, height: 280 } }],
+          { compress: 0.65, format: SaveFormat.JPEG, base64: true }
+        );
+
+        const persistentAvatarUri = manipulated.base64
+          ? `data:image/jpeg;base64,${manipulated.base64}`
+          : manipulated.uri;
 
         setAvatarUri(persistentAvatarUri);
         if (updateUserProfile) {

@@ -240,9 +240,9 @@ export class HouseholdsService {
   }
 
   /**
-   * Gera um código único de 6 caracteres para o grupo, validado rigorosamente por 30 minutos.
+   * Gera um código único de convite para o grupo, validado rigorosamente por 30 minutos.
    */
-  async generateGroupInviteCode(userId: string, householdId?: string) {
+  async generateGroupInviteCode(userId: string, householdId?: string, customCode?: string) {
     let targetHouseholdId = householdId;
     if (!targetHouseholdId) {
       const membership = await this.prisma.householdMember.findFirst({
@@ -255,10 +255,13 @@ export class HouseholdsService {
       targetHouseholdId = membership.householdId;
     }
 
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-    let code = '';
-    for (let i = 0; i < 6; i++) {
-      code += chars.charAt(Math.floor(Math.random() * chars.length));
+    let code = (customCode || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase().trim();
+    if (!code || code.length < 3) {
+      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+      code = '';
+      for (let i = 0; i < 6; i++) {
+        code += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
     }
 
     const tokenHash = crypto.createHash('sha256').update(code).digest('hex');
@@ -293,20 +296,94 @@ export class HouseholdsService {
   }
 
   /**
-   * Aceita um convite com o token seguro.
+   * Consulta dados do convite por código ou token antes de ingressar.
    */
-  async acceptInvitation(userId: string, token: string) {
-    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
-    const invitation = await this.prisma.householdInvitation.findUnique({
-      where: { tokenHash },
+  async getInvitationInfo(tokenOrCode: string) {
+    if (!tokenOrCode || !tokenOrCode.trim()) {
+      throw new BadRequestException('Código de convite não informado');
+    }
+    const clean = tokenOrCode.trim();
+    const tokenHash = crypto.createHash('sha256').update(clean).digest('hex');
+    const upperTokenHash = crypto.createHash('sha256').update(clean.toUpperCase()).digest('hex');
+
+    const invitation = await this.prisma.householdInvitation.findFirst({
+      where: {
+        OR: [
+          { tokenHash },
+          { tokenHash: upperTokenHash },
+          { email: `code-${clean}@finn.local` },
+          { email: `code-${clean.toUpperCase()}@finn.local` },
+          { email: `code-${clean.toLowerCase()}@finn.local` },
+        ],
+      },
+      include: {
+        household: true,
+        invitedBy: {
+          select: {
+            id: true,
+            fullName: true,
+            email: true,
+            avatarUrl: true,
+          },
+        },
+      },
     });
 
     if (!invitation || invitation.status !== 'PENDING') {
-      throw new BadRequestException('Convite inválido ou revogado');
+      throw new BadRequestException('Código de convite não encontrado ou inválido.');
     }
 
     if (invitation.expiresAt < new Date()) {
-      throw new BadRequestException('Este convite/código expirou (validade de 30 minutos). Solicite um novo código ao criador do grupo.');
+      throw new BadRequestException('Este código de convite expirou (validade de 30 minutos). Solicite um novo código ao criador do grupo.');
+    }
+
+    return {
+      valid: true,
+      token: clean.toUpperCase(),
+      code: clean.toUpperCase(),
+      householdId: invitation.householdId,
+      groupName: invitation.household.name,
+      currency: invitation.household.currency,
+      type: 'Casal',
+      creator: {
+        id: invitation.invitedBy?.id || invitation.invitedById,
+        name: invitation.invitedBy?.fullName || 'Criador(a)',
+        email: invitation.invitedBy?.email || '',
+        avatarUrl: invitation.invitedBy?.avatarUrl || null,
+      },
+      expiresAt: invitation.expiresAt.toISOString(),
+    };
+  }
+
+  /**
+   * Aceita um convite com o token seguro ou código de 30 min.
+   */
+  async acceptInvitation(userId: string, token: string) {
+    if (!token || !token.trim()) {
+      throw new BadRequestException('Código de convite não informado');
+    }
+    const cleanToken = token.trim();
+    const tokenHash = crypto.createHash('sha256').update(cleanToken).digest('hex');
+    const upperTokenHash = crypto.createHash('sha256').update(cleanToken.toUpperCase()).digest('hex');
+
+    const invitation = await this.prisma.householdInvitation.findFirst({
+      where: {
+        OR: [
+          { tokenHash },
+          { tokenHash: upperTokenHash },
+          { email: `code-${cleanToken}@finn.local` },
+          { email: `code-${cleanToken.toUpperCase()}@finn.local` },
+          { email: `code-${cleanToken.toLowerCase()}@finn.local` },
+        ],
+      },
+    });
+
+    if (!invitation || invitation.status !== 'PENDING') {
+      throw new BadRequestException('Código de convite não encontrado ou inválido. Verifique os caracteres e tente novamente.');
+    }
+
+    if (invitation.expiresAt < new Date()) {
+      throw new BadRequestException('Este código de convite expirou (validade de 30 minutos). Solicite um novo código ao criador do grupo.');
     }
 
     const existingMembership = await this.prisma.householdMember.findUnique({
@@ -319,7 +396,37 @@ export class HouseholdsService {
     });
 
     if (existingMembership) {
-      throw new ConflictException('Você já é membro deste grupo financeiro compartilhado.');
+      const hh = await this.prisma.household.findUnique({
+        where: { id: invitation.householdId },
+        include: {
+          members: {
+            include: {
+              user: {
+                select: { id: true, fullName: true, email: true, avatarUrl: true },
+              },
+            },
+          },
+        },
+      });
+
+      return {
+        message: 'Você já faz parte deste grupo financeiro compartilhado!',
+        alreadyMember: true,
+        household: hh
+          ? {
+              id: hh.id,
+              name: hh.name,
+              currency: hh.currency,
+              members: hh.members.map((m) => ({
+                id: m.user.id,
+                name: m.user.fullName || m.user.email || 'Membro',
+                email: m.user.email,
+                avatarUrl: m.user.avatarUrl,
+                role: m.role,
+              })),
+            }
+          : null,
+      };
     }
 
     await this.prisma.$transaction([

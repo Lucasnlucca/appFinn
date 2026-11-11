@@ -1088,18 +1088,25 @@ export async function createHouseholdInvitationApi(email) {
   });
 }
 
-export async function acceptHouseholdInvitationApi(token) {
+export async function acceptHouseholdInvitationApi(tokenOrCode) {
   await ensureAuthenticated();
-  return apiRequest(`households/invitations/accept?token=${encodeURIComponent(token)}`, {
+  const clean = (tokenOrCode || '').trim();
+  return apiRequest(`households/invitations/accept?token=${encodeURIComponent(clean)}`, {
     method: 'POST',
+    body: { token: clean, code: clean },
   });
 }
 
-export async function generateHouseholdInviteCodeApi(householdId) {
+export async function getHouseholdInvitationInfoApi(codeOrToken) {
+  const clean = (codeOrToken || '').trim();
+  return apiRequest(`households/invitations/info?code=${encodeURIComponent(clean)}`);
+}
+
+export async function generateHouseholdInviteCodeApi(householdId, code) {
   await ensureAuthenticated();
   return apiRequest('households/invite-code', {
     method: 'POST',
-    body: { householdId },
+    body: { householdId, code },
   });
 }
 

@@ -1559,31 +1559,34 @@ export function FinanceProvider({ children }) {
   const createSharedGroup = async ({ name, type = 'Casal', description = '' }) => {
     const ownerName = loggedInUser?.fullName || loggedInUser?.name || 'Você';
     const cleanName = (name || '').trim() || 'Novo Grupo';
-    const initialCode = generateGroupInviteCode();
-    const inviteCodeExpiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString(); // Válido por 30 minutos
+    let initialCode = generateGroupInviteCode();
+    let inviteCodeExpiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString(); // Válido por 30 minutos
 
     let remoteHouseholdId = null;
     let invitationToken = null;
 
-    // 1. Cria o Household e Convite no PostgreSQL
+    // 1. Cria o Household e Convite Oficial no PostgreSQL
     try {
       const apiRes = await createHouseholdApi(cleanName);
       if (apiRes?.id) {
         remoteHouseholdId = apiRes.id;
         try {
-          const invRes = await createHouseholdInvitationApi(`code-${initialCode.toLowerCase()}@finn.local`);
-          if (invRes?.invitationToken) {
-            invitationToken = invRes.invitationToken;
+          // Registra código oficial de 30 minutos diretamente no PostgreSQL
+          const codeRes = await generateHouseholdInviteCodeApi(remoteHouseholdId, initialCode);
+          if (codeRes?.code) {
+            initialCode = codeRes.code;
+            if (codeRes.expiresAt) inviteCodeExpiresAt = codeRes.expiresAt;
+            invitationToken = codeRes.code;
           }
         } catch (invErr) {
-          console.log('Convite inicial PostgreSQL:', invErr.message);
+          console.log('Código inicial PostgreSQL:', invErr.message);
         }
       }
     } catch (e) {
       console.log('Grupo criado offline/localmente:', e.message);
     }
 
-    // 2. Publica no cloud relay para conexão instantânea entre aparelhos
+    // 2. Registra convite na nuvem e no registro local do dispositivo (sem sobrescrever o código!)
     let finalCode = initialCode;
     try {
       const cloudRes = await publishCloudInvite({
@@ -1647,6 +1650,9 @@ export function FinanceProvider({ children }) {
     return newGroup;
   };
 
+    return newGroup;
+  };
+
   // Verifica se o usuário autenticado é o criador/dono do grupo
   const isGroupCreator = (group) => {
     if (!group || !loggedInUser) return false;
@@ -1682,15 +1688,18 @@ export function FinanceProvider({ children }) {
     const targetGroup = sharedGroups.find((g) => g.id === targetGroupId);
     if (!targetGroup) return null;
 
-    const baseCode = generateGroupInviteCode();
-    const newExpiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+    let baseCode = generateGroupInviteCode();
+    let newExpiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
     let invitationToken = null;
 
-    if (targetGroup.remoteId) {
+    const targetHhId = targetGroup.remoteId || (targetGroup.id && !targetGroup.id.startsWith('grp-') ? targetGroup.id : null);
+    if (targetHhId) {
       try {
-        const invRes = await createHouseholdInvitationApi(`code-${baseCode.toLowerCase()}@finn.local`);
-        if (invRes?.invitationToken) {
-          invitationToken = invRes.invitationToken;
+        const codeRes = await generateHouseholdInviteCodeApi(targetHhId, baseCode);
+        if (codeRes?.code) {
+          baseCode = codeRes.code;
+          if (codeRes.expiresAt) newExpiresAt = codeRes.expiresAt;
+          invitationToken = codeRes.code;
         }
       } catch (e) {
         console.log('Renovação de convite backend:', e.message);
@@ -1701,7 +1710,7 @@ export function FinanceProvider({ children }) {
     try {
       const cloudRes = await publishCloudInvite({
         invitationToken,
-        householdId: targetGroup.remoteId,
+        householdId: targetHhId,
         name: targetGroup.name,
         type: targetGroup.type,
         creator: { id: targetGroup.creatorId, name: targetGroup.creatorName },
@@ -1998,40 +2007,97 @@ export function FinanceProvider({ children }) {
       throw new Error('Informe o código do convite.');
     }
 
-    // 1. Resolve o código via Cloud Relay (dpaste) ou formato direto (token 64 hex / local)
-    const resolved = await resolveCloudInvite(cleanedInput);
-    let tokenToAccept = resolved.token;
+    const codeToTry = cleanedInput.toUpperCase();
+    let apiAcceptResult = null;
 
-    if (!tokenToAccept && /^[a-f0-9]{64}$/i.test(cleanedInput)) {
-      tokenToAccept = cleanedInput;
+    // 1. Tenta aceitar DIRETAMENTE via API oficial (PostgreSQL) com o código de 30 min ou token
+    try {
+      apiAcceptResult = await acceptHouseholdInvitationApi(codeToTry);
+    } catch (apiErr) {
+      const errMsg = apiErr.message || '';
+      if (errMsg.includes('expirou')) {
+        throw new Error('Este código de convite expirou (validade de 30 minutos). Solicite um novo código ao criador do grupo.');
+      }
     }
 
-    // 2. Se temos um token de convite válido do PostgreSQL, aceita no backend
-    if (tokenToAccept) {
+    // 2. Se a API já aceitou diretamente, monta o grupo com os dados oficiais retornados
+    if (apiAcceptResult?.household) {
+      const hh = apiAcceptResult.household;
+      const ownerMember = (hh.members || []).find((m) => m.role === 'OWNER') || hh.members?.[0];
+      const joinedGroup = {
+        id: hh.id,
+        remoteId: hh.id,
+        name: hh.name || 'Finanças Compartilhadas',
+        type: 'Casal',
+        description: `Conectado ao grupo via código ${codeToTry}`,
+        createdAt: new Date().toISOString(),
+        inviteCode: codeToTry,
+        inviteCodeExpiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+        creatorId: ownerMember?.id || 'owner',
+        creatorName: ownerMember?.name || ownerMember?.fullName || 'Organizador(a)',
+        members: (hh.members || []).map((m) => ({
+          id: m.id,
+          name: m.name || m.fullName || (m.role === 'OWNER' ? 'Organizador(a)' : 'Membro'),
+          email: m.email || '',
+          avatarUrl: m.avatarUrl || null,
+          role: m.role || 'MEMBER',
+          isCreator: m.role === 'OWNER',
+        })),
+      };
+
+      const nextGroups = [
+        joinedGroup,
+        ...sharedGroups.filter((g) => g.id !== joinedGroup.id && (!joinedGroup.remoteId || g.remoteId !== joinedGroup.remoteId)),
+      ];
+      setSharedGroups(nextGroups);
+      setActiveGroupIdState(joinedGroup.id);
+      setViewModeState('shared');
+      await saveUserItem('shared_groups', nextGroups);
+      await saveUserItem('active_group_id', joinedGroup.id);
+      await saveUserItem('view_mode', 'shared');
+
+      pushGroupNotification({
+        title: `🎉 Convite aceito: ${joinedGroup.name}`,
+        message: `Você entrou no grupo '${joinedGroup.name}'! Agora você será avisado sempre que o valor do grupo for alterado ou uma conta for dividida.`,
+        icon: 'checkmark-circle',
+        color: '#10B981',
+        groupId: joinedGroup.id,
+      });
+
+      return joinedGroup;
+    }
+
+    // 3. Fallback: Resolve o código via Cloud Relay (ou formato de token de 64 hex)
+    const resolved = await resolveCloudInvite(cleanedInput);
+    let tokenToAccept = resolved.token || codeToTry;
+
+    if (tokenToAccept && !apiAcceptResult) {
       try {
-        await acceptHouseholdInvitationApi(tokenToAccept);
-      } catch (apiErr) {
-        console.log('Aceite de convite via API informou:', apiErr.message);
-        if (apiErr.message && apiErr.message.includes('expirou')) {
+        const res2 = await acceptHouseholdInvitationApi(tokenToAccept);
+        if (res2?.household) {
+          apiAcceptResult = res2;
+        }
+      } catch (apiErr2) {
+        if (apiErr2.message && apiErr2.message.includes('expirou')) {
           throw new Error('Este código de convite expirou (validade de 30 minutos). Solicite um novo código ao criador do grupo.');
         }
       }
     }
 
-    // 3. Busca o núcleo familiar oficial atualizado no PostgreSQL
+    // 4. Busca o núcleo familiar oficial atualizado no PostgreSQL
     let joinedGroup = null;
     try {
       const currentHh = await fetchCurrentHouseholdApi();
-      if (currentHh && currentHh.id) {
+      if (currentHh && currentHh.id && (currentHh.id === resolved.householdId || apiAcceptResult)) {
         const ownerMember = (currentHh.members || []).find((m) => m.role === 'OWNER') || currentHh.members?.[0];
         joinedGroup = {
           id: currentHh.id,
           remoteId: currentHh.id,
           name: currentHh.name || resolved.groupName || 'Finanças Compartilhadas',
           type: resolved.type || 'Casal',
-          description: `Conectado ao grupo via código ${resolved.code || cleanedInput}`,
+          description: `Conectado ao grupo via código ${resolved.code || codeToTry}`,
           createdAt: new Date().toISOString(),
-          inviteCode: resolved.code || cleanedInput,
+          inviteCode: resolved.code || codeToTry,
           inviteCodeExpiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
           creatorId: ownerMember?.id || resolved.creator?.id || 'owner',
           creatorName: ownerMember?.fullName || resolved.creator?.name || 'Organizador(a)',
@@ -2049,7 +2115,7 @@ export function FinanceProvider({ children }) {
       console.warn('Aviso: busca de household após aceite:', hhErr.message);
     }
 
-    // 4. Se não veio do backend, usa os dados resolvidos do cloud relay
+    // 5. Se não veio do backend, usa os dados resolvidos do cloud relay
     if (!joinedGroup && (resolved.groupName || resolved.householdId)) {
       const myMember = {
         id: loggedInUser?.id || 'usr-' + Date.now(),
@@ -2077,9 +2143,9 @@ export function FinanceProvider({ children }) {
         remoteId: resolved.householdId || null,
         name: resolved.groupName || 'Grupo Compartilhado',
         type: resolved.type || 'Casal',
-        description: `Ingresso via código ${resolved.code || cleanedInput}`,
+        description: `Ingresso via código ${resolved.code || codeToTry}`,
         createdAt: new Date().toISOString(),
-        inviteCode: resolved.code || cleanedInput,
+        inviteCode: resolved.code || codeToTry,
         inviteCodeExpiresAt: resolved.expiresAt || new Date(Date.now() + 30 * 60 * 1000).toISOString(),
         creatorId: creatorMember.id,
         creatorName: creatorMember.name,
@@ -2087,7 +2153,7 @@ export function FinanceProvider({ children }) {
       };
     }
 
-    // 5. Fallback se não encontrou
+    // 6. Se não encontrou nem conectou
     if (!joinedGroup) {
       if (resolved.notFound) {
         throw new Error('Código de convite não encontrado ou inválido. Verifique os caracteres e tente novamente.');
@@ -2095,7 +2161,7 @@ export function FinanceProvider({ children }) {
       throw new Error('Não foi possível conectar ao grupo com este código.');
     }
 
-    // 6. Atualiza o estado da aplicação e seleciona o grupo e modo imediatamente
+    // 7. Atualiza o estado da aplicação e seleciona o grupo e modo imediatamente
     const nextGroups = [
       joinedGroup,
       ...sharedGroups.filter((g) => g.id !== joinedGroup.id && (!joinedGroup.remoteId || g.remoteId !== joinedGroup.remoteId)),

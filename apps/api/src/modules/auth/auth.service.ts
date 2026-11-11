@@ -64,23 +64,40 @@ export class AuthService implements OnModuleInit {
     }
 
     try {
-      // 3. Tabela auth_identities
+      // 3. Tabela auth_identities (id e user_id usam TEXT compatível com o schema users.id)
       await this.prisma.$executeRawUnsafe(`
         CREATE TABLE IF NOT EXISTS "auth_identities" (
-          "id" UUID NOT NULL DEFAULT gen_random_uuid(),
-          "user_id" UUID NOT NULL,
+          "id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
+          "user_id" TEXT NOT NULL,
           "provider" VARCHAR(32) NOT NULL,
           "provider_sub" VARCHAR(255) NOT NULL,
           "email" VARCHAR(255) NOT NULL,
           "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-          CONSTRAINT "auth_identities_pkey" PRIMARY KEY ("id"),
-          CONSTRAINT "auth_identities_user_id_fkey"
-            FOREIGN KEY ("user_id") REFERENCES "users"("id")
-            ON DELETE CASCADE ON UPDATE CASCADE,
-          CONSTRAINT "auth_identities_provider_sub_unique"
-            UNIQUE ("provider", "provider_sub")
+          CONSTRAINT "auth_identities_pkey" PRIMARY KEY ("id")
         );
       `);
+
+      await this.prisma.$executeRawUnsafe(`
+        DO $$
+        BEGIN
+          IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE conname = 'auth_identities_user_id_fkey'
+          ) THEN
+            ALTER TABLE "auth_identities"
+              ADD CONSTRAINT "auth_identities_user_id_fkey"
+              FOREIGN KEY ("user_id") REFERENCES "users"("id")
+              ON DELETE CASCADE ON UPDATE CASCADE;
+          END IF;
+          IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE conname = 'auth_identities_provider_sub_unique'
+          ) THEN
+            ALTER TABLE "auth_identities"
+              ADD CONSTRAINT "auth_identities_provider_sub_unique"
+              UNIQUE ("provider", "provider_sub");
+          END IF;
+        END $$;
+      `);
+
       await this.prisma.$executeRawUnsafe(`
         CREATE INDEX IF NOT EXISTS "idx_auth_identities_user_id" ON "auth_identities"("user_id");
       `);
@@ -100,20 +117,32 @@ export class AuthService implements OnModuleInit {
     try {
       await this.prisma.$executeRawUnsafe(`
         CREATE TABLE IF NOT EXISTS "password_reset_tokens" (
-          "id" UUID NOT NULL DEFAULT gen_random_uuid(),
-          "user_id" UUID NOT NULL,
+          "id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
+          "user_id" TEXT NOT NULL,
           "email" VARCHAR(255) NOT NULL,
           "code_hash" VARCHAR(128) NOT NULL,
           "expires_at" TIMESTAMPTZ NOT NULL,
           "used_at" TIMESTAMPTZ,
           "attempts" INTEGER NOT NULL DEFAULT 0,
           "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-          CONSTRAINT "password_reset_tokens_pkey" PRIMARY KEY ("id"),
-          CONSTRAINT "password_reset_tokens_user_id_fkey"
-            FOREIGN KEY ("user_id") REFERENCES "users"("id")
-            ON DELETE CASCADE ON UPDATE CASCADE
+          CONSTRAINT "password_reset_tokens_pkey" PRIMARY KEY ("id")
         );
       `);
+
+      await this.prisma.$executeRawUnsafe(`
+        DO $$
+        BEGIN
+          IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE conname = 'password_reset_tokens_user_id_fkey'
+          ) THEN
+            ALTER TABLE "password_reset_tokens"
+              ADD CONSTRAINT "password_reset_tokens_user_id_fkey"
+              FOREIGN KEY ("user_id") REFERENCES "users"("id")
+              ON DELETE CASCADE ON UPDATE CASCADE;
+          END IF;
+        END $$;
+      `);
+
       await this.prisma.$executeRawUnsafe(`
         CREATE INDEX IF NOT EXISTS "idx_password_reset_email_created"
           ON "password_reset_tokens"("email", "created_at" DESC);
@@ -354,8 +383,8 @@ export class AuthService implements OnModuleInit {
             targetUserId = existingUser.id;
             // Vincula a identidade Google ao usuário existente
             await tx.$executeRawUnsafe(
-              `INSERT INTO "auth_identities" ("user_id", "provider", "provider_sub", "email")
-               VALUES ($1::uuid, $2, $3, $4)
+              `INSERT INTO "auth_identities" ("id", "user_id", "provider", "provider_sub", "email")
+               VALUES (gen_random_uuid()::text, $1, $2, $3, $4)
                ON CONFLICT ("provider", "provider_sub") DO NOTHING`,
               targetUserId,
               'google',
@@ -364,7 +393,7 @@ export class AuthService implements OnModuleInit {
             );
             // Atualiza avatar se não tiver e marca email como verificado
             await tx.$executeRawUnsafe(
-              `UPDATE "users" SET "email_verified" = true ${verifiedPicture && !existingUser.avatarUrl ? ', "avatar_url" = $2' : ''} WHERE "id" = $1::uuid`,
+              `UPDATE "users" SET "email_verified" = true ${verifiedPicture && !existingUser.avatarUrl ? ', "avatar_url" = $2' : ''} WHERE "id" = $1`,
               ...(verifiedPicture && !existingUser.avatarUrl ? [targetUserId, verifiedPicture] : [targetUserId]),
             );
           } else {
@@ -374,7 +403,7 @@ export class AuthService implements OnModuleInit {
 
             const createdRows: any[] = await tx.$queryRawUnsafe(
               `INSERT INTO "users" ("id", "email", "password_hash", "full_name", "avatar_url", "email_verified", "terms_accepted_at", "terms_accepted_version", "created_at", "updated_at")
-               VALUES (gen_random_uuid(), $1, NULL, $2, $3, true, NOW(), $4, NOW(), NOW())
+               VALUES (gen_random_uuid()::text, $1, NULL, $2, $3, true, NOW(), $4, NOW(), NOW())
                RETURNING "id"`,
               verifiedEmail,
               verifiedName,
@@ -385,8 +414,8 @@ export class AuthService implements OnModuleInit {
             targetUserId = createdRows[0]?.id;
 
             await tx.$executeRawUnsafe(
-              `INSERT INTO "auth_identities" ("user_id", "provider", "provider_sub", "email")
-               VALUES ($1::uuid, $2, $3, $4)`,
+              `INSERT INTO "auth_identities" ("id", "user_id", "provider", "provider_sub", "email")
+               VALUES (gen_random_uuid()::text, $1, $2, $3, $4)`,
               targetUserId,
               'google',
               sub,
@@ -581,7 +610,7 @@ export class AuthService implements OnModuleInit {
 
     // Invalida códigos anteriores ainda não utilizados para este usuário
     await this.prisma.$executeRawUnsafe(
-      `UPDATE "password_reset_tokens" SET "used_at" = NOW() WHERE "user_id" = $1::uuid AND "used_at" IS NULL`,
+      `UPDATE "password_reset_tokens" SET "used_at" = NOW() WHERE "user_id" = $1 AND "used_at" IS NULL`,
       user.id,
     );
 
@@ -589,8 +618,8 @@ export class AuthService implements OnModuleInit {
     const codeHash = crypto.createHash('sha256').update(code).digest('hex');
 
     await this.prisma.$executeRawUnsafe(
-      `INSERT INTO "password_reset_tokens" ("user_id", "email", "code_hash", "expires_at")
-       VALUES ($1::uuid, $2, $3, NOW() + INTERVAL '15 minutes')`,
+      `INSERT INTO "password_reset_tokens" ("id", "user_id", "email", "code_hash", "expires_at")
+       VALUES (gen_random_uuid()::text, $1, $2, $3, NOW() + INTERVAL '15 minutes')`,
       user.id,
       cleanEmail,
       codeHash,
@@ -660,7 +689,7 @@ export class AuthService implements OnModuleInit {
     const inputHash = crypto.createHash('sha256').update(cleanCode).digest('hex');
     if (inputHash !== tokenRecord.code_hash) {
       await this.prisma.$executeRawUnsafe(
-        `UPDATE "password_reset_tokens" SET "attempts" = "attempts" + 1 WHERE "id" = $1::uuid`,
+        `UPDATE "password_reset_tokens" SET "attempts" = "attempts" + 1 WHERE "id" = $1`,
         tokenRecord.id,
       );
       throw new BadRequestException(
@@ -709,7 +738,7 @@ export class AuthService implements OnModuleInit {
     });
 
     await this.prisma.$executeRawUnsafe(
-      `UPDATE "password_reset_tokens" SET "used_at" = NOW() WHERE "id" = $1::uuid`,
+      `UPDATE "password_reset_tokens" SET "used_at" = NOW() WHERE "id" = $1`,
       verification.tokenId,
     );
 
