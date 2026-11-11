@@ -41,6 +41,7 @@ jobs:
           EXPO_PUBLIC_API_BASE=https://banco-gitapi.grtbdz.easypanel.host
           EXPO_PUBLIC_APPWRITE_ENDPOINT=https://bancosupa-appwrite.grtbdz.easypanel.host/v1
           EXPO_PUBLIC_APPWRITE_PROJECT_ID=6a6cac620021f4c64b3f
+          EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID=633573458015-t6vg6msh5goa9aehacg6pcgct6519l56.apps.googleusercontent.com
           EOF
 
       - name: Instalar Dependências do Monorepo
