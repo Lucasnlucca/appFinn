@@ -40,6 +40,15 @@ export class AuthService implements OnModuleInit {
    */
   private async ensureDatabaseSchema() {
     try {
+      // 0. Habilita extensão pgcrypto se necessário para gen_random_uuid()
+      await this.prisma.$executeRawUnsafe(`
+        CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+      `);
+    } catch (e: any) {
+      // Silencioso se já estiver habilitada ou sem permissão de superusuário
+    }
+
+    try {
       // 1. Torna password_hash anulável para contas criadas via Google/Social
       await this.prisma.$executeRawUnsafe(`
         ALTER TABLE "users" ALTER COLUMN "password_hash" DROP NOT NULL;
@@ -67,7 +76,7 @@ export class AuthService implements OnModuleInit {
       // 3. Tabela auth_identities (id e user_id usam TEXT compatível com o schema users.id)
       await this.prisma.$executeRawUnsafe(`
         CREATE TABLE IF NOT EXISTS "auth_identities" (
-          "id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
+          "id" TEXT NOT NULL,
           "user_id" TEXT NOT NULL,
           "provider" VARCHAR(32) NOT NULL,
           "provider_sub" VARCHAR(255) NOT NULL,
@@ -76,6 +85,14 @@ export class AuthService implements OnModuleInit {
           CONSTRAINT "auth_identities_pkey" PRIMARY KEY ("id")
         );
       `);
+
+      // Garante tipo TEXT caso a tabela tenha sido criada anteriormente com UUID
+      try {
+        await this.prisma.$executeRawUnsafe(`
+          ALTER TABLE "auth_identities" ALTER COLUMN "id" TYPE TEXT;
+          ALTER TABLE "auth_identities" ALTER COLUMN "user_id" TYPE TEXT;
+        `);
+      } catch (e: any) {}
 
       await this.prisma.$executeRawUnsafe(`
         DO $$
@@ -88,16 +105,16 @@ export class AuthService implements OnModuleInit {
               FOREIGN KEY ("user_id") REFERENCES "users"("id")
               ON DELETE CASCADE ON UPDATE CASCADE;
           END IF;
-          IF NOT EXISTS (
-            SELECT 1 FROM pg_constraint WHERE conname = 'auth_identities_provider_sub_unique'
-          ) THEN
-            ALTER TABLE "auth_identities"
-              ADD CONSTRAINT "auth_identities_provider_sub_unique"
-              UNIQUE ("provider", "provider_sub");
-          END IF;
+        EXCEPTION
+          WHEN OTHERS THEN
+            NULL;
         END $$;
       `);
 
+      await this.prisma.$executeRawUnsafe(`
+        CREATE UNIQUE INDEX IF NOT EXISTS "idx_auth_identities_provider_sub"
+          ON "auth_identities"("provider", "provider_sub");
+      `);
       await this.prisma.$executeRawUnsafe(`
         CREATE INDEX IF NOT EXISTS "idx_auth_identities_user_id" ON "auth_identities"("user_id");
       `);
@@ -117,7 +134,7 @@ export class AuthService implements OnModuleInit {
     try {
       await this.prisma.$executeRawUnsafe(`
         CREATE TABLE IF NOT EXISTS "password_reset_tokens" (
-          "id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
+          "id" TEXT NOT NULL,
           "user_id" TEXT NOT NULL,
           "email" VARCHAR(255) NOT NULL,
           "code_hash" VARCHAR(128) NOT NULL,
@@ -128,6 +145,13 @@ export class AuthService implements OnModuleInit {
           CONSTRAINT "password_reset_tokens_pkey" PRIMARY KEY ("id")
         );
       `);
+
+      try {
+        await this.prisma.$executeRawUnsafe(`
+          ALTER TABLE "password_reset_tokens" ALTER COLUMN "id" TYPE TEXT;
+          ALTER TABLE "password_reset_tokens" ALTER COLUMN "user_id" TYPE TEXT;
+        `);
+      } catch (e: any) {}
 
       await this.prisma.$executeRawUnsafe(`
         DO $$
@@ -140,6 +164,9 @@ export class AuthService implements OnModuleInit {
               FOREIGN KEY ("user_id") REFERENCES "users"("id")
               ON DELETE CASCADE ON UPDATE CASCADE;
           END IF;
+        EXCEPTION
+          WHEN OTHERS THEN
+            NULL;
         END $$;
       `);
 
