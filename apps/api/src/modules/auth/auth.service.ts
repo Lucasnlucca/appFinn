@@ -293,7 +293,9 @@ export class AuthService implements OnModuleInit {
       payload = ticket.getPayload();
     } catch (err: any) {
       this.logger.error(`Falha ao verificar idToken Google: ${err?.message}`);
-      throw new UnauthorizedException('Token do Google inválido, expirado ou não autorizado.');
+      throw new UnauthorizedException(
+        `Token do Google inválido ou não autorizado: ${err?.message || 'Verifique o GOOGLE_WEB_CLIENT_ID'}`,
+      );
     }
 
     if (!payload) {
@@ -592,12 +594,19 @@ export class AuthService implements OnModuleInit {
       codeHash,
     );
 
-    await this.emailService.sendPasswordResetCode({
-      toEmail: cleanEmail,
-      fullName: user.fullName,
-      code,
-      expiresInMinutes: 15,
-    });
+    try {
+      await this.emailService.sendPasswordResetCode({
+        toEmail: cleanEmail,
+        fullName: user.fullName,
+        code,
+        expiresInMinutes: 15,
+      });
+    } catch (mailErr: any) {
+      this.logger.error(`Falha no envio de e-mail: ${mailErr?.message}`);
+      throw new BadRequestException(
+        `Erro ao enviar o e-mail: ${mailErr?.message || 'Verifique as configurações SMTP no servidor.'}`,
+      );
+    }
 
     return {
       success: true,
