@@ -11,6 +11,8 @@ RUN apk add --no-cache libc6-compat python3 make g++
 # Copiar manifestos de workspaces e lockfile
 COPY package*.json ./
 COPY apps/api/package*.json ./apps/api/
+COPY apps/web/package*.json ./apps/web/
+COPY apps/mobile/package*.json ./apps/mobile/
 COPY packages/shared/package*.json ./packages/shared/
 COPY packages/database/package*.json ./packages/database/
 COPY packages/config/package*.json ./packages/config/
