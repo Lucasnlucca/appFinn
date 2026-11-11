@@ -1,6 +1,7 @@
 import { Platform } from 'react-native';
 import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
-import { apiRequest, saveAuthToken, saveAuthUser, setRememberedCredentials } from './apiService';
+import { apiRequest, saveAuthToken, saveAuthUser } from './apiService';
+import { setRememberedCredentials } from './biometricService';
 
 // Web Client ID oficial do Google Cloud Console ("Web application")
 export const GOOGLE_WEB_CLIENT_ID =

@@ -1198,4 +1198,8 @@ export async function registerPushTokenApi({ pushToken, platform = 'android', de
   });
 }
 
+// Re-exportações de utilitários de autenticação / credenciais
+export { setRememberedCredentials, getRememberedCredentials } from './biometricService';
+
+
 
