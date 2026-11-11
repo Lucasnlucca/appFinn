@@ -1650,9 +1650,6 @@ export function FinanceProvider({ children }) {
     return newGroup;
   };
 
-    return newGroup;
-  };
-
   // Verifica se o usuário autenticado é o criador/dono do grupo
   const isGroupCreator = (group) => {
     if (!group || !loggedInUser) return false;
