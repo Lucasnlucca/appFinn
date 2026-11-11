@@ -49,6 +49,7 @@ import {
   publishCloudInvite,
   resolveCloudInvite,
 } from '../services/inviteRelayService';
+import { signOutGoogle } from '../services/googleAuthService';
 import {
   initPhoneNotifications,
   sendInstantPhoneNotification,
@@ -1451,6 +1452,7 @@ export function FinanceProvider({ children }) {
     setViewModeState('personal');
     setLoggedInUser(null);
     await clearAuthSession();
+    await signOutGoogle().catch(() => {});
     await logoutUser().catch(() => {});
   };
 
@@ -1492,6 +1494,7 @@ export function FinanceProvider({ children }) {
 
     await deleteUserAccountApi().catch(() => {});
     await clearAuthSession();
+    await signOutGoogle().catch(() => {});
   };
 
   // Atualização em tempo real do perfil do usuário logado (Nome, Sobrenome e Foto persistidos no banco)

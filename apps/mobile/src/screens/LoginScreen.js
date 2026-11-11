@@ -430,10 +430,13 @@ export default function LoginScreen({ onLoginSuccess }) {
     }
   };
 
-  const handleGoogleAuth = async () => {
+  const handleGoogleAuth = async (intent = 'login') => {
     setLoadingGoogle(true);
     try {
-      const result = await performOfficialGoogleSignIn({ termsAcceptedVersion: '1.0' });
+      const result = await performOfficialGoogleSignIn({
+        intent,
+        termsAcceptedVersion: '1.0',
+      });
       if (!result) {
         // Usuário fechou ou cancelou o seletor nativo do Google silenciosamente
         return;
@@ -448,12 +451,40 @@ export default function LoginScreen({ onLoginSuccess }) {
         } else {
           Alert.alert(
             'Bem-vindo de volta!',
-            'Você já tinha uma conta cadastrada no FINN. Entramos para você.'
+            'Login realizado com sucesso.'
           );
         }
         await completeLoginWithDigitalPrompt(result.user, result.token);
       }
     } catch (err) {
+      const code = err?.data?.code;
+      const status = err?.status;
+      const returnedEmail = err?.data?.email;
+      const returnedName = err?.data?.name;
+
+      if (code === 'ACCOUNT_ALREADY_EXISTS' || status === 409) {
+        if (returnedEmail) setLoginEmail(returnedEmail);
+        setMode('login');
+        Alert.alert(
+          'Conta já existente',
+          err?.message ||
+            'Já existe uma conta cadastrada com este e-mail. Você foi redirecionado para a tela de login para entrar com sua conta.'
+        );
+        return;
+      }
+
+      if (code === 'ACCOUNT_NOT_FOUND' || status === 404) {
+        if (returnedEmail) setRegEmail(returnedEmail);
+        if (returnedName) setRegName(returnedName);
+        setMode('register_step1');
+        Alert.alert(
+          'Cadastro não encontrado',
+          err?.message ||
+            'Nenhuma conta foi encontrada para este e-mail do Google. Você foi redirecionado para a tela de cadastro.'
+        );
+        return;
+      }
+
       Alert.alert('Google Sign-In', err?.message || 'Falha ao autenticar com o Google.');
     } finally {
       setLoadingGoogle(false);
@@ -652,7 +683,7 @@ export default function LoginScreen({ onLoginSuccess }) {
             {/* BOTÃO GOOGLE NATIVO (LOGIN) */}
             <TouchableOpacity
               style={styles.googleButton}
-              onPress={handleGoogleAuth}
+              onPress={() => handleGoogleAuth('login')}
               disabled={loadingGoogle || loadingLogin}
               activeOpacity={0.8}
             >
@@ -960,7 +991,7 @@ export default function LoginScreen({ onLoginSuccess }) {
             {/* BOTÃO CADASTRAR COM GOOGLE NATIVO */}
             <TouchableOpacity
               style={styles.googleButton}
-              onPress={handleGoogleAuth}
+              onPress={() => handleGoogleAuth('register')}
               disabled={loadingGoogle || checkingStep1Email}
               activeOpacity={0.8}
             >

@@ -99,11 +99,13 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Autenticação e Cadastro Oficial com Google via ID Token Criptográfico' })
   async googleAuth(
-    @Body() body: { idToken: string; termsAcceptedVersion?: string },
+    @Body() body: { idToken: string; termsAcceptedVersion?: string; intent?: 'login' | 'register' },
     @Res({ passthrough: true }) response: Response,
   ) {
     const result = await this.authService.authenticateGoogle(body);
-    this.setAuthCookie(response, result.token);
+    if (result?.token) {
+      this.setAuthCookie(response, result.token);
+    }
     return result;
   }
 

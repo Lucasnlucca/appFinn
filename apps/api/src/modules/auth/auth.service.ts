@@ -4,6 +4,7 @@ import {
   UnauthorizedException,
   NotFoundException,
   BadRequestException,
+  HttpException,
   Logger,
   OnModuleInit,
 } from '@nestjs/common';
@@ -328,7 +329,11 @@ export class AuthService implements OnModuleInit {
    * Valida obrigatoriamente assinatura, expiração, audience, issuer e email_verified = true.
    * Não aceita e-mail ou nome enviados pelo app: todos os dados vêm do token criptografado.
    */
-  async authenticateGoogle(body: { idToken?: string; termsAcceptedVersion?: string }) {
+  async authenticateGoogle(body: {
+    idToken?: string;
+    termsAcceptedVersion?: string;
+    intent?: 'login' | 'register';
+  }) {
     const idToken = (body?.idToken || '').trim();
     if (!idToken) {
       throw new BadRequestException('ID token do Google não informado.');
@@ -384,10 +389,13 @@ export class AuthService implements OnModuleInit {
     // Garante que a estrutura de banco e auth_identities esteja pronta
     await this.ensureDatabaseSchema();
 
+    const intent: 'login' | 'register' | null =
+      body?.intent === 'register' ? 'register' : body?.intent === 'login' ? 'login' : null;
+
     try {
       // 2. Transação atômica no PostgreSQL com 3 casos obrigatórios
       const result = await this.prisma.$transaction(async (tx) => {
-        // Caso 1: Identidade (google, sub) já existe na auth_identities -> Login direto
+        // Caso 1: Identidade (google, sub) já existe na auth_identities
         const identityRows: any[] = await tx.$queryRawUnsafe(
           `SELECT "id", "user_id", "email" FROM "auth_identities" WHERE "provider" = $1 AND "provider_sub" = $2 LIMIT 1`,
           'google',
@@ -398,6 +406,14 @@ export class AuthService implements OnModuleInit {
         let isNewUser = false;
 
         if (identityRows && identityRows.length > 0) {
+          if (intent === 'register') {
+            throw new ConflictException({
+              code: 'ACCOUNT_ALREADY_EXISTS',
+              email: verifiedEmail,
+              message:
+                'Já existe uma conta cadastrada com este e-mail. Você será redirecionado para a tela de login.',
+            });
+          }
           targetUserId = identityRows[0].user_id;
         } else {
           // Caso 2: Identidade ainda não existe para este sub, mas o e-mail já pertence a usuário existente
@@ -407,6 +423,14 @@ export class AuthService implements OnModuleInit {
           });
 
           if (existingUser) {
+            if (intent === 'register') {
+              throw new ConflictException({
+                code: 'ACCOUNT_ALREADY_EXISTS',
+                email: verifiedEmail,
+                message:
+                  'Já existe uma conta cadastrada com este e-mail. Você será redirecionado para a tela de login.',
+              });
+            }
             targetUserId = existingUser.id;
             // Vincula a identidade Google ao usuário existente
             await tx.$executeRawUnsafe(
@@ -424,7 +448,16 @@ export class AuthService implements OnModuleInit {
               ...(verifiedPicture && !existingUser.avatarUrl ? [targetUserId, verifiedPicture] : [targetUserId]),
             );
           } else {
-            // Caso 3: Não existe usuário nem identidade -> Cria novo usuário com password_hash nulo
+            // Caso 3: Não existe usuário nem identidade
+            if (intent === 'login') {
+              throw new NotFoundException({
+                code: 'ACCOUNT_NOT_FOUND',
+                email: verifiedEmail,
+                name: verifiedName,
+                message:
+                  'Nenhuma conta encontrada com este e-mail do Google. Você será redirecionado para criar seu cadastro.',
+              });
+            }
             isNewUser = true;
             const termsVersion = (body?.termsAcceptedVersion || '1.0').trim();
 
@@ -487,6 +520,9 @@ export class AuthService implements OnModuleInit {
         isNewUser: result.isNewUser,
       };
     } catch (dbErr: any) {
+      if (dbErr instanceof HttpException) {
+        throw dbErr;
+      }
       this.logger.error(`Erro ao autenticar com o Google no banco: ${dbErr?.message}`);
       throw new BadRequestException(`Erro no banco de dados ao salvar autenticação Google: ${dbErr?.message}`);
     }
