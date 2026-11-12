@@ -13,6 +13,21 @@ const STORAGE_KEYS = {
 };
 
 /**
+ * Remove automaticamente URLs de foto vindas do Google (googleusercontent.com / ggpht.com)
+ * para garantir que o usuário escolha manualmente sua própria foto dentro do FINN.
+ */
+export function sanitizeAvatarUri(uri) {
+  if (!uri || typeof uri !== 'string') return null;
+  const trimmed = uri.trim();
+  if (!trimmed) return null;
+  const lower = trimmed.toLowerCase();
+  if (lower.includes('googleusercontent.com') || lower.includes('ggpht.com')) {
+    return null;
+  }
+  return trimmed;
+}
+
+/**
  * Registra a conta autenticada no índice local por e-mail para impedir duplicidade
  * e garantir que o mesmo e-mail sempre use o mesmo ID de usuário do PostgreSQL.
  */
@@ -77,8 +92,8 @@ export async function mergeWithSavedProfile(userObj) {
     const savedByEmail = emailKey ? registry[`email:${emailKey}`] : null;
     const saved = savedById || savedByEmail || null;
 
-    // Se o servidor retornou avatarUrl do PostgreSQL e não há foto local ainda
-    const serverAvatar = userObj.avatarUri || userObj.avatarUrl || null;
+    // Se o servidor retornou avatarUrl do PostgreSQL e não há foto local ainda (descartando foto do Google)
+    const serverAvatar = sanitizeAvatarUri(userObj.avatarUri || userObj.avatarUrl || null);
     const serverFullName = userObj.fullName || userObj.name || '';
     const serverParts = serverFullName.trim().split(/\s+/).filter(Boolean);
 
@@ -95,6 +110,7 @@ export async function mergeWithSavedProfile(userObj) {
               ? serverParts.slice(1).join(' ')
               : '',
         avatarUri: serverAvatar,
+        avatarUrl: serverAvatar,
       };
     }
 
@@ -111,10 +127,11 @@ export async function mergeWithSavedProfile(userObj) {
       saved.fullName ||
       [finalFirstName, finalLastName].filter(Boolean).join(' ') ||
       serverFullName;
+    const savedAvatar = sanitizeAvatarUri(saved.avatarUri);
     const finalAvatar =
       saved.avatarRemoved === true
         ? null
-        : saved.avatarUri || serverAvatar || null;
+        : savedAvatar || serverAvatar || null;
 
     return {
       ...userObj,
@@ -452,7 +469,7 @@ export async function loginUser(email, password) {
       ...data.user,
       email: cleanEmail,
       name: data.user.fullName || data.user.name || (cleanEmail ? cleanEmail.split('@')[0] : 'Você'),
-      avatarUri: data.user.avatarUri || data.user.avatarUrl || null,
+      avatarUri: sanitizeAvatarUri(data.user.avatarUri || data.user.avatarUrl || null),
     };
     const mergedUser = await saveAuthUser(baseUser, data.token);
     data.user = mergedUser;
@@ -495,7 +512,7 @@ export async function registerUser(email, password, fullName, phone) {
         ...data.user,
         email: cleanEmail,
         name: data.user.fullName || data.user.name || fullName || 'Você',
-        avatarUri: data.user.avatarUri || data.user.avatarUrl || null,
+        avatarUri: sanitizeAvatarUri(data.user.avatarUri || data.user.avatarUrl || null),
       };
       const mergedUser = await saveAuthUser(baseUser, data.token);
       data.user = mergedUser;
@@ -594,7 +611,7 @@ export async function resetPasswordWithCodeApi({ email, code, newPassword }) {
       ...data.user,
       email: cleanEmail,
       name: data.user.fullName || data.user.name || cleanEmail.split('@')[0],
-      avatarUri: data.user.avatarUri || data.user.avatarUrl || null,
+      avatarUri: sanitizeAvatarUri(data.user.avatarUri || data.user.avatarUrl || null),
     };
     const mergedUser = await saveAuthUser(baseUser, data.token);
     data.user = mergedUser;

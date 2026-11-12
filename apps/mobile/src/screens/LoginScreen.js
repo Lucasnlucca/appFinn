@@ -26,6 +26,7 @@ import {
   resetPasswordWithCodeApi,
 } from '../services/apiService';
 import { performOfficialGoogleSignIn } from '../services/googleAuthService';
+import { LEGAL_URLS, openLegalUrl } from '../constants/legal';
 import {
   checkBiometricSupport,
   isBiometricLoginEnabled,
@@ -698,8 +699,14 @@ export default function LoginScreen({ onLoginSuccess }) {
             {/* AVISO LEGAL E PRIVACIDADE LGPD */}
             <Text style={[styles.termsText, { marginTop: 14, marginBottom: 4 }]}>
               Ao continuar, você aceita os{' '}
-              <Text style={styles.termsLink}>Termos de Uso</Text> e a{' '}
-              <Text style={styles.termsLink}>Política de Privacidade</Text>.
+              <Text style={styles.termsLink} onPress={() => openLegalUrl(LEGAL_URLS.TERMS_OF_USE)}>
+                Termos de Uso
+              </Text>{' '}
+              e a{' '}
+              <Text style={styles.termsLink} onPress={() => openLegalUrl(LEGAL_URLS.PRIVACY_POLICY)}>
+                Política de Privacidade
+              </Text>
+              .
             </Text>
 
             {/* LINK PARA CADASTRO */}
@@ -1006,8 +1013,14 @@ export default function LoginScreen({ onLoginSuccess }) {
             {/* AVISO LEGAL E PRIVACIDADE LGPD */}
             <Text style={[styles.termsText, { marginTop: 14, marginBottom: 4 }]}>
               Ao continuar, você aceita os{' '}
-              <Text style={styles.termsLink}>Termos de Uso</Text> e a{' '}
-              <Text style={styles.termsLink}>Política de Privacidade</Text>.
+              <Text style={styles.termsLink} onPress={() => openLegalUrl(LEGAL_URLS.TERMS_OF_USE)}>
+                Termos de Uso
+              </Text>{' '}
+              e a{' '}
+              <Text style={styles.termsLink} onPress={() => openLegalUrl(LEGAL_URLS.PRIVACY_POLICY)}>
+                Política de Privacidade
+              </Text>
+              .
             </Text>
 
             {/* LINK RETORNAR AO LOGIN */}
@@ -1171,8 +1184,14 @@ export default function LoginScreen({ onLoginSuccess }) {
           {/* TERMOS E POLÍTICA */}
           <Text style={styles.termsText}>
             Ao criar sua conta, você concorda com os{' '}
-            <Text style={styles.termsLink}>Termos de Uso</Text> e a{' '}
-            <Text style={styles.termsLink}>Política de Privacidade</Text>.
+            <Text style={styles.termsLink} onPress={() => openLegalUrl(LEGAL_URLS.TERMS_OF_USE)}>
+              Termos de Uso
+            </Text>{' '}
+            e a{' '}
+            <Text style={styles.termsLink} onPress={() => openLegalUrl(LEGAL_URLS.PRIVACY_POLICY)}>
+              Política de Privacidade
+            </Text>
+            .
           </Text>
         </View>
       </ScrollView>

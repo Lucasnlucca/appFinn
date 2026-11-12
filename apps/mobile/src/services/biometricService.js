@@ -7,6 +7,7 @@ import {
   saveAuthUser,
   getMe,
   mergeWithSavedProfile,
+  sanitizeAvatarUri,
 } from './apiService';
 
 const STORAGE_KEYS = {
@@ -189,8 +190,8 @@ export async function performBiometricLogin() {
           name: savedFinal?.fullName || savedFinal?.name || freshUser?.fullName,
           avatarUri:
             savedFinal?.avatarUri !== undefined
-              ? savedFinal.avatarUri
-              : freshUser?.avatarUri || freshUser?.avatarUrl || null,
+              ? sanitizeAvatarUri(savedFinal.avatarUri)
+              : sanitizeAvatarUri(freshUser?.avatarUri || freshUser?.avatarUrl || null),
         },
         token
       );

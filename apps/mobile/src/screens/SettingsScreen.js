@@ -23,6 +23,7 @@ import {
   testPostgresConnection,
   DEFAULT_API_URL,
 } from '../services/apiService';
+import { LEGAL_URLS, openLegalUrl } from '../constants/legal';
 import {
   getGeminiApiKey,
   setGeminiApiKey,
@@ -519,11 +520,47 @@ export default function SettingsScreen({ navigation }) {
                       borderTopWidth: 1,
                       borderTopColor: '#E5E7EB',
                     }}
-                    onPress={() => navigation.navigate('Profile')}
+                    onPress={() => openLegalUrl(LEGAL_URLS.PRIVACY_POLICY)}
                     activeOpacity={0.7}
                   >
                     <Text style={{ fontSize: 12, color: '#7C3AED', fontWeight: '700' }}>
-                      Política de Privacidade e Exclusão de Conta →
+                      Política de Privacidade (HTTPS) ↗
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      marginTop: 10,
+                      paddingTop: 10,
+                      borderTopWidth: 1,
+                      borderTopColor: '#E5E7EB',
+                    }}
+                    onPress={() => openLegalUrl(LEGAL_URLS.TERMS_OF_USE)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={{ fontSize: 12, color: '#7C3AED', fontWeight: '700' }}>
+                      Termos de Uso (HTTPS) ↗
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      marginTop: 10,
+                      paddingTop: 10,
+                      borderTopWidth: 1,
+                      borderTopColor: '#E5E7EB',
+                    }}
+                    onPress={() => navigation.navigate('Profile')}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={{ fontSize: 12, color: '#DC2626', fontWeight: '700' }}>
+                      Perfil e Excluir minha conta e dados →
                     </Text>
                   </TouchableOpacity>
                 </View>

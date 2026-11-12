@@ -16,7 +16,8 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import { useFinance } from '../context/FinanceContext';
-import { updatePasswordApi } from '../services/apiService';
+import { sanitizeAvatarUri, updatePasswordApi } from '../services/apiService';
+import { LEGAL_URLS, openLegalUrl } from '../constants/legal';
 
 export default function ProfileScreen({ navigation }) {
   const insets = useSafeAreaInsets();
@@ -53,7 +54,7 @@ export default function ProfileScreen({ navigation }) {
             ? parts.slice(1).join(' ')
             : ''
       );
-      setAvatarUri(loggedInUser.avatarUri || loggedInUser.avatarUrl || null);
+      setAvatarUri(sanitizeAvatarUri(loggedInUser.avatarUri || loggedInUser.avatarUrl || null));
     }
   }, [
     loggedInUser?.id,
@@ -474,9 +475,33 @@ export default function ProfileScreen({ navigation }) {
           >
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
               <Ionicons name="document-text-outline" size={18} color="#64748B" />
-              <Text style={styles.privacyLinkText}>Política de Privacidade e Termos de Uso</Text>
+              <Text style={styles.privacyLinkText}>Resumo de Privacidade & Termos</Text>
             </View>
             <Ionicons name="chevron-forward" size={16} color="#94A3B8" />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.privacyLinkRow, { marginTop: 8 }]}
+            onPress={() => openLegalUrl(LEGAL_URLS.PRIVACY_POLICY)}
+            activeOpacity={0.7}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
+              <Ionicons name="globe-outline" size={18} color="#7C3AED" />
+              <Text style={styles.privacyLinkText}>Política de Privacidade (HTTPS)</Text>
+            </View>
+            <Ionicons name="open-outline" size={16} color="#7C3AED" />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.privacyLinkRow, { marginTop: 8 }]}
+            onPress={() => openLegalUrl(LEGAL_URLS.TERMS_OF_USE)}
+            activeOpacity={0.7}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
+              <Ionicons name="reader-outline" size={18} color="#7C3AED" />
+              <Text style={styles.privacyLinkText}>Termos de Uso (HTTPS)</Text>
+            </View>
+            <Ionicons name="open-outline" size={16} color="#7C3AED" />
           </TouchableOpacity>
         </View>
 

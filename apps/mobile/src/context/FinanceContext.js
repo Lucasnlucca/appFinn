@@ -44,6 +44,7 @@ import {
   createNotificationApi,
   markNotificationReadApi,
   markAllNotificationsReadApi,
+  sanitizeAvatarUri,
 } from '../services/apiService';
 import {
   publishCloudInvite,
@@ -714,7 +715,7 @@ export function FinanceProvider({ children }) {
             id: m.id,
             name: m.fullName || m.name || (m.role === 'OWNER' ? 'Organizador(a)' : 'Membro'),
             email: m.email || '',
-            avatarUrl: m.avatarUrl || null,
+            avatarUrl: sanitizeAvatarUri(m.avatarUrl || null),
             role: m.role || 'MEMBER',
             isCreator: m.role === 'OWNER',
           }));
@@ -2039,7 +2040,7 @@ export function FinanceProvider({ children }) {
           id: m.id,
           name: m.name || m.fullName || (m.role === 'OWNER' ? 'Organizador(a)' : 'Membro'),
           email: m.email || '',
-          avatarUrl: m.avatarUrl || null,
+          avatarUrl: sanitizeAvatarUri(m.avatarUrl || null),
           role: m.role || 'MEMBER',
           isCreator: m.role === 'OWNER',
         })),
@@ -2105,7 +2106,7 @@ export function FinanceProvider({ children }) {
             id: m.id,
             name: m.fullName || m.name || (m.role === 'OWNER' ? 'Organizador(a)' : 'Membro'),
             email: m.email || '',
-            avatarUrl: m.avatarUrl || null,
+            avatarUrl: sanitizeAvatarUri(m.avatarUrl || null),
             role: m.role || 'MEMBER',
             isCreator: m.role === 'OWNER',
           })),

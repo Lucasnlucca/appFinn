@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Política de Privacidade (LGPD) — FINN AI</title>
+  <style>
+    :root {
+      --primary: #7c3aed;
+      --primary-dark: #5b21b6;
+      --bg: #f8fafc;
+      --card: #ffffff;
+      --text: #0f172a;
+      --muted: #334155;
+      --border: #e2e8f0;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.7;
+    }
+    header {
+      background: linear-gradient(135deg, #5b21b6, #7c3aed);
+      color: #fff;
+      padding: 36px 20px;
+      text-align: center;
+    }
+    header h1 { margin: 0 0 6px; font-size: 1.85rem; }
+    header p { margin: 0; opacity: 0.9; font-size: 0.95rem; }
+    main {
+      max-width: 860px;
+      margin: 24px auto 48px;
+      padding: 0 16px;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 30px;
+      box-shadow: 0 6px 24px rgba(15, 23, 42, 0.05);
+    }
+    h2 {
+      color: var(--primary-dark);
+      font-size: 1.15rem;
+      margin-top: 24px;
+      margin-bottom: 8px;
+    }
+    h2:first-of-type { margin-top: 8px; }
+    p, li { color: var(--muted); }
+    ul { padding-left: 20px; }
+    .nav {
+      margin-bottom: 16px;
+      font-size: 0.92rem;
+    }
+    .nav a { color: var(--primary-dark); text-decoration: none; font-weight: 600; }
+    .highlight {
+      background: #f5f3ff;
+      border-left: 4px solid var(--primary);
+      padding: 12px 16px;
+      border-radius: 8px;
+      margin: 14px 0;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Política de Privacidade — FINN AI</h1>
+    <p>Em conformidade com a Lei Geral de Proteção de Dados (LGPD — Lei nº 13.709/2018) &bull; Última atualização: Novembro de 2026</p>
+  </header>
+
+  <main>
+    <div class="nav">
+      <a href="./index.html">&larr; Voltar para a página inicial do FINN</a> &nbsp;|&nbsp;
+      <a href="./termos.html">Termos de Uso</a>
+    </div>
+
+    <article class="card">
+      <p>
+        Esta Política de Privacidade descreve como o aplicativo <strong>FINN AI</strong> coleta, utiliza, armazena, protege e exclui os dados pessoais dos usuários, em atendimento à Lei Geral de Proteção de Dados Pessoais (LGPD) e às políticas do Google e da Google Play.
+      </p>
+
+      <h2>1. Dados coletados</h2>
+      <p>Para viabilizar o funcionamento do aplicativo, coletamos apenas os dados necessários informados por você ou autorizados durante o login:</p>
+      <ul>
+        <li><strong>Dados cadastrais:</strong> nome completo e endereço de e-mail.</li>
+        <li><strong>Autenticação com Google:</strong> quando você escolhe entrar ou cadastrar-se com o Google, solicitamos exclusivamente os escopos básicos <code>openid</code>, <code>email</code> e <code>profile</code> para validar sua identidade e obter seu e-mail verificado e nome. <strong>O FINN não importa nem exibe automaticamente a foto de perfil da sua conta Google.</strong></li>
+        <li><strong>Foto de perfil opcional:</strong> caso deseje, você pode escolher manualmente uma foto da sua galeria dentro do aplicativo; essa foto fica sob seu controle e pode ser removida a qualquer momento.</li>
+        <li><strong>Dados financeiros informados pelo usuário:</strong> contas bancárias cadastradas manualmente, cartões, faturas, metas/cofrinhos, transações (entradas e saídas), contas a pagar e grupos compartilhados criados ou aceitos por você.</li>
+        <li><strong>Comandos de voz e texto no assistente:</strong> áudios gravados voluntariamente pelo usuário para transcrição e registro de lançamentos financeiros via inteligência artificial.</li>
+      </ul>
+
+      <h2>2. Finalidade do tratamento dos dados</h2>
+      <ul>
+        <li>Autenticar sua conta com segurança e impedir duplicidade ou acesso não autorizado.</li>
+        <li>Organizar e sincronizar seus registros financeiros pessoais e compartilhados entre dispositivos.</li>
+        <li>Processar comandos enviados ao assistente financeiro inteligente para categorizar e lançar informações solicitadas por você.</li>
+        <li>Enviar lembretes e alertas financeiros configurados no aplicativo e códigos de recuperação de senha por e-mail.</li>
+      </ul>
+      <p><strong>Não vendemos, alugamos nem compartilhamos seus dados pessoais ou financeiros com terceiros para fins publicitários.</strong></p>
+
+      <h2>3. Onde os dados ficam armazenados e segurança</h2>
+      <ul>
+        <li><strong>Servidores em nuvem:</strong> os dados sincronizados são armazenados em banco de dados PostgreSQL hospedado em servidor privado com controle de acesso por usuário autenticado (JWT) e transmissão criptografada via HTTPS/TLS.</li>
+        <li><strong>Dispositivo local:</strong> preferências e sessão são armazenadas localmente no dispositivo para acesso rápido e suporte offline, isoladas por usuário.</li>
+      </ul>
+
+      <h2>4. Tempo de retenção</h2>
+      <p>
+        Seus dados pessoais e financeiros permanecem armazenados apenas enquanto sua conta estiver ativa para prestação do serviço ou pelo prazo necessário para cumprimento de obrigações legais aplicáveis. Ao solicitar ou executar a exclusão da conta, todos os dados vinculados nos servidores ativos e no cache local são removidos de forma permanente e irreversível.
+      </p>
+
+      <h2>5. Direitos do titular (Art. 18 da LGPD)</h2>
+      <p>Você pode, a qualquer momento, exercer seus direitos como titular de dados pessoais:</p>
+      <ul>
+        <li>Confirmar a existência de tratamento e acessar os dados mantidos sobre você;</li>
+        <li>Corrigir dados incompletos, inexatos ou desatualizados diretamente na tela de Perfil;</li>
+        <li>Exportar ou solicitar cópia dos seus dados cadastrais e financeiros;</li>
+        <li>Revogar consentimentos e solicitar a eliminação definitiva da sua conta e de todos os dados associados.</li>
+      </ul>
+
+      <h2>6. Como excluir sua conta e seus dados</h2>
+      <div class="highlight">
+        <strong>Exclusão direta pelo aplicativo:</strong> abra o FINN, acesse <strong>Mais &rarr; Perfil &rarr; Excluir minha conta e dados</strong> e confirme a operação. Todos os seus registros (cadastro, contas, cartões, metas, lançamentos e sessões) serão apagados imediatamente dos nossos servidores e do aparelho.
+      </div>
+      <p>
+        Caso não tenha mais acesso ao aparelho ou prefira solicitar a exclusão por e-mail, envie uma mensagem a partir do e-mail cadastrado para <a href="mailto:lucasg.nunes19@gmail.com">lucasg.nunes19@gmail.com</a> com o assunto <em>"Exclusão de conta FINN"</em>.
+      </p>
+
+      <h2>7. Contato do responsável pelo tratamento</h2>
+      <p>
+        <strong>Responsável / Encarregado (LGPD):</strong> Equipe FINN AI<br />
+        <strong>E-mail de suporte e privacidade:</strong> <a href="mailto:lucasg.nunes19@gmail.com">lucasg.nunes19@gmail.com</a>
+      </p>
+    </article>
+  </main>
+</body>
+</html>
+

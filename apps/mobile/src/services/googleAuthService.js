@@ -1,6 +1,6 @@
 import { Platform } from 'react-native';
 import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
-import { apiRequest, saveAuthToken, saveAuthUser } from './apiService';
+import { apiRequest, saveAuthToken, saveAuthUser, sanitizeAvatarUri } from './apiService';
 import { setRememberedCredentials } from './biometricService';
 
 // Web Client ID oficial do Google Cloud Console ("Web application")
@@ -16,7 +16,7 @@ export function configureGoogleSignIn() {
     GoogleSignin.configure({
       webClientId: GOOGLE_WEB_CLIENT_ID,
       offlineAccess: false,
-      scopes: ['profile', 'email'],
+      scopes: ['openid', 'email', 'profile'],
     });
     isConfigured = true;
   } catch (err) {
@@ -96,11 +96,13 @@ export async function performOfficialGoogleSignIn({
 
     if (authResponse?.user) {
       const cleanEmail = String(authResponse.user.email || '').toLowerCase().trim();
+      const customAvatar = sanitizeAvatarUri(authResponse.user.avatarUrl);
       const baseUser = {
         ...authResponse.user,
         email: cleanEmail,
         name: authResponse.user.fullName || authResponse.user.name || 'Você',
-        avatarUri: authResponse.user.avatarUrl || null,
+        avatarUri: customAvatar,
+        avatarUrl: customAvatar,
         provider: 'google',
       };
       const mergedUser = await saveAuthUser(baseUser, authResponse.token);
