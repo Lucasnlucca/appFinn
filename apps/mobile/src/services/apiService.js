@@ -638,14 +638,55 @@ export async function updatePasswordApi(newPassword) {
 }
 
 /**
- * Excluir Conta do Usuário e Dados (Diretriz Google Play Store)
+ * Remove registros locais de perfil e índice de conta associados ao usuário excluído.
  */
-export async function deleteUserAccountApi() {
+export async function removeLocalAccountData(userId, email) {
   try {
-    await apiRequest('auth/account', { method: 'DELETE', timeoutMs: 6000 });
-  } catch (err) {
-    console.log('Conta excluída no contexto local / fallback:', err.message);
+    const cleanEmail = email ? String(email).trim().toLowerCase() : null;
+    const idKey = userId ? String(userId) : null;
+
+    const rawProfiles = await AsyncStorage.getItem(STORAGE_KEYS.PROFILES_REGISTRY);
+    if (rawProfiles) {
+      const profiles = JSON.parse(rawProfiles);
+      if (idKey) delete profiles[`id:${idKey}`];
+      if (cleanEmail) delete profiles[`email:${cleanEmail}`];
+      await AsyncStorage.setItem(STORAGE_KEYS.PROFILES_REGISTRY, JSON.stringify(profiles));
+    }
+
+    if (cleanEmail) {
+      const rawAccounts = await AsyncStorage.getItem(STORAGE_KEYS.ACCOUNTS_REGISTRY);
+      if (rawAccounts) {
+        const accounts = JSON.parse(rawAccounts);
+        delete accounts[cleanEmail];
+        await AsyncStorage.setItem(STORAGE_KEYS.ACCOUNTS_REGISTRY, JSON.stringify(accounts));
+      }
+    }
+  } catch (e) {
+    console.warn('Aviso ao limpar dados locais de conta:', e?.message);
   }
+}
+
+/**
+ * Excluir Conta do Usuário e Dados no PostgreSQL (LGPD + Google Play Store)
+ */
+export async function deleteUserAccountApi(userContext = null) {
+  const token = await getStoredToken();
+  if (token) {
+    try {
+      await apiRequest('privacy/purge', { method: 'DELETE', timeoutMs: 12000 });
+    } catch (err) {
+      // Fallback caso o servidor esteja com rota auth/account ou usuário já removido
+      if (err?.status === 404 && String(err?.message || '').toLowerCase().includes('cannot delete')) {
+        await apiRequest('auth/account', { method: 'DELETE', timeoutMs: 12000 });
+      } else if (err?.status !== 404) {
+        throw new Error(
+          err?.message || 'Não foi possível excluir sua conta no servidor. Verifique sua conexão e tente novamente.'
+        );
+      }
+    }
+  }
+
+  await removeLocalAccountData(userContext?.id, userContext?.email);
   await clearAuthSession();
   return { success: true };
 }

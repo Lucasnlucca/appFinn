@@ -10,6 +10,8 @@ import {
   Alert,
   ActivityIndicator,
   Modal,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -40,6 +42,8 @@ export default function ProfileScreen({ navigation }) {
   // Estados de Conformidade Google Play (Privacidade e Exclusão)
   const [privacyModalVisible, setPrivacyModalVisible] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
+  const [deleteKeywordModalVisible, setDeleteKeywordModalVisible] = useState(false);
+  const [deleteKeywordInput, setDeleteKeywordInput] = useState('');
 
   // Inicializa os dados com base no usuário logado
   useEffect(() => {
@@ -217,11 +221,28 @@ export default function ProfileScreen({ navigation }) {
     ]);
   };
 
-  // Exclusão definitiva de conta (Diretriz Obrigatória Google Play Store)
+  // Passo 1 da exclusão: exige digitar a palavra-chave "EXCLUIR"
   const handleDeleteAccount = () => {
+    setDeleteKeywordInput('');
+    setDeleteKeywordModalVisible(true);
+  };
+
+  // Passo 2 da exclusão: após validar palavra-chave, exibe notificação final sobre perda definitiva dos dados
+  const handleConfirmKeywordDeletion = () => {
+    if (deleteKeywordInput.trim().toUpperCase() !== 'EXCLUIR') {
+      Alert.alert(
+        'Palavra-chave incorreta',
+        'Digite exatamente a palavra EXCLUIR para prosseguir com a exclusão da conta.'
+      );
+      return;
+    }
+
+    setDeleteKeywordModalVisible(false);
+    setDeleteKeywordInput('');
+
     Alert.alert(
-      'Excluir Conta Definitivamente',
-      'Tem certeza de que deseja apagar sua conta? Esta ação é irreversível e excluirá permanentemente seu cadastro, contas bancárias, cartões, cofrinhos e histórico de transações.',
+      'Atenção: Perda Permanente de Dados',
+      'Se você excluir esta conta agora, TODOS os seus dados serão perdidos permanentemente (cadastro, contas bancárias, cartões, cofrinhos, metas, grupos e histórico de transações) e não poderão ser recuperados.\n\nDeseja realmente continuar?',
       [
         { text: 'Cancelar', style: 'cancel' },
         {
@@ -233,9 +254,15 @@ export default function ProfileScreen({ navigation }) {
               if (deleteAccount) {
                 await deleteAccount();
               }
-              Alert.alert('Conta Excluída', 'Sua conta e dados foram removidos com sucesso.');
+              Alert.alert(
+                'Conta Excluída',
+                'Sua conta e todos os seus dados foram removidos permanentemente.'
+              );
             } catch (err) {
-              Alert.alert('Erro ao excluir conta', err.message);
+              Alert.alert(
+                'Erro ao excluir conta',
+                err?.message || 'Não foi possível concluir a exclusão no servidor. Tente novamente.'
+              );
             } finally {
               setDeletingAccount(false);
             }
@@ -592,6 +619,66 @@ export default function ProfileScreen({ navigation }) {
             <View style={{ height: 40 }} />
           </ScrollView>
         </View>
+      </Modal>
+
+      {/* MODAL DE CONFIRMAÇÃO POR PALAVRA-CHAVE PARA EXCLUSÃO DA CONTA */}
+      <Modal
+        visible={deleteKeywordModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          setDeleteKeywordModalVisible(false);
+          setDeleteKeywordInput('');
+        }}
+      >
+        <KeyboardAvoidingView
+          style={styles.deleteModalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <View style={styles.deleteModalCard}>
+            <View style={styles.deleteModalIconWrap}>
+              <Ionicons name="warning-outline" size={28} color="#DC2626" />
+            </View>
+            <Text style={styles.deleteModalTitle}>Confirmar exclusão da conta</Text>
+            <Text style={styles.deleteModalDesc}>
+              Para continuar, digite a palavra-chave <Text style={{ fontWeight: '800', color: '#DC2626' }}>EXCLUIR</Text> no campo abaixo e toque em Excluir:
+            </Text>
+
+            <TextInput
+              style={styles.deleteKeywordInput}
+              placeholder="Digite EXCLUIR"
+              placeholderTextColor="#94A3B8"
+              autoCapitalize="characters"
+              autoCorrect={false}
+              value={deleteKeywordInput}
+              onChangeText={setDeleteKeywordInput}
+            />
+
+            <View style={styles.deleteModalActions}>
+              <TouchableOpacity
+                style={styles.deleteCancelBtn}
+                onPress={() => {
+                  setDeleteKeywordModalVisible(false);
+                  setDeleteKeywordInput('');
+                }}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.deleteCancelBtnText}>Cancelar</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.deleteConfirmBtn,
+                  deleteKeywordInput.trim().toUpperCase() !== 'EXCLUIR' && styles.btnDisabled,
+                ]}
+                onPress={handleConfirmKeywordDeletion}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.deleteConfirmBtnText}>Excluir</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
@@ -966,5 +1053,86 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#475569',
     lineHeight: 20,
+  },
+  deleteModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.55)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 22,
+  },
+  deleteModalCard: {
+    width: '100%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 22,
+    borderWidth: 1,
+    borderColor: '#FEE2E2',
+  },
+  deleteModalIconWrap: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: '#FEF2F2',
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'center',
+    marginBottom: 12,
+  },
+  deleteModalTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#0F172A',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  deleteModalDesc: {
+    fontSize: 13,
+    color: '#475569',
+    textAlign: 'center',
+    lineHeight: 19,
+    marginBottom: 16,
+  },
+  deleteKeywordInput: {
+    borderWidth: 1.5,
+    borderColor: '#FCA5A5',
+    backgroundColor: '#FFF5F5',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#0F172A',
+    textAlign: 'center',
+    letterSpacing: 1.2,
+    marginBottom: 18,
+  },
+  deleteModalActions: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  deleteCancelBtn: {
+    flex: 1,
+    backgroundColor: '#F1F5F9',
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  deleteCancelBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  deleteConfirmBtn: {
+    flex: 1,
+    backgroundColor: '#DC2626',
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  deleteConfirmBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
 });

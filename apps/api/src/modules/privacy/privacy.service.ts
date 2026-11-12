@@ -81,29 +81,78 @@ export class PrivacyService {
       throw new NotFoundException('Usuário não encontrado');
     }
 
-    // Registrar o evento de purga antes da remoção
+    // Registrar evento anônimo de purga sem reter e-mail/PII em log
     await this.auditService.log({
       userId: undefined,
       action: 'LGPD_USER_PURGED',
       entityType: 'User',
-      entityId: userId,
-      metadata: { purgedEmail: user.email, purgedAt: new Date().toISOString() },
+      entityId: 'REDACTED',
+      metadata: { purgedAt: new Date().toISOString() },
     });
 
-    // Exclusão transacional em cascata dos dados pessoais
+    // Exclusão transacional em cascata de todos os dados pessoais e financeiros
     await this.prisma.$transaction(async (tx) => {
-      // 1. Remover transações do usuário
+      // 0. Limpar tabelas auxiliares criadas via SQL raw (auth_identities e password_reset_tokens)
+      try {
+        await tx.$executeRawUnsafe(
+          `DELETE FROM "password_reset_tokens" WHERE "user_id" = $1 OR LOWER("email") = LOWER($2)`,
+          userId,
+          user.email,
+        );
+      } catch {
+        // Tabela pode não existir ainda
+      }
+      try {
+        await tx.$executeRawUnsafe(
+          `DELETE FROM "auth_identities" WHERE "user_id" = $1 OR LOWER("email") = LOWER($2)`,
+          userId,
+          user.email,
+        );
+      } catch {
+        // Tabela pode não existir ainda
+      }
+
+      // Captura os grupos familiares do usuário para remover os que ficarem vazios
+      const memberships = await tx.householdMember.findMany({
+        where: { userId },
+        select: { householdId: true },
+      });
+      const householdIds = [...new Set(memberships.map((m) => m.householdId))];
+
+      // 1. Remover transações, cartões (e faturas), contas bancárias e conexões
       await tx.transaction.deleteMany({ where: { userId } });
-      // 2. Remover faturas e cartões
       await tx.creditCard.deleteMany({ where: { userId } });
-      // 3. Remover contas bancárias
       await tx.financialAccount.deleteMany({ where: { userId } });
-      // 4. Remover memberships e permissões
+      await tx.bankConnection.deleteMany({ where: { userId } });
+
+      // 2. Remover documentos, importações, IA, notificações, consentimentos e configurações
+      await tx.document.deleteMany({ where: { userId } });
+      await tx.importBatch.deleteMany({ where: { userId } });
+      await tx.aiConversation.deleteMany({ where: { userId } });
+      await tx.aiPreference.deleteMany({ where: { userId } });
+      await tx.notification.deleteMany({ where: { userId } });
+      await tx.userConsent.deleteMany({ where: { userId } });
+      await tx.appSetting.deleteMany({ where: { userId } });
+
+      // 3. Remover compartilhamentos, convites enviados e participações em grupos
+      await tx.sharingPermission.deleteMany({
+        where: { OR: [{ ownerUserId: userId }, { recipientUserId: userId }] },
+      });
+      await tx.householdInvitation.deleteMany({ where: { invitedById: userId } });
       await tx.householdMember.deleteMany({ where: { userId } });
-      // 5. Remover sessões
+
+      // 4. Remover sessões, logs de auditoria vinculados e o próprio usuário
       await tx.session.deleteMany({ where: { userId } });
-      // 6. Remover o usuário
+      await tx.auditLog.deleteMany({ where: { userId } });
       await tx.user.delete({ where: { id: userId } });
+
+      // 5. Remover grupos que ficaram sem nenhum participante
+      for (const hhId of householdIds) {
+        const remaining = await tx.householdMember.count({ where: { householdId: hhId } });
+        if (remaining === 0) {
+          await tx.household.delete({ where: { id: hhId } });
+        }
+      }
     });
 
     return {

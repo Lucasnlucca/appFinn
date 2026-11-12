@@ -205,3 +205,20 @@ export async function performBiometricLogin() {
   return { success: true, user: savedFinal, token };
 }
 
+/**
+ * Remove totalmente as credenciais salvas de biometria e "lembrar e-mail" após exclusão da conta.
+ */
+export async function clearAllBiometricData() {
+  try {
+    await AsyncStorage.multiRemove([
+      STORAGE_KEYS.BIOMETRIC_ENABLED,
+      STORAGE_KEYS.SAVED_EMAIL,
+      STORAGE_KEYS.REMEMBER_ME,
+      STORAGE_KEYS.BIOMETRIC_USER,
+      STORAGE_KEYS.BIOMETRIC_TOKEN,
+    ]);
+  } catch (e) {
+    console.warn('Erro ao limpar dados biométricos:', e);
+  }
+}
+

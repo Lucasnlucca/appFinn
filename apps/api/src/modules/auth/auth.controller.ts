@@ -4,6 +4,7 @@ import {
   Get,
   Put,
   Patch,
+  Delete,
   Body,
   Res,
   UseGuards,
@@ -14,6 +15,7 @@ import {
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { Response } from 'express';
 import { AuthService } from './auth.service';
+import { PrivacyService } from '../privacy/privacy.service';
 import { RegisterDto, LoginDto } from '@finn-ai/shared';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { CurrentUser, AuthenticatedUser } from './decorators/current-user.decorator';
@@ -21,7 +23,10 @@ import { CurrentUser, AuthenticatedUser } from './decorators/current-user.decora
 @ApiTags('Auth')
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly privacyService: PrivacyService,
+  ) {}
 
   @Post('register')
   @ApiOperation({ summary: 'Cadastro de novo usuário' })
@@ -150,6 +155,25 @@ export class AuthController {
     @Body() body: { fullName?: string; firstName?: string; lastName?: string; avatarUrl?: string | null; avatarUri?: string | null; phone?: string },
   ) {
     return this.authService.updateProfile(user.id, body);
+  }
+
+  @Delete('account')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Excluir definitivamente conta e dados do usuário autenticado (LGPD)' })
+  async deleteAccount(
+    @CurrentUser() user: AuthenticatedUser,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const result = await this.privacyService.purgeUserAccount(user.id);
+    response.clearCookie('finn_token', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+    });
+    return result;
   }
 
   private setAuthCookie(response: Response, token: string) {

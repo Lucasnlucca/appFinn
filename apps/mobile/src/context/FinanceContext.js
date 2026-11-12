@@ -51,6 +51,7 @@ import {
   resolveCloudInvite,
 } from '../services/inviteRelayService';
 import { signOutGoogle } from '../services/googleAuthService';
+import { clearAllBiometricData } from '../services/biometricService';
 import {
   initPhoneNotifications,
   sendInstantPhoneNotification,
@@ -1458,11 +1459,27 @@ export function FinanceProvider({ children }) {
   };
 
   /**
-   * Excluir Conta e Dados do Usuário (Diretriz Obrigatória Google Play Store)
+   * Excluir Conta e Dados do Usuário (Diretriz Obrigatória Google Play Store + LGPD)
    */
   const deleteAccount = async () => {
     const uid = loggedInUser?.id;
+    const email = loggedInUser?.email;
+
+    // 1. Primeiro exclui fielmente do PostgreSQL no servidor (lança erro se falhar)
+    await deleteUserAccountApi({ id: uid, email });
+
+    // 2. Remove integralmente todas as chaves locais do usuário no aparelho
     if (uid) {
+      try {
+        const allKeys = await AsyncStorage.getAllKeys();
+        const prefix = `finn_user_${uid}_`;
+        const userKeys = (allKeys || []).filter((k) => k.startsWith(prefix));
+        if (userKeys.length > 0) {
+          await AsyncStorage.multiRemove(userKeys);
+        }
+      } catch {
+        // Fallback explícito
+      }
       await Promise.all([
         AsyncStorage.removeItem(getUserStorageKey(uid, 'transactions')),
         AsyncStorage.removeItem(getUserStorageKey(uid, 'accounts')),
@@ -1477,8 +1494,16 @@ export function FinanceProvider({ children }) {
         AsyncStorage.removeItem(getUserStorageKey(uid, 'view_mode')),
         AsyncStorage.removeItem(getUserStorageKey(uid, 'hide_balances')),
         AsyncStorage.removeItem(getUserStorageKey(uid, 'hero_view_mode')),
+        AsyncStorage.removeItem(getUserStorageKey(uid, 'activity_notifications')),
+        AsyncStorage.removeItem(getUserStorageKey(uid, 'read_notifications')),
+        AsyncStorage.removeItem(getUserStorageKey(uid, 'owner_notifications')),
+        AsyncStorage.removeItem(getUserStorageKey(uid, 'user_profile')),
       ]).catch(() => {});
     }
+
+    await clearAllBiometricData().catch(() => {});
+    await clearAuthSession().catch(() => {});
+    await signOutGoogle().catch(() => {});
 
     setTransactions([]);
     setAccounts([]);
@@ -1492,10 +1517,6 @@ export function FinanceProvider({ children }) {
     setSettlements([]);
     setViewModeState('personal');
     setLoggedInUser(null);
-
-    await deleteUserAccountApi().catch(() => {});
-    await clearAuthSession();
-    await signOutGoogle().catch(() => {});
   };
 
   // Atualização em tempo real do perfil do usuário logado (Nome, Sobrenome e Foto persistidos no banco)
