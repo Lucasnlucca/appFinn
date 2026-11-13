@@ -143,6 +143,7 @@ export default function FinnAIScreen({ navigation }) {
     processPdfInvoice,
     processAudioMessage,
     clearAllData,
+    cards,
   } = useFinance();
 
   const [inputText, setInputText] = useState('');
@@ -972,10 +973,68 @@ export default function FinnAIScreen({ navigation }) {
                             </Text>
                           </View>
                           <Text style={styles.txCardSub}>
-                            Lançado para {tx.author || 'Casal'} • Extrato atualizado
+                            {tx.cardName || tx.cardId || tx.paymentMethod === 'credit_card'
+                              ? `💳 Fatura do cartão ${tx.cardName || 'de crédito'} atualizada • Extrato`
+                              : `Lançado para ${tx.author || 'Você'} • Extrato atualizado`}
                           </Text>
                         </View>
                       ))}
+
+                      {/* Botões de Ação Interativa (Crédito vs Débito ou Escolha de Cartão) */}
+                      {!isUser && msg.interactiveAction?.type === 'ASK_PAYMENT_METHOD' && (
+                        <View style={styles.interactiveActionContainer}>
+                          <Text style={styles.interactiveActionTitle}>Selecione a forma de pagamento:</Text>
+                          <View style={styles.interactiveActionRow}>
+                            <TouchableOpacity
+                              style={styles.interactiveActionBtnPrimary}
+                              onPress={() => sendAiMessage('Foi no cartão de crédito')}
+                              activeOpacity={0.7}
+                            >
+                              <Ionicons name="card" size={14} color="#FFFFFF" />
+                              <Text style={styles.interactiveActionBtnPrimaryText}>Cartão de Crédito</Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                              style={styles.interactiveActionBtnSecondary}
+                              onPress={() => sendAiMessage('Foi no débito')}
+                              activeOpacity={0.7}
+                            >
+                              <Ionicons name="cash-outline" size={14} color="#7C3AED" />
+                              <Text style={styles.interactiveActionBtnSecondaryText}>Débito / Conta</Text>
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                      )}
+
+                      {!isUser && msg.interactiveAction?.type === 'ASK_CARD' && (
+                        <View style={styles.interactiveActionContainer}>
+                          <Text style={styles.interactiveActionTitle}>Escolha em qual cartão lançar:</Text>
+                          <View style={styles.interactiveActionWrap}>
+                            {(cards || []).length > 0 ? (
+                              (cards || []).map((card) => (
+                                <TouchableOpacity
+                                  key={card.id}
+                                  style={styles.interactiveCardPill}
+                                  onPress={() => sendAiMessage(`Foi no cartão ${card.name || card.bank}`)}
+                                  activeOpacity={0.7}
+                                >
+                                  <Ionicons name="card-outline" size={13} color="#7C3AED" />
+                                  <Text style={styles.interactiveCardPillText}>{card.name || card.bank}</Text>
+                                </TouchableOpacity>
+                              ))
+                            ) : (
+                              <TouchableOpacity
+                                style={styles.interactiveCardPill}
+                                onPress={() => navigation.navigate('CardInvoices')}
+                                activeOpacity={0.7}
+                              >
+                                <Ionicons name="add-circle-outline" size={13} color="#7C3AED" />
+                                <Text style={styles.interactiveCardPillText}>Cadastrar Cartão na aba Cartões</Text>
+                              </TouchableOpacity>
+                            )}
+                          </View>
+                        </View>
+                      )}
 
                       <Text
                         style={[
@@ -1772,6 +1831,75 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#6B7280',
     marginTop: 4,
+  },
+  interactiveActionContainer: {
+    backgroundColor: '#F5F3FF',
+    borderRadius: 12,
+    padding: 10,
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: '#DDD6FE',
+  },
+  interactiveActionTitle: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#6D28D9',
+    marginBottom: 8,
+  },
+  interactiveActionRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  interactiveActionWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  interactiveActionBtnPrimary: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#7C3AED',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 20,
+  },
+  interactiveActionBtnPrimaryText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  interactiveActionBtnSecondary: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#7C3AED',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 20,
+  },
+  interactiveActionBtnSecondaryText: {
+    color: '#7C3AED',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  interactiveCardPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#C4B5FD',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  interactiveCardPillText: {
+    color: '#5B21B6',
+    fontSize: 12,
+    fontWeight: '700',
   },
   analyzingCard: {
     flexDirection: 'row',

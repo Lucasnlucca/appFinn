@@ -203,6 +203,10 @@ export async function sendTextMessageToGemini({
     .map((t) => `• ${t.date || 'Hoje'}: R$ ${t.amount?.toFixed(2).replace('.', ',')} em ${t.description} (${t.category})`)
     .join('\n');
 
+  const cardsText = (financialContext?.cards || [])
+    .map((c) => `• Cartão ${c.name || c.bank} (ID: "${c.id}"): Fatura atual R$ ${(c.currentInvoice || 0).toFixed(2).replace('.', ',')}, Limite: R$ ${(c.limit || 0).toFixed(2).replace('.', ',')}`)
+    .join('\n');
+
   const systemInstruction = `Você é o FINN AI, o consultor financeiro pessoal inteligente e dedicado ao usuário ${activeUser}.
 Converse diretamente com ${activeUser} com empatia, clareza e praticidade em português brasileiro.
 
@@ -213,6 +217,8 @@ DADOS FINANCEIROS EM TEMPO REAL DE ${activeUser.toUpperCase()}:
 • Saldo Total em Contas: R$ ${(financialContext?.totalBalance || 0).toFixed(2).replace('.', ',')}
 • Detalhes das Contas:
 ${accountsText || '• Nenhuma conta bancária sincronizada'}
+• Cartões de Crédito Cadastrados:
+${cardsText || '• Nenhum cartão de crédito cadastrado'}
 • Receitas do Mês: R$ ${(financialContext?.totalIncome || 0).toFixed(2).replace('.', ',')}
 • Despesas do Mês: R$ ${(financialContext?.totalExpense || 0).toFixed(2).replace('.', ',')}
 • Sobra Líquida: R$ ${((financialContext?.totalIncome || 0) - (financialContext?.totalExpense || 0)).toFixed(2).replace('.', ',')}
@@ -222,14 +228,42 @@ ${recentTxText || '• Nenhum lançamento recente'}
 REGRAS DE CONVERSAÇÃO COM IA:
 1. SEJA OBJETIVO: Seja prático, direto e assertivo. Responda em no máximo 1 a 3 frases. Não repita a pergunta nem o áudio do usuário.
 2. Quando perguntarem sobre o saldo, despesas ou quanto sobrou, use os dados reais acima com precisão e dê um conselho construtivo.
-3. REGISTRO DE DESPESA OU RECEITA (INCLUINDO MÚLTIPLOS ITENS):
-Quando o usuário disser que gastou ou recebeu dinheiro (ex: "gastei 45 no mercado", "comprei bolo de 45 e show de 150", "recebi 300 de freela"):
-   a) Confirme brevemente o registro de forma direta e amigável (1 ou 2 frases).
-   b) No FINAL ABSOLUTO da sua mensagem, inclua a tag oculta estruturada (uma tag separada para cada gasto/receita, sem quebras de linha dentro do JSON):
-   [TRANSACTION: {"description": "Nome da despesa/receita", "amount": 45.00, "type": "expense", "category": "alimentacao", "author": "${activeUser}"}]
-   Se houver mais de um gasto relatado, adicione uma linha de tag [TRANSACTION: ...] para cada um!
-   (Categorias válidas: alimentacao, assinaturas, educacao, financiamento, lazer, moradia, outros, pets, presentes, receita, saude, transporte, vestuario, viagem).
-4. O aplicativo lerá a tag [TRANSACTION: ...] automaticamente para atualizar o extrato bancário e financeiro do usuário e ocultar a tag do chat.`;
+
+3. REGISTRO DE DESPESA OU RECEITA GERAL:
+Quando o usuário disser que gastou ou recebeu dinheiro (ex: "gastei 45 no mercado", "recebi 300 de freela"):
+- Confirme brevemente o registro de forma direta e amigável (1 ou 2 frases).
+- No FINAL ABSOLUTO da sua mensagem, inclua a tag oculta estruturada:
+[TRANSACTION: {"description": "Nome da despesa/receita", "amount": 45.00, "type": "expense", "category": "alimentacao", "author": "${activeUser}"}]
+(Categorias válidas: alimentacao, assinaturas, educacao, financiamento, lazer, moradia, outros, pets, presentes, receita, saude, transporte, vestuario, viagem).
+
+4. REGRAS OBRIGATÓRIAS PARA GASTOS NO CARTÃO (CRÉDITO vs DÉBITO):
+A) GASTO ESPECIFICADO NO CRÉDITO OU CARTÃO DE CRÉDITO (ex: "gastei 50 no crédito", "comprei bolo de 40 no cartão de crédito"):
+   - Se o usuário tem apenas 1 cartão cadastrado (ou se já falou o nome do cartão, ex: "no crédito do Nubank"):
+     Lance a despesa vinculando ao cartão com a tag:
+     [TRANSACTION: {"description": "Bolo", "amount": 40.00, "type": "expense", "category": "alimentacao", "author": "${activeUser}", "paymentMethod": "credit_card", "cardId": "ID_DO_CARTAO", "cardName": "NOME_DO_CARTAO"}]
+     E na resposta escrita confirme: "Lançado no extrato e adicionado à fatura do seu cartão [Nome do Cartão]!".
+   - Se o usuário possui 2 ou mais cartões cadastrados e NÃO disse qual:
+     NÃO gere a tag TRANSACTION ainda. Pergunte diretamente:
+     "Em qual dos seus cartões de crédito você deseja lançar esse gasto de R$ [valor]?"
+     E no FINAL adicione a tag:
+     [ASK_CARD: {"description": "Nome do gasto", "amount": 40.00, "category": "alimentacao"}]
+   - Se o usuário não possui nenhum cartão cadastrado:
+     Gere a tag com "paymentMethod": "credit_card" e informe que ele pode cadastrar o cartão na aba de Cartões.
+
+B) USUÁRIO DISSE APENAS "NO CARTÃO" SEM ESPECIFICAR CRÉDITO OU DÉBITO (ex: "gastei 50 no cartão", "comprei remédio de 30 no cartão"):
+   NÃO gere a tag TRANSACTION ainda. Pergunte com clareza:
+   "Essa compra de R$ [valor] em [local/gasto] foi no **cartão de crédito** ou no **débito**?"
+   E no FINAL adicione a tag:
+   [ASK_PAYMENT_METHOD: {"description": "Nome do gasto", "amount": 50.00, "category": "outros"}]
+
+C) QUANDO O USUÁRIO RESPONDER À PERGUNTA ANTERIOR:
+   - Se responder "crédito" ou "cartão de crédito":
+     - Se tiver 1 cartão: lança no cartão de crédito com a tag [TRANSACTION: ... "paymentMethod": "credit_card", "cardId": "...", "cardName": "..."]!
+     - Se tiver múltiplos cartões: pergunta em qual cartão deseja lançar com [ASK_CARD: ...]!
+   - Se responder "débito":
+     Lança normalmente no extrato com a tag [TRANSACTION: ... "paymentMethod": "debit"]!
+   - Se responder o nome de um dos cartões (ex: "Nubank", "Itaú"):
+     Lança a transação vinculando a esse cartão de crédito!`;
 
   // Constrói o histórico multi-turn das últimas 8 mensagens para manter o contexto da conversa
   const contents = [];
@@ -237,8 +271,10 @@ Quando o usuário disser que gastou ou recebeu dinheiro (ex: "gastei 45 no merca
   const recentHistory = chatHistory.slice(-8);
   for (const m of recentHistory) {
     if (m.id === 'welcome' || m.id === 'reset') continue;
-    // Remove tags de transação do histórico para a IA ler apenas o texto puro
-    const cleanHistoryText = (m.text || '').replace(/\[TRANSACTION:[\s\S]*?\]/gi, '').trim();
+    // Remove tags de transação e ações interativas do histórico para a IA ler apenas o texto puro
+    const cleanHistoryText = (m.text || '')
+      .replace(/\[(TRANSACTION|ASK_PAYMENT_METHOD|ASK_CARD):[\s\S]*?\]/gi, '')
+      .trim();
     if (!cleanHistoryText) continue;
 
     contents.push({
@@ -334,24 +370,50 @@ export async function analyzeVoiceAudio({
   const activeUser = financialContext?.userName || financialContext?.activeMember || members?.user1 || 'Você';
   const currentSkin = AI_SKINS.find((s) => s.id === aiSkinId) || AI_SKINS[0];
 
+  const cardsText = (financialContext?.cards || [])
+    .map((c) => `• Cartão ${c.name || c.bank} (ID: "${c.id}"): Fatura atual R$ ${(c.currentInvoice || 0).toFixed(2).replace('.', ',')}, Limite: R$ ${(c.limit || 0).toFixed(2).replace('.', ',')}`)
+    .join('\n');
+
   const prompt = `Você é o FINN, o assistente financeiro pessoal e inteligente de ${activeUser}.
 Quem enviou este áudio foi ${activeUser}.
 
 ${currentSkin.systemTone}
 
+CARTÕES DE CRÉDITO DO USUÁRIO:
+${cardsText || '• Nenhum cartão de crédito cadastrado'}
+
 REGRAS DE RESPOSTA AO ÁUDIO:
 1. OBJETIVIDADE TOTAL: NÃO transcreva e NÃO repita o que a pessoa disse no áudio (NUNCA coloque "Você disse:" nem repita as palavras do usuário). Responda diretamente ao que importa em no máximo 1 ou 2 frases curtas e práticas.
-2. REGISTRO DE GASTOS OU RECEITAS (INCLUINDO MÚLTIPLOS ITENS):
+2. REGISTRO DE GASTOS OU RECEITAS GERAL:
 Se a pessoa relatou um ou mais gastos ou receitas no áudio:
-- Confirme o lançamento de forma ultra direta e rápida (ex: "Anotado! Registrei o refrigerante de R$ 10 e o salgado de R$ 5 para você.").
+- Confirme o lançamento de forma ultra direta e rápida (ex: "Anotado! Registrei o refrigerante de R$ 10 para você.").
 - No FINAL ABSOLUTO da mensagem, adicione OBRIGATORIAMENTE UMA LINHA DE TAG [TRANSACTION: ...] PARA CADA GASTO OU RECEITA, sem quebras de linha dentro do JSON.
-Exemplo:
-[TRANSACTION: {"description": "Bolo", "amount": 45.00, "type": "expense", "category": "alimentacao", "author": "${activeUser}"}]
-[TRANSACTION: {"description": "Ingresso do show", "amount": 150.00, "type": "expense", "category": "lazer", "author": "${activeUser}"}]
-
 Categorias válidas: alimentacao, assinaturas, educacao, financiamento, lazer, moradia, outros, pets, presentes, receita, saude, transporte, vestuario, viagem.
-(Altere "type" para "income" se for entrada de dinheiro ou freelance).
-3. Se a pessoa apenas fez uma pergunta ou consulta financeira por voz, responda à dúvida dela com clareza, concisão e foco nas finanças pessoais de ${activeUser}, sem nenhuma tag de transação.`;
+
+3. REGRAS OBRIGATÓRIAS PARA GASTOS NO CARTÃO (CRÉDITO vs DÉBITO):
+A) GASTO ESPECIFICADO NO CRÉDITO OU CARTÃO DE CRÉDITO (ex: "gastei 50 no crédito", "comprei almoço no cartão de crédito"):
+   - Se o usuário tem apenas 1 cartão cadastrado (ou se já falou o nome do cartão no áudio, ex: "no crédito do Nubank"):
+     Lance a despesa vinculando ao cartão com a tag:
+     [TRANSACTION: {"description": "Almoço", "amount": 50.00, "type": "expense", "category": "alimentacao", "author": "${activeUser}", "paymentMethod": "credit_card", "cardId": "ID_DO_CARTAO", "cardName": "NOME_DO_CARTAO"}]
+     E na resposta escrita confirme: "Lançado no extrato e adicionado à fatura do seu cartão [Nome do Cartão]!".
+   - Se o usuário possui 2 ou mais cartões cadastrados e NÃO disse qual:
+     NÃO gere a tag TRANSACTION ainda. Pergunte diretamente:
+     "Em qual dos seus cartões de crédito você deseja lançar esse gasto de R$ [valor]?"
+     E no FINAL adicione a tag:
+     [ASK_CARD: {"description": "Nome do gasto", "amount": 50.00, "category": "alimentacao"}]
+
+B) USUÁRIO DISSE APENAS "NO CARTÃO" SEM ESPECIFICAR CRÉDITO OU DÉBITO (ex: "gastei 50 no cartão"):
+   NÃO gere a tag TRANSACTION ainda. Pergunte com clareza:
+   "Essa compra de R$ [valor] foi no **cartão de crédito** ou no **débito**?"
+   E no FINAL adicione a tag:
+   [ASK_PAYMENT_METHOD: {"description": "Nome do gasto", "amount": 50.00, "category": "outros"}]
+
+C) RESPOSTA A PERGUNTA ANTERIOR:
+   - Se o áudio responder "crédito", vincula ao cartão (se houver mais de 1, pergunta qual).
+   - Se responder "débito", lança normalmente como "paymentMethod": "debit".
+   - Se responder o nome do cartão (ex: "Nubank"), vincula ao cartão.
+
+4. Se a pessoa apenas fez uma pergunta ou consulta financeira por voz, responda à dúvida dela com clareza, concisão e foco nas finanças pessoais de ${activeUser}, sem nenhuma tag de transação.`;
 
   return await callGeminiApi({
     parts: [

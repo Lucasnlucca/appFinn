@@ -1051,6 +1051,8 @@ export function FinanceProvider({ children }) {
 
     const newTxs = txDataArray.map((txData, idx) => {
       const resolvedTitle = txData.title || txData.description || 'Movimentação';
+      const resolvedCardId = txData.cardId || txData.creditCardId || null;
+      const isCredit = txData.paymentMethod === 'credit_card' || !!resolvedCardId;
       return {
         id: txData.id || `tx-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 7)}`,
         title: resolvedTitle,
@@ -1066,8 +1068,11 @@ export function FinanceProvider({ children }) {
         groupName: txData.groupName || null,
         date: txData.date || new Date().toISOString().split('T')[0],
         createdAt: txData.createdAt || nowIso,
-        accountId: txData.accountId || defaultAccId,
-        creditCardId: txData.creditCardId || null,
+        accountId: isCredit ? null : (txData.accountId || defaultAccId),
+        creditCardId: resolvedCardId,
+        cardId: resolvedCardId,
+        cardName: txData.cardName || null,
+        paymentMethod: isCredit ? 'credit_card' : (txData.paymentMethod || 'account'),
         notes: txData.notes || '',
       };
     });
@@ -1079,11 +1084,67 @@ export function FinanceProvider({ children }) {
       return nextList;
     });
 
-    // Atualiza saldo da conta bancária para cada movimentação e persiste no PostgreSQL
+    // Se houver transações em cartão de crédito, atualiza o limite utilizado e a fatura atual dos cartões
+    const creditTxs = newTxs.filter(
+      (t) => (t.paymentMethod === 'credit_card' || t.creditCardId || t.cardId) && t.type === 'expense'
+    );
+    if (creditTxs.length > 0) {
+      setCards((prevCards) => {
+        let changed = false;
+        const nextCards = prevCards.map((c) => {
+          const matchingTxs = creditTxs.filter(
+            (t) =>
+              t.cardId === c.id ||
+              t.creditCardId === c.id ||
+              t.cardId === c.remoteId ||
+              t.creditCardId === c.remoteId ||
+              (t.cardName &&
+                (String(c.name || '').toLowerCase().includes(String(t.cardName).toLowerCase()) ||
+                  String(c.bank || '').toLowerCase().includes(String(t.cardName).toLowerCase()))) ||
+              (!t.cardId && prevCards.length === 1)
+          );
+          if (matchingTxs.length === 0) return c;
+
+          changed = true;
+          const totalAdded = matchingTxs.reduce((sum, t) => sum + (parseFloat(t.amount) || 0), 0);
+          const currentInv = parseFloat(c.currentInvoice) || 0;
+          const nextInvoice = Math.round((currentInv + totalAdded) * 100) / 100;
+          const currentUsed = parseFloat(c.usedLimit) || currentInv;
+          const nextUsed = Math.round((currentUsed + totalAdded) * 100) / 100;
+          const limit = parseFloat(c.limit || c.creditLimit) || 1000;
+          const nextPercent = Math.min(Math.round((nextInvoice / (limit || 1)) * 100), 100);
+          const nextAvail = Math.max(limit - nextInvoice, 0);
+
+          const updatedCard = {
+            ...c,
+            currentInvoice: nextInvoice,
+            usedLimit: nextUsed,
+            usedPercent: nextPercent,
+            availableLimit: nextAvail,
+            updatedAt: nowIso,
+          };
+
+          const remoteId = c.remoteId || c.id;
+          if (remoteId && !String(remoteId).startsWith('card-')) {
+            updateCreditCardApi(remoteId, updatedCard).catch(() => {});
+          }
+
+          return updatedCard;
+        });
+
+        if (changed) {
+          saveUserItem('cards', nextCards);
+          return nextCards;
+        }
+        return prevCards;
+      });
+    }
+
+    // Atualiza saldo da conta bancária (apenas para movimentações de conta/débito, não cartão de crédito)
     const updatedAccs = currentAccs.map((acc) => {
       let delta = 0;
       for (const tx of newTxs) {
-        if (!tx.isShared && !tx.groupId && tx.accountId === acc.id) {
+        if (!tx.isShared && !tx.groupId && tx.accountId === acc.id && tx.paymentMethod !== 'credit_card' && !tx.cardId && !tx.creditCardId) {
           delta += tx.type === 'income' ? tx.amount : -tx.amount;
         }
       }
@@ -2552,7 +2613,33 @@ Responda de forma clara, motivadora e estruturada em tópicos!`;
   // IA MULTIMODAL GEMINI
   // ==========================================
   const parseAndRegisterAiTransactions = async (rawText, defaultAuthor) => {
-    if (!rawText) return { cleanText: '', transactions: [] };
+    if (!rawText) return { cleanText: '', transactions: [], interactiveAction: null };
+
+    let interactiveAction = null;
+
+    // 1. Detecta [ASK_PAYMENT_METHOD: {...}]
+    const askPaymentMatch = rawText.match(/\[ASK_PAYMENT_METHOD:\s*(\{[\s\S]*?\})\]/i);
+    if (askPaymentMatch) {
+      try {
+        const jsonStr = askPaymentMatch[1].replace(/\r?\n/g, ' ').trim();
+        interactiveAction = {
+          type: 'ASK_PAYMENT_METHOD',
+          data: JSON.parse(jsonStr),
+        };
+      } catch {}
+    }
+
+    // 2. Detecta [ASK_CARD: {...}]
+    const askCardMatch = rawText.match(/\[ASK_CARD:\s*(\{[\s\S]*?\})\]/i);
+    if (askCardMatch) {
+      try {
+        const jsonStr = askCardMatch[1].replace(/\r?\n/g, ' ').trim();
+        interactiveAction = {
+          type: 'ASK_CARD',
+          data: JSON.parse(jsonStr),
+        };
+      } catch {}
+    }
 
     const regex = /\[TRANSACTION:\s*(\{[\s\S]*?\})\]/gi;
     const matches = [...rawText.matchAll(regex)];
@@ -2563,12 +2650,37 @@ Responda de forma clara, motivadora e estruturada em tópicos!`;
         const jsonStr = match[1].replace(/\r?\n/g, ' ').trim();
         const parsed = JSON.parse(jsonStr);
         if (parsed && parsed.amount) {
+          let resolvedCardId = parsed.cardId || null;
+          let resolvedCardName = parsed.cardName || null;
+
+          if (parsed.paymentMethod === 'credit_card' || parsed.paymentType === 'credit') {
+            if (!resolvedCardId && cards.length === 1) {
+              resolvedCardId = cards[0].id;
+              resolvedCardName = cards[0].name || cards[0].bank;
+            } else if (!resolvedCardId && parsed.cardName && cards.length > 1) {
+              const q = String(parsed.cardName).toLowerCase().trim();
+              const found = cards.find(
+                (c) =>
+                  String(c.name || '').toLowerCase().includes(q) ||
+                  String(c.bank || '').toLowerCase().includes(q)
+              );
+              if (found) {
+                resolvedCardId = found.id;
+                resolvedCardName = found.name || found.bank;
+              }
+            }
+          }
+
           txDataToCreate.push({
             description: parsed.description || 'Movimentação via IA',
             amount: parseFloat(parsed.amount) || 0,
             type: parsed.type === 'income' ? 'income' : 'expense',
             category: parsed.category || 'outros',
             author: parsed.author || defaultAuthor,
+            paymentMethod: parsed.paymentMethod || (resolvedCardId ? 'credit_card' : 'account'),
+            cardId: resolvedCardId,
+            creditCardId: resolvedCardId,
+            cardName: resolvedCardName,
           });
         }
       } catch (err) {
@@ -2580,15 +2692,18 @@ Responda de forma clara, motivadora e estruturada em tópicos!`;
       ? await addTransactionsBatch(txDataToCreate)
       : [];
 
-    const cleanText =
-      rawText.replace(/\[TRANSACTION:\s*\{[\s\S]*?\}\]/gi, '').trim() ||
-      (createdList.length > 0
-        ? `Prontinho! Registrei ${createdList.length === 1 ? 'o lançamento' : `os ${createdList.length} lançamentos`} no extrato.`
-        : rawText);
+    const cleanText = rawText
+      .replace(/\[TRANSACTION:\s*\{[\s\S]*?\}\]/gi, '')
+      .replace(/\[ASK_PAYMENT_METHOD:\s*\{[\s\S]*?\}\]/gi, '')
+      .replace(/\[ASK_CARD:\s*\{[\s\S]*?\}\]/gi, '')
+      .trim();
 
     return {
-      cleanText,
+      cleanText: cleanText || (createdList.length > 0
+        ? `Prontinho! Registrei ${createdList.length === 1 ? 'o lançamento' : `os ${createdList.length} lançamentos`} no extrato.`
+        : rawText),
       transactions: createdList,
+      interactiveAction,
     };
   };
 
@@ -2611,11 +2726,20 @@ Responda de forma clara, motivadora e estruturada em tópicos!`;
       totalExpense,
       activeMember,
       accounts,
+      cards: (cards || []).map((c) => ({
+        id: c.id,
+        remoteId: c.remoteId,
+        name: c.name || c.bank || 'Cartão',
+        bank: c.bank || c.name || 'Cartão',
+        currentInvoice: parseFloat(c.currentInvoice) || 0,
+        limit: parseFloat(c.limit || c.creditLimit) || 0,
+      })),
       recentTransactions: transactions.slice(0, 5),
     };
 
     let aiReplyText = '';
     let createdTxs = [];
+    let interactiveAction = null;
 
     try {
       const uName = loggedInUser?.name || 'Você';
@@ -2631,6 +2755,7 @@ Responda de forma clara, motivadora e estruturada em tópicos!`;
         uName
       );
       createdTxs = parsedResult.transactions;
+      interactiveAction = parsedResult.interactiveAction || null;
       aiReplyText = parsedResult.cleanText || rawResponse;
     } catch (err) {
       if (err.message?.includes('CHAVE_REVOGADA')) {
@@ -2653,12 +2778,13 @@ Responda de forma clara, motivadora e estruturada em tópicos!`;
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       transaction: createdTxs[0] || null,
       transactions: createdTxs,
+      interactiveAction,
     };
 
     const finalChat = [...nextChat, aiMsg];
     setAiChat(finalChat);
     await saveUserItem('ai_chat', finalChat);
-    return { text: aiReplyText, transaction: createdTxs[0] || null, transactions: createdTxs };
+    return { text: aiReplyText, transaction: createdTxs[0] || null, transactions: createdTxs, interactiveAction };
   };
 
   const processReceiptMedia = async (base64Image, mimeType = 'image/jpeg', userNotes = '') => {
@@ -2786,15 +2912,33 @@ Responda de forma clara, motivadora e estruturada em tópicos!`;
     const nextChat = [...aiChat, userMsg];
     setAiChat(nextChat);
 
+    const finContext = {
+      totalBalance,
+      totalIncome,
+      totalExpense,
+      activeMember,
+      accounts,
+      cards: (cards || []).map((c) => ({
+        id: c.id,
+        remoteId: c.remoteId,
+        name: c.name || c.bank || 'Cartão',
+        bank: c.bank || c.name || 'Cartão',
+        currentInvoice: parseFloat(c.currentInvoice) || 0,
+        limit: parseFloat(c.limit || c.creditLimit) || 0,
+      })),
+      recentTransactions: transactions.slice(0, 5),
+    };
+
     let aiReplyText = '';
     let createdTxs = [];
+    let interactiveAction = null;
 
     try {
       const uName = loggedInUser?.name || 'Você';
       const raw = await analyzeVoiceAudio({
         base64Audio,
         mimeType,
-        financialContext: { totalBalance, totalIncome, totalExpense, userName: uName },
+        financialContext: { ...finContext, userName: uName },
         aiSkinId: aiSkin,
       });
 
@@ -2803,6 +2947,7 @@ Responda de forma clara, motivadora e estruturada em tópicos!`;
         uName
       );
       createdTxs = parsedResult.transactions;
+      interactiveAction = parsedResult.interactiveAction || null;
       aiReplyText = parsedResult.cleanText || raw;
     } catch (e) {
       aiReplyText = `Erro ao processar áudio: ${e.message}`;
@@ -2815,12 +2960,13 @@ Responda de forma clara, motivadora e estruturada em tópicos!`;
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       transaction: createdTxs[0] || null,
       transactions: createdTxs,
+      interactiveAction,
     };
 
     const finalChat = [...nextChat, aiMsg];
     setAiChat(finalChat);
     await saveUserItem('ai_chat', finalChat);
-    return { text: aiReplyText, transaction: createdTxs[0] || null, transactions: createdTxs };
+    return { text: aiReplyText, transaction: createdTxs[0] || null, transactions: createdTxs, interactiveAction };
   };
 
   const updateAiSkin = async (skinId) => {
