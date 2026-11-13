@@ -23,7 +23,8 @@
       "bundleIdentifier": "com.finnai.app",
       "infoPlist": {
         "NSMicrophoneUsageDescription": "FINN precisa do microfone para gravar áudios e conversar por voz com seu assistente financeiro de IA.",
-        "NSPhotoLibraryUsageDescription": "FINN precisa acessar suas fotos para você escolher sua imagem de perfil."
+        "NSPhotoLibraryUsageDescription": "FINN precisa acessar suas fotos para você escolher sua imagem de perfil.",
+        "NSCameraUsageDescription": "FINN precisa da câmera para você tirar sua foto de perfil."
       }
     },
     "android": {
@@ -38,7 +39,9 @@
       "permissions": [
         "RECORD_AUDIO",
         "READ_MEDIA_IMAGES",
-        "READ_EXTERNAL_STORAGE"
+        "READ_MEDIA_VISUAL_USER_SELECTED",
+        "READ_EXTERNAL_STORAGE",
+        "CAMERA"
       ]
     },
     "web": {
@@ -61,7 +64,8 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "FINN precisa acessar suas fotos para você escolher sua imagem de perfil."
+          "photosPermission": "FINN precisa acessar suas fotos para você escolher sua imagem de perfil.",
+          "cameraPermission": "FINN precisa da câmera para você tirar sua foto de perfil."
         }
       ],
       "expo-document-picker",

@@ -12,6 +12,7 @@ import {
   Modal,
   KeyboardAvoidingView,
   Platform,
+  Linking,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -69,15 +70,66 @@ export default function ProfileScreen({ navigation }) {
     loggedInUser?.avatarUrl,
   ]);
 
-  // Escolher Imagem de Perfil (Galeria ou Câmera) com persistência Base64 no banco
-  const handlePickAvatar = async () => {
+  // Processar e persistir a foto de perfil selecionada
+  const processAndSaveImage = async (uri) => {
     try {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert(
-          'Permissão necessária',
-          'Precisamos de permissão para acessar suas fotos para definir sua imagem de perfil.'
-        );
+      // Redimensiona para foto de perfil de 280x280 e comprime para evitar estourar o limite de armazenamento local
+      const manipulated = await manipulateAsync(
+        uri,
+        [{ resize: { width: 280, height: 280 } }],
+        { compress: 0.65, format: SaveFormat.JPEG, base64: true }
+      );
+
+      const persistentAvatarUri = manipulated.base64
+        ? `data:image/jpeg;base64,${manipulated.base64}`
+        : manipulated.uri;
+
+      setAvatarUri(persistentAvatarUri);
+      if (updateUserProfile) {
+        const trimmedFirst = firstName.trim();
+        const trimmedLast = lastName.trim();
+        const fullName = [trimmedFirst, trimmedLast].filter(Boolean).join(' ');
+        await updateUserProfile({
+          avatarUri: persistentAvatarUri,
+          ...(trimmedFirst
+            ? {
+                firstName: trimmedFirst,
+                lastName: trimmedLast,
+                fullName,
+                name: fullName,
+              }
+            : {}),
+        });
+      }
+    } catch (err) {
+      Alert.alert('Erro ao processar imagem', err?.message || 'Não foi possível carregar a imagem.');
+    }
+  };
+
+  // Escolher foto da Galeria com solicitação nativa de permissão
+  const handlePickFromGallery = async () => {
+    try {
+      let perm = await ImagePicker.getMediaLibraryPermissionsAsync();
+      if (!perm.granted) {
+        perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      }
+
+      if (!perm.granted) {
+        if (perm.canAskAgain) {
+          Alert.alert(
+            'Permissão necessária',
+            'O FINN precisa de permissão de acesso à galeria para que você escolha sua foto de perfil.'
+          );
+        } else {
+          Alert.alert(
+            'Permissão desativada',
+            'O acesso às fotos está desativado para o FINN nas configurações do seu celular. Deseja abrir as configurações para permitir?',
+            [
+              { text: 'Agora não', style: 'cancel' },
+              { text: 'Abrir Configurações', onPress: () => Linking.openSettings() },
+            ]
+          );
+        }
         return;
       }
 
@@ -89,40 +141,75 @@ export default function ProfileScreen({ navigation }) {
       });
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
-        const asset = result.assets[0];
-
-        // Redimensiona para foto de perfil de 280x280 e comprime para evitar estourar o limite de armazenamento local
-        const manipulated = await manipulateAsync(
-          asset.uri,
-          [{ resize: { width: 280, height: 280 } }],
-          { compress: 0.65, format: SaveFormat.JPEG, base64: true }
-        );
-
-        const persistentAvatarUri = manipulated.base64
-          ? `data:image/jpeg;base64,${manipulated.base64}`
-          : manipulated.uri;
-
-        setAvatarUri(persistentAvatarUri);
-        if (updateUserProfile) {
-          const trimmedFirst = firstName.trim();
-          const trimmedLast = lastName.trim();
-          const fullName = [trimmedFirst, trimmedLast].filter(Boolean).join(' ');
-          await updateUserProfile({
-            avatarUri: persistentAvatarUri,
-            ...(trimmedFirst
-              ? {
-                  firstName: trimmedFirst,
-                  lastName: trimmedLast,
-                  fullName,
-                  name: fullName,
-                }
-              : {}),
-          });
-        }
+        await processAndSaveImage(result.assets[0].uri);
       }
     } catch (err) {
-      Alert.alert('Erro ao carregar imagem', err.message);
+      Alert.alert('Erro ao acessar galeria', err?.message || 'Falha ao abrir galeria.');
     }
+  };
+
+  // Tirar foto com a Câmera com solicitação nativa de permissão
+  const handleTakePhoto = async () => {
+    try {
+      let perm = await ImagePicker.getCameraPermissionsAsync();
+      if (!perm.granted) {
+        perm = await ImagePicker.requestCameraPermissionsAsync();
+      }
+
+      if (!perm.granted) {
+        if (perm.canAskAgain) {
+          Alert.alert(
+            'Permissão da Câmera',
+            'O FINN precisa de permissão da câmera para você tirar uma foto de perfil.'
+          );
+        } else {
+          Alert.alert(
+            'Permissão desativada',
+            'O acesso à câmera está desativado nas configurações do seu celular. Deseja abrir as configurações para permitir?',
+            [
+              { text: 'Agora não', style: 'cancel' },
+              { text: 'Abrir Configurações', onPress: () => Linking.openSettings() },
+            ]
+          );
+        }
+        return;
+      }
+
+      const result = await ImagePicker.launchCameraAsync({
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.7,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        await processAndSaveImage(result.assets[0].uri);
+      }
+    } catch (err) {
+      Alert.alert('Erro ao abrir câmera', err?.message || 'Falha ao abrir câmera.');
+    }
+  };
+
+  // Diálogo para o usuário escolher entre Galeria ou Câmera
+  const handlePickAvatar = () => {
+    Alert.alert(
+      'Foto de Perfil',
+      'Como você prefere definir sua foto?',
+      [
+        {
+          text: 'Escolher da Galeria',
+          onPress: handlePickFromGallery,
+        },
+        {
+          text: 'Tirar Foto (Câmera)',
+          onPress: handleTakePhoto,
+        },
+        {
+          text: 'Cancelar',
+          style: 'cancel',
+        },
+      ],
+      { cancelable: true }
+    );
   };
 
   // Remover Imagem de Perfil
