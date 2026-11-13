@@ -50,6 +50,7 @@ export default function SharedFinancesScreen({ navigation, route }) {
   // Abas: 'dashboard' | 'divisao' | 'acertos' | 'membros'
   const [activeTab, setActiveTab] = useState(route?.params?.initialTab || 'dashboard');
   const [modalGroupNotifs, setModalGroupNotifs] = useState(false);
+  const [groupNotifFilterTab, setGroupNotifFilterTab] = useState('Todas');
 
   useEffect(() => {
     if (route?.params?.initialTab) {
@@ -2607,138 +2608,505 @@ export default function SharedFinancesScreen({ navigation, route }) {
       </Modal>
 
       {/* ============================================================== */}
-      {/* MODAL 7: NOTIFICAÇÕES DO GRUPO (CONVITES, VALORES E ACERTOS)   */}
+      {/* MODAL 7: NOTIFICAÇÕES (MESMO DESIGN OFICIAL DA TELA INICIAL)   */}
       {/* ============================================================== */}
       <Modal
         visible={modalGroupNotifs}
-        transparent
+        transparent={false}
         animationType="slide"
         onRequestClose={() => setModalGroupNotifs(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalSheet, { maxHeight: '80%' }]}>
-            <View style={styles.modalHeader}>
+        <View
+          style={{
+            flex: 1,
+            width: '100%',
+            backgroundColor: '#F4F1FB',
+            paddingTop: Math.max(insets.top + 14, 28),
+            paddingHorizontal: 20,
+          }}
+        >
+          {/* CABEÇALHO: Notificações + N não lidas + Marcar lidas + Preferências + Voltar */}
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'flex-start',
+              justifyContent: 'space-between',
+              marginBottom: 16,
+              gap: 10,
+            }}
+          >
+            <View style={{ flex: 1, paddingRight: 4 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Ionicons name="notifications" size={20} color="#7C3AED" />
-                <Text style={styles.modalTitle}>Notificações de Grupo</Text>
-              </View>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                {unreadNotificationsCount > 0 && (
-                  <TouchableOpacity
-                    onPress={() => markAllNotificationsAsRead && markAllNotificationsAsRead()}
-                    style={{
-                      backgroundColor: '#F3E8FF',
-                      paddingHorizontal: 10,
-                      paddingVertical: 5,
-                      borderRadius: 999,
-                    }}
-                  >
-                    <Text style={{ fontSize: 11, fontWeight: '700', color: '#7C3AED' }}>
-                      Ler todas
-                    </Text>
-                  </TouchableOpacity>
-                )}
-                <TouchableOpacity onPress={() => setModalGroupNotifs(false)}>
-                  <Ionicons name="close" size={24} color="#6B7280" />
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            <Text style={{ fontSize: 12, color: '#64748B', marginBottom: 12 }}>
-              Alertas sobre convites, alterações de valores, divisões de conta e acertos do grupo (também enviados ao seu celular).
-            </Text>
-
-            <ScrollView
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ gap: 10, paddingBottom: 16 }}
-            >
-              {notifications.map((item) => (
                 <TouchableOpacity
-                  key={item.id}
+                  onPress={() => setModalGroupNotifs(false)}
+                  activeOpacity={0.75}
+                  accessibilityRole="button"
+                  accessibilityLabel="Voltar para o grupo"
                   style={{
-                    flexDirection: 'row',
-                    alignItems: 'flex-start',
-                    padding: 13,
-                    borderRadius: 15,
-                    backgroundColor: item.read ? '#F8FAFC' : '#F5F3FF',
-                    borderWidth: 1,
-                    borderColor: item.read ? '#E2E8F0' : '#DDD6FE',
-                    gap: 10,
-                  }}
-                  activeOpacity={0.8}
-                  onPress={() => {
-                    if (markNotificationAsRead) markNotificationAsRead(item.id);
-                    if (item.groupId && setActiveGroupId) {
-                      setActiveGroupId(item.groupId);
-                    }
-                    setModalGroupNotifs(false);
+                    width: 36,
+                    height: 36,
+                    borderRadius: 18,
+                    backgroundColor: '#FFFFFF',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    marginLeft: -2,
+                    shadowColor: '#000',
+                    shadowOffset: { width: 0, height: 2 },
+                    shadowOpacity: 0.05,
+                    shadowRadius: 4,
+                    elevation: 2,
                   }}
                 >
-                  <View
+                  <Ionicons name="chevron-back" size={20} color="#0F172A" />
+                </TouchableOpacity>
+                <Text
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  style={{
+                    flexShrink: 1,
+                    fontSize: 26,
+                    fontWeight: '800',
+                    color: '#0F172A',
+                    letterSpacing: -0.5,
+                  }}
+                >
+                  Notificações
+                </Text>
+              </View>
+              <Text
+                style={{
+                  fontSize: 13,
+                  color: '#475569',
+                  fontWeight: '500',
+                  marginTop: 4,
+                  marginLeft: 42,
+                }}
+              >
+                {unreadNotificationsCount}{' '}
+                {unreadNotificationsCount === 1 ? 'não lida' : 'não lidas'}
+              </Text>
+            </View>
+
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2 }}>
+              <TouchableOpacity
+                onPress={() => markAllNotificationsAsRead && markAllNotificationsAsRead()}
+                activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityLabel="Marcar todas as notificações como lidas"
+                style={{
+                  height: 40,
+                  paddingHorizontal: 14,
+                  borderRadius: 999,
+                  backgroundColor: '#EDE9FE',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Text style={{ fontSize: 12.5, fontWeight: '700', color: '#5B21B6' }}>
+                  Marcar lidas
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => {
+                  setModalGroupNotifs(false);
+                  navigation.navigate('NotificationPreferences');
+                }}
+                activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityLabel="Preferências de notificação"
+                style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: 20,
+                  backgroundColor: '#FFFFFF',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  shadowColor: '#000',
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: 0.05,
+                  shadowRadius: 4,
+                  elevation: 2,
+                }}
+              >
+                <Ionicons name="options-outline" size={20} color="#5B21B6" />
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* FILTROS EM PÍLULAS: Todas | Grupo | Gastos | Lembretes */}
+          <View style={{ height: 48, marginBottom: 14 }}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={{ flexGrow: 0 }}
+              contentContainerStyle={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 8,
+                paddingRight: 8,
+              }}
+            >
+              {['Todas', 'Grupo', 'Gastos', 'Lembretes'].map((tab) => {
+                const isActive = groupNotifFilterTab === tab;
+                return (
+                  <TouchableOpacity
+                    key={tab}
+                    onPress={() => setGroupNotifFilterTab(tab)}
+                    activeOpacity={0.85}
+                    accessibilityRole="tab"
+                    accessibilityState={{ selected: isActive }}
+                    accessibilityLabel={`Filtrar notificações por ${tab}`}
                     style={{
-                      width: 36,
-                      height: 36,
-                      borderRadius: 11,
-                      backgroundColor: (item.color || '#7C3AED') + '18',
+                      height: 42,
+                      paddingHorizontal: 18,
+                      borderRadius: 999,
+                      backgroundColor: isActive ? '#5B21B6' : '#FFFFFF',
                       alignItems: 'center',
                       justifyContent: 'center',
+                      shadowColor: '#000',
+                      shadowOffset: { width: 0, height: 1 },
+                      shadowOpacity: 0.04,
+                      shadowRadius: 3,
+                      elevation: 1,
                     }}
                   >
-                    <Ionicons
-                      name={item.icon || 'notifications-outline'}
-                      size={18}
-                      color={item.color || '#7C3AED'}
-                    />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <View
+                    <Text
                       style={{
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        marginBottom: 3,
+                        fontSize: 13.5,
+                        fontWeight: isActive ? '700' : '500',
+                        color: isActive ? '#FFFFFF' : '#1E293B',
                       }}
                     >
-                      <Text
-                        style={{
-                          fontSize: 13,
-                          fontWeight: '800',
-                          color: '#0F172A',
-                          flex: 1,
-                          paddingRight: 6,
-                        }}
-                      >
-                        {item.title}
-                      </Text>
-                      {!item.read && (
-                        <View
-                          style={{
-                            width: 8,
-                            height: 8,
-                            borderRadius: 4,
-                            backgroundColor: '#EC4899',
-                          }}
-                        />
-                      )}
+                      {tab}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+
+          <ScrollView
+            style={{ flex: 1 }}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={{
+              paddingBottom: Math.max(insets.bottom + 24, 32),
+            }}
+          >
+            {(() => {
+              const filtered = (notifications || []).filter((item) => {
+                const cat = String(item.category || '').toLowerCase();
+                const titleLower = String(item.title || '').toLowerCase();
+                const msgLower = String(item.message || item.body || '').toLowerCase();
+
+                if (groupNotifFilterTab === 'Todas') return true;
+                if (groupNotifFilterTab === 'Grupo') {
+                  return (
+                    item.groupId ||
+                    cat.includes('group') ||
+                    cat.includes('grupo') ||
+                    titleLower.includes('grupo') ||
+                    titleLower.includes('divisão') ||
+                    titleLower.includes('acerto') ||
+                    titleLower.includes('convite') ||
+                    msgLower.includes('grupo')
+                  );
+                }
+                if (groupNotifFilterTab === 'Gastos') {
+                  return (
+                    cat === 'gastos' ||
+                    cat === 'expense' ||
+                    cat === 'income' ||
+                    titleLower.includes('gasto') ||
+                    titleLower.includes('divisão')
+                  );
+                }
+                if (groupNotifFilterTab === 'Lembretes') {
+                  return (
+                    cat === 'lembretes' ||
+                    cat === 'reminder' ||
+                    cat === 'sistema' ||
+                    cat === 'system'
+                  );
+                }
+                return true;
+              });
+
+              if (filtered.length === 0) {
+                return (
+                  <View
+                    style={{
+                      backgroundColor: '#FFFFFF',
+                      borderRadius: 20,
+                      paddingVertical: 44,
+                      paddingHorizontal: 24,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      marginTop: 8,
+                      shadowColor: '#000',
+                      shadowOffset: { width: 0, height: 2 },
+                      shadowOpacity: 0.05,
+                      shadowRadius: 6,
+                      elevation: 2,
+                    }}
+                  >
+                    <View
+                      style={{
+                        width: 52,
+                        height: 52,
+                        borderRadius: 16,
+                        backgroundColor: '#EDE9FE',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        marginBottom: 12,
+                      }}
+                    >
+                      <Ionicons
+                        name="checkmark-done-outline"
+                        size={26}
+                        color="#5B21B6"
+                      />
                     </View>
-                    <Text style={{ fontSize: 12, color: '#475569', lineHeight: 17 }}>
-                      {item.message}
+                    <Text
+                      style={{
+                        fontSize: 17,
+                        fontWeight: '800',
+                        color: '#0F172A',
+                      }}
+                    >
+                      Tudo em dia
                     </Text>
                     <Text
                       style={{
-                        fontSize: 10,
-                        fontWeight: '700',
-                        color: '#94A3B8',
-                        marginTop: 5,
+                        fontSize: 13.5,
+                        color: '#475569',
+                        textAlign: 'center',
+                        marginTop: 4,
+                        lineHeight: 19,
                       }}
                     >
-                      {item.time || 'Agora'}
+                      Nenhuma notificação pendente nesta categoria no momento.
                     </Text>
                   </View>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
+                );
+              }
+
+              // Agrupamento temporal: Hoje, Ontem, Esta semana, Sistema
+              const now = new Date();
+              const startOfToday = new Date(
+                now.getFullYear(),
+                now.getMonth(),
+                now.getDate()
+              ).getTime();
+
+              const todayItems = [];
+              const yesterdayItems = [];
+              const weekItems = [];
+              const systemItems = [];
+
+              filtered.forEach((item) => {
+                const cat = String(item.category || '').toLowerCase();
+                if (item.section === 'SISTEMA' || cat === 'sistema' || cat === 'system') {
+                  systemItems.push(item);
+                  return;
+                }
+                if (item.isHeroAi || !item.createdAt) {
+                  todayItems.push(item);
+                  return;
+                }
+                const createdDate = new Date(item.createdAt);
+                if (Number.isNaN(createdDate.getTime())) {
+                  todayItems.push(item);
+                  return;
+                }
+                const startOfItemDay = new Date(
+                  createdDate.getFullYear(),
+                  createdDate.getMonth(),
+                  createdDate.getDate()
+                ).getTime();
+                const diffDays = Math.round(
+                  (startOfToday - startOfItemDay) / (1000 * 60 * 60 * 24)
+                );
+
+                if (diffDays <= 0) {
+                  todayItems.push(item);
+                } else if (diffDays === 1) {
+                  yesterdayItems.push(item);
+                } else {
+                  weekItems.push(item);
+                }
+              });
+
+              const handleOpenNotifItem = (item) => {
+                if (markNotificationAsRead) markNotificationAsRead(item.id);
+                if (item.groupId && setActiveGroupId) {
+                  setActiveGroupId(item.groupId);
+                }
+                setModalGroupNotifs(false);
+              };
+
+              const renderNotificationCard = (item) => {
+                const hasTarget = Boolean(item.action?.targetScreen || item.targetScreen);
+
+                return (
+                  <TouchableOpacity
+                    key={item.id}
+                    activeOpacity={0.85}
+                    onPress={() => handleOpenNotifItem(item)}
+                    accessibilityRole={hasTarget ? 'button' : 'text'}
+                    accessibilityLabel={`${item.title}. ${item.body || item.message}`}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'flex-start',
+                      padding: 16,
+                      borderRadius: 20,
+                      backgroundColor: '#FFFFFF',
+                      gap: 14,
+                      shadowColor: '#000',
+                      shadowOffset: { width: 0, height: 2 },
+                      shadowOpacity: 0.04,
+                      shadowRadius: 6,
+                      elevation: 2,
+                    }}
+                  >
+                    <View
+                      style={{
+                        width: 44,
+                        height: 44,
+                        borderRadius: 14,
+                        backgroundColor: item.bgColor || (item.color ? item.color + '18' : '#EDE9FE'),
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      <Ionicons
+                        name={item.icon || 'notifications-outline'}
+                        size={20}
+                        color={item.color || '#5B21B6'}
+                      />
+                    </View>
+
+                    <View style={{ flex: 1 }}>
+                      <View
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                        }}
+                      >
+                        <Text
+                          numberOfLines={1}
+                          style={{
+                            fontSize: 15,
+                            fontWeight: '800',
+                            color: '#0F172A',
+                            flex: 1,
+                            paddingRight: 8,
+                          }}
+                        >
+                          {item.title}
+                        </Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          {!item.read && (
+                            <View
+                              style={{
+                                width: 8,
+                                height: 8,
+                                borderRadius: 4,
+                                backgroundColor: '#5B21B6',
+                              }}
+                            />
+                          )}
+                          {!!(item.time || item.createdAt) && (
+                            <Text
+                              style={{
+                                fontSize: 12,
+                                fontWeight: '500',
+                                color: '#475569',
+                              }}
+                            >
+                              {item.time || 'Agora'}
+                            </Text>
+                          )}
+                        </View>
+                      </View>
+
+                      <Text
+                        numberOfLines={2}
+                        style={{
+                          fontSize: 13.5,
+                          color: '#475569',
+                          lineHeight: 19,
+                          marginTop: 4,
+                        }}
+                      >
+                        {item.body || item.message}
+                      </Text>
+
+                      {hasTarget && (
+                        <TouchableOpacity
+                          onPress={() => handleOpenNotifItem(item)}
+                          activeOpacity={0.75}
+                          hitSlop={{ top: 10, bottom: 10, left: 10, right: 16 }}
+                          accessibilityRole="link"
+                          accessibilityLabel={`Abrir ${item.title}`}
+                          style={{
+                            minHeight: 32,
+                            justifyContent: 'center',
+                            marginTop: 8,
+                            alignSelf: 'flex-start',
+                          }}
+                        >
+                          <Text
+                            style={{
+                              fontSize: 14,
+                              fontWeight: '800',
+                              color: '#5B21B6',
+                            }}
+                          >
+                            {item.action?.label || 'Abrir'}
+                          </Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  </TouchableOpacity>
+                );
+              };
+
+              const sections = [
+                { title: 'HOJE', items: todayItems },
+                { title: 'ONTEM', items: yesterdayItems },
+                { title: 'ESTA SEMANA', items: weekItems },
+                { title: 'SISTEMA', items: systemItems },
+              ].filter((sec) => sec.items.length > 0);
+
+              return (
+                <>
+                  {sections.map((sec, secIdx) => (
+                    <View
+                      key={sec.title}
+                      style={{ marginTop: secIdx === 0 ? 0 : 20 }}
+                    >
+                      <Text
+                        style={{
+                          fontSize: 12,
+                          fontWeight: '700',
+                          color: '#475569',
+                          letterSpacing: 0.8,
+                          marginBottom: 12,
+                        }}
+                      >
+                        {sec.title}
+                      </Text>
+                      <View style={{ gap: 12 }}>
+                        {sec.items.map((item) => renderNotificationCard(item))}
+                      </View>
+                    </View>
+                  ))}
+                </>
+              );
+            })()}
+          </ScrollView>
         </View>
       </Modal>
     </View>
