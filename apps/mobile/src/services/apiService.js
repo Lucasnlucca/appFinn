@@ -643,23 +643,49 @@ export async function updatePasswordApi(newPassword) {
 export async function removeLocalAccountData(userId, email) {
   try {
     const cleanEmail = email ? String(email).trim().toLowerCase() : null;
-    const idKey = userId ? String(userId) : null;
+    const idKey = userId ? String(userId).trim() : null;
 
     const rawProfiles = await AsyncStorage.getItem(STORAGE_KEYS.PROFILES_REGISTRY);
     if (rawProfiles) {
-      const profiles = JSON.parse(rawProfiles);
-      if (idKey) delete profiles[`id:${idKey}`];
-      if (cleanEmail) delete profiles[`email:${cleanEmail}`];
-      await AsyncStorage.setItem(STORAGE_KEYS.PROFILES_REGISTRY, JSON.stringify(profiles));
+      try {
+        const profiles = JSON.parse(rawProfiles);
+        if (idKey) delete profiles[`id:${idKey}`];
+        if (cleanEmail) delete profiles[`email:${cleanEmail}`];
+        await AsyncStorage.setItem(STORAGE_KEYS.PROFILES_REGISTRY, JSON.stringify(profiles));
+      } catch {}
     }
 
     if (cleanEmail) {
       const rawAccounts = await AsyncStorage.getItem(STORAGE_KEYS.ACCOUNTS_REGISTRY);
       if (rawAccounts) {
-        const accounts = JSON.parse(rawAccounts);
-        delete accounts[cleanEmail];
-        await AsyncStorage.setItem(STORAGE_KEYS.ACCOUNTS_REGISTRY, JSON.stringify(accounts));
+        try {
+          const accounts = JSON.parse(rawAccounts);
+          delete accounts[cleanEmail];
+          if (idKey) {
+            for (const k of Object.keys(accounts)) {
+              if (accounts[k]?.id === idKey || accounts[k]?.email === cleanEmail) {
+                delete accounts[k];
+              }
+            }
+          }
+          await AsyncStorage.setItem(STORAGE_KEYS.ACCOUNTS_REGISTRY, JSON.stringify(accounts));
+        } catch {}
       }
+    }
+
+    // Remove TODAS as chaves locais do AsyncStorage vinculadas ao ID ou ao e-mail
+    const allKeys = await AsyncStorage.getAllKeys();
+    const keysToRemove = (allKeys || []).filter((k) => {
+      const lower = k.toLowerCase();
+      if (idKey && lower.includes(idKey.toLowerCase())) return true;
+      if (cleanEmail && lower.includes(cleanEmail)) return true;
+      if (idKey && (k.startsWith(`@finn_usr_${idKey}`) || k.startsWith(`finn_user_${idKey}`))) return true;
+      if (cleanEmail && k.startsWith(`@finn_mail_${cleanEmail}`)) return true;
+      return false;
+    });
+
+    if (keysToRemove.length > 0) {
+      await AsyncStorage.multiRemove(keysToRemove);
     }
   } catch (e) {
     console.warn('Aviso ao limpar dados locais de conta:', e?.message);
@@ -671,22 +697,34 @@ export async function removeLocalAccountData(userId, email) {
  */
 export async function deleteUserAccountApi(userContext = null) {
   const token = await getStoredToken();
+  const cleanEmail = userContext?.email ? String(userContext.email).trim().toLowerCase() : null;
+  const userId = userContext?.id ? String(userContext.id).trim() : null;
+
   if (token) {
     try {
-      await apiRequest('privacy/purge', { method: 'DELETE', timeoutMs: 12000 });
+      await apiRequest('auth/account', {
+        method: 'DELETE',
+        body: { email: cleanEmail, userId },
+        timeoutMs: 12000,
+      });
     } catch (err) {
-      // Fallback caso o servidor esteja com rota auth/account ou usuário já removido
-      if (err?.status === 404 && String(err?.message || '').toLowerCase().includes('cannot delete')) {
-        await apiRequest('auth/account', { method: 'DELETE', timeoutMs: 12000 });
-      } else if (err?.status !== 404) {
-        throw new Error(
-          err?.message || 'Não foi possível excluir sua conta no servidor. Verifique sua conexão e tente novamente.'
-        );
+      try {
+        await apiRequest('privacy/purge', {
+          method: 'DELETE',
+          body: { email: cleanEmail, userId },
+          timeoutMs: 12000,
+        });
+      } catch (err2) {
+        if (err?.status !== 404 && err2?.status !== 404) {
+          throw new Error(
+            err2?.message || err?.message || 'Falha ao excluir conta no servidor. Tente novamente.'
+          );
+        }
       }
     }
   }
 
-  await removeLocalAccountData(userContext?.id, userContext?.email);
+  await removeLocalAccountData(userId, cleanEmail);
   await clearAuthSession();
   return { success: true };
 }

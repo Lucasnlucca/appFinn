@@ -1559,23 +1559,29 @@ export function FinanceProvider({ children }) {
    */
   const deleteAccount = async () => {
     const uid = loggedInUser?.id;
-    const email = loggedInUser?.email;
+    const cleanEmail = loggedInUser?.email ? String(loggedInUser.email).trim().toLowerCase() : null;
 
     // 1. Primeiro exclui fielmente do PostgreSQL no servidor (lança erro se falhar)
-    await deleteUserAccountApi({ id: uid, email });
+    await deleteUserAccountApi({ id: uid, email: cleanEmail });
 
-    // 2. Remove integralmente todas as chaves locais do usuário no aparelho
-    if (uid) {
-      try {
-        const allKeys = await AsyncStorage.getAllKeys();
-        const prefix = `finn_user_${uid}_`;
-        const userKeys = (allKeys || []).filter((k) => k.startsWith(prefix));
-        if (userKeys.length > 0) {
-          await AsyncStorage.multiRemove(userKeys);
-        }
-      } catch {
-        // Fallback explícito
+    // 2. Remove integralmente todas as chaves locais do usuário no aparelho (por ID e por e-mail)
+    try {
+      const allKeys = await AsyncStorage.getAllKeys();
+      const keysToRemove = (allKeys || []).filter((k) => {
+        const lower = k.toLowerCase();
+        if (uid && lower.includes(String(uid).toLowerCase())) return true;
+        if (cleanEmail && lower.includes(cleanEmail)) return true;
+        if (k.startsWith('@finn_usr_') || k.startsWith('@finn_mail_') || k.startsWith('finn_user_')) return true;
+        return false;
+      });
+      if (keysToRemove.length > 0) {
+        await AsyncStorage.multiRemove(keysToRemove);
       }
+    } catch {
+      // Fallback explícito
+    }
+
+    if (uid) {
       await Promise.all([
         AsyncStorage.removeItem(getUserStorageKey(uid, 'transactions')),
         AsyncStorage.removeItem(getUserStorageKey(uid, 'accounts')),
@@ -1594,6 +1600,19 @@ export function FinanceProvider({ children }) {
         AsyncStorage.removeItem(getUserStorageKey(uid, 'read_notifications')),
         AsyncStorage.removeItem(getUserStorageKey(uid, 'owner_notifications')),
         AsyncStorage.removeItem(getUserStorageKey(uid, 'user_profile')),
+      ]).catch(() => {});
+    }
+
+    if (cleanEmail) {
+      await Promise.all([
+        AsyncStorage.removeItem(getUserEmailStorageKey(cleanEmail, 'transactions')),
+        AsyncStorage.removeItem(getUserEmailStorageKey(cleanEmail, 'accounts')),
+        AsyncStorage.removeItem(getUserEmailStorageKey(cleanEmail, 'cards')),
+        AsyncStorage.removeItem(getUserEmailStorageKey(cleanEmail, 'bills')),
+        AsyncStorage.removeItem(getUserEmailStorageKey(cleanEmail, 'cofrinhos')),
+        AsyncStorage.removeItem(getUserEmailStorageKey(cleanEmail, 'ai_chat')),
+        AsyncStorage.removeItem(getUserEmailStorageKey(cleanEmail, 'shared_groups')),
+        AsyncStorage.removeItem(getUserEmailStorageKey(cleanEmail, 'user_profile')),
       ]).catch(() => {});
     }
 

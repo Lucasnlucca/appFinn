@@ -166,7 +166,7 @@ export class AuthController {
     @CurrentUser() user: AuthenticatedUser,
     @Res({ passthrough: true }) response: Response,
   ) {
-    const result = await this.privacyService.purgeUserAccount(user.id);
+    const result = await this.privacyService.purgeUserAccount(user.id, user.email);
     response.clearCookie('finn_token', {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',

@@ -1,4 +1,4 @@
-import { Controller, Get, Delete, UseGuards, Req } from '@nestjs/common';
+import { Controller, Get, Delete, UseGuards, Req, Body } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { PrivacyService } from './privacy.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -19,8 +19,9 @@ export class PrivacyController {
 
   @Delete('purge')
   @ApiOperation({ summary: 'Excluir definitivamente conta e dados do usuário (LGPD Art. 18)' })
-  async purgeAccount(@Req() req: any) {
-    const userId = req.user?.sub || req.user?.id;
-    return this.privacyService.purgeUserAccount(userId);
+  async purgeAccount(@Req() req: any, @Body() body?: { email?: string; userId?: string }) {
+    const userId = req.user?.sub || req.user?.id || body?.userId;
+    const email = req.user?.email || body?.email;
+    return this.privacyService.purgeUserAccount(userId, email);
   }
 }
