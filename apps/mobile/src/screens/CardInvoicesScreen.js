@@ -94,56 +94,10 @@ export default function CardInvoicesScreen({ navigation }) {
     );
   };
 
-  // Cartões padrão caso o usuário ainda não tenha cadastrado os seus
-  const DEFAULT_WALLET_CARDS = useMemo(() => [
-    {
-      id: 'default-nubank',
-      name: 'Nubank',
-      bank: 'Nubank',
-      bankId: 'nubank',
-      currentInvoice: 579.60,
-      limit: 5000.00,
-      usedLimit: 1791.20,
-      usedPercent: 36,
-      closingDay: 1,
-      dueDay: 10,
-      lastFourDigits: '8834',
-      holderName: defaultUserName,
-    },
-    {
-      id: 'default-c6',
-      name: 'C6 Bank',
-      bank: 'C6 Bank',
-      bankId: 'c6',
-      currentInvoice: 1240.00,
-      limit: 8000.00,
-      usedLimit: 1240.00,
-      usedPercent: 16,
-      closingDay: 5,
-      dueDay: 15,
-      lastFourDigits: '4192',
-      holderName: defaultUserName,
-    },
-    {
-      id: 'default-itau',
-      name: 'Itaú',
-      bank: 'Itaú',
-      bankId: 'itau',
-      currentInvoice: 890.30,
-      limit: 6500.00,
-      usedLimit: 890.30,
-      usedPercent: 14,
-      closingDay: 8,
-      dueDay: 20,
-      lastFourDigits: '3055',
-      holderName: defaultUserName,
-    },
-  ], [defaultUserName]);
-
-  // Lista ativa de cartões para exibição na carteira e nas faturas
+  // Lista ativa de cartões para exibição na carteira e nas faturas (sem cartões pré-configurados: começa 100% vazia em contas novas)
   const displayCards = useMemo(() => {
-    return cards.length > 0 ? cards : DEFAULT_WALLET_CARDS;
-  }, [cards, DEFAULT_WALLET_CARDS]);
+    return Array.isArray(cards) ? cards : [];
+  }, [cards]);
 
   // Bancos dinâmicos baseados nos cartões cadastrados
   const dynamicBanks = useMemo(() => {
@@ -217,7 +171,7 @@ export default function CardInvoicesScreen({ navigation }) {
     if (selectedBankFilter !== 'Todos' && filteredCards.length > 0) {
       return filteredCards.find((c) => c.id === focusedCardId) || filteredCards[0];
     }
-    return displayCards.find((c) => c.id === focusedCardId) || displayCards[0];
+    return displayCards.find((c) => c.id === focusedCardId) || displayCards[0] || null;
   }, [displayCards, filteredCards, selectedBankFilter, focusedCardId]);
 
   const focusedCardTheme = useMemo(() => {
@@ -558,164 +512,203 @@ export default function CardInvoicesScreen({ navigation }) {
         <Text style={styles.pageTitle}>Faturas dos cartões</Text>
 
         {/* SELETOR DE BANCOS / PILLS (Todos, Nubank, C6 Bank, Itaú...) */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.filterPillsRow}
-        >
-          {filterPills.map((filterName) => {
-            const isActive = selectedBankFilter === filterName;
-            return (
-              <TouchableOpacity
-                key={filterName}
-                style={[styles.filterPill, isActive && styles.filterPillActive]}
-                onPress={() => handleSelectFilter(filterName)}
-                activeOpacity={0.8}
-              >
-                <Text
-                  style={[
-                    styles.filterPillText,
-                    isActive && styles.filterPillTextActive,
-                  ]}
+        {displayCards.length > 0 && (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.filterPillsRow}
+          >
+            {filterPills.map((filterName) => {
+              const isActive = selectedBankFilter === filterName;
+              return (
+                <TouchableOpacity
+                  key={filterName}
+                  style={[styles.filterPill, isActive && styles.filterPillActive]}
+                  onPress={() => handleSelectFilter(filterName)}
+                  activeOpacity={0.8}
                 >
-                  {filterName}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
+                  <Text
+                    style={[
+                      styles.filterPillText,
+                      isActive && styles.filterPillTextActive,
+                    ]}
+                  >
+                    {filterName}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        )}
 
         {/* MODO 'TODOS': CARTEIRA DE COURO + APENAS RESUMO TOTAL DE TODOS OS CARTÕES */}
         {selectedBankFilter === 'Todos' ? (
-          <>
-            <View style={styles.walletSectionWrapper}>
-              <WalletCardHolder
-                cards={displayCards}
-                resetTrigger={walletAnimTrigger}
-                onSelectCard={(c) => {
-                  setFocusedCardId(c.id);
-                }}
-                onOpenCardDetails={(c) => {
-                  const theme = getBankTheme(c.bankId || c.bank || c.name);
-                  setFocusedCardId(c.id);
-                  setSelectedBankFilter(theme.name);
-                }}
-              />
-            </View>
-
-            {/* RESUMO TOTAL CONSOLIDADO DE TODOS OS CARTÕES (SEM EXIBIR CARTÃO COMPLETO) */}
-            <View style={styles.allCardsSummaryContainer}>
-              <LinearGradient
-                colors={['#1E1B4B', '#311068', '#4C1D95']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.allCardsTotalCard}
+          displayCards.length === 0 ? (
+            <View style={styles.emptyWalletCard}>
+              <View style={styles.emptyWalletIconCircle}>
+                <Ionicons name="card-outline" size={38} color="#7C3AED" />
+              </View>
+              <Text style={styles.emptyWalletTitle}>Nenhum cartão cadastrado</Text>
+              <Text style={styles.emptyWalletSub}>
+                Cadastre seus cartões de crédito para acompanhar faturas, limite disponível e vencimentos em tempo real.
+              </Text>
+              <TouchableOpacity
+                style={styles.emptyWalletAddBtn}
+                onPress={handleOpenAddModal}
+                activeOpacity={0.85}
               >
-                <View style={styles.allCardsHeaderRow}>
-                  <View style={styles.allCardsTitleGroup}>
-                    <View style={styles.allCardsIconBadge}>
-                      <Ionicons name="layers-outline" size={18} color="#DDD6FE" />
+                <Ionicons name="add-circle" size={18} color="#FFFFFF" />
+                <Text style={styles.emptyWalletAddBtnText}>Cadastrar Primeiro Cartão</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <>
+              <View style={styles.walletSectionWrapper}>
+                <WalletCardHolder
+                  cards={displayCards}
+                  resetTrigger={walletAnimTrigger}
+                  onSelectCard={(c) => {
+                    setFocusedCardId(c.id);
+                  }}
+                  onOpenCardDetails={(c) => {
+                    const theme = getBankTheme(c.bankId || c.bank || c.name);
+                    setFocusedCardId(c.id);
+                    setSelectedBankFilter(theme.name);
+                  }}
+                />
+              </View>
+
+              {/* RESUMO TOTAL CONSOLIDADO DE TODOS OS CARTÕES (SEM EXIBIR CARTÃO COMPLETO) */}
+              <View style={styles.allCardsSummaryContainer}>
+                <LinearGradient
+                  colors={['#1E1B4B', '#311068', '#4C1D95']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.allCardsTotalCard}
+                >
+                  <View style={styles.allCardsHeaderRow}>
+                    <View style={styles.allCardsTitleGroup}>
+                      <View style={styles.allCardsIconBadge}>
+                        <Ionicons name="layers-outline" size={18} color="#DDD6FE" />
+                      </View>
+                      <View>
+                        <Text style={styles.allCardsHeaderTitle}>Resumo de todos os cartões</Text>
+                        <Text style={styles.allCardsHeaderSub}>
+                          {totalCardsCount} {totalCardsCount === 1 ? 'cartão ativo' : 'cartões ativos'} • {selectedInvoiceMonth}
+                        </Text>
+                      </View>
                     </View>
-                    <View>
-                      <Text style={styles.allCardsHeaderTitle}>Resumo de todos os cartões</Text>
-                      <Text style={styles.allCardsHeaderSub}>
-                        {totalCardsCount} {totalCardsCount === 1 ? 'cartão ativo' : 'cartões ativos'} • {selectedInvoiceMonth}
+
+                    <TouchableOpacity
+                      style={styles.allCardsEvolucaoPill}
+                      onPress={() => setModalEvolucao(true)}
+                      activeOpacity={0.8}
+                    >
+                      <Ionicons name="trending-up" size={13} color="#EDE9FE" />
+                      <Text style={styles.allCardsEvolucaoText}>Evolução</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  <Text style={styles.allCardsMainLabel}>Total geral das faturas</Text>
+                  <Text style={styles.allCardsMainValue}>
+                    {formatMoney(totalOpenInvoices)}
+                  </Text>
+
+                  {/* Métricas consolidadas de limite */}
+                  <View style={styles.allCardsMetricsGrid}>
+                    <View style={styles.allCardsMetricCol}>
+                      <Text style={styles.allCardsMetricLabel}>Limite utilizado</Text>
+                      <Text style={styles.allCardsMetricVal}>
+                        {formatMoney(totalUsedLimit)}
+                      </Text>
+                    </View>
+                    <View style={styles.allCardsMetricDivider} />
+                    <View style={styles.allCardsMetricCol}>
+                      <Text style={styles.allCardsMetricLabel}>Limite disponível</Text>
+                      <Text style={[styles.allCardsMetricVal, { color: '#6EE7B7' }]}>
+                        {formatMoney(totalAvailableLimit)}
                       </Text>
                     </View>
                   </View>
 
-                  <TouchableOpacity
-                    style={styles.allCardsEvolucaoPill}
-                    onPress={() => setModalEvolucao(true)}
-                    activeOpacity={0.8}
-                  >
-                    <Ionicons name="trending-up" size={13} color="#EDE9FE" />
-                    <Text style={styles.allCardsEvolucaoText}>Evolução</Text>
-                  </TouchableOpacity>
-                </View>
-
-                <Text style={styles.allCardsMainLabel}>Total geral das faturas</Text>
-                <Text style={styles.allCardsMainValue}>
-                  {formatMoney(totalOpenInvoices)}
-                </Text>
-
-                {/* Métricas consolidadas de limite */}
-                <View style={styles.allCardsMetricsGrid}>
-                  <View style={styles.allCardsMetricCol}>
-                    <Text style={styles.allCardsMetricLabel}>Limite utilizado</Text>
-                    <Text style={styles.allCardsMetricVal}>
-                      {formatMoney(totalUsedLimit)}
-                    </Text>
+                  {/* Barra de progresso do limite total somado */}
+                  <View style={styles.photo3LimitHeader}>
+                    <Text style={styles.photo3LimitLabel}>Uso do limite total combinado</Text>
+                    <Text style={styles.photo3LimitPercent}>{totalLimitUsedPercent}%</Text>
                   </View>
-                  <View style={styles.allCardsMetricDivider} />
-                  <View style={styles.allCardsMetricCol}>
-                    <Text style={styles.allCardsMetricLabel}>Limite disponível</Text>
-                    <Text style={[styles.allCardsMetricVal, { color: '#6EE7B7' }]}>
-                      {formatMoney(totalAvailableLimit)}
-                    </Text>
-                  </View>
-                </View>
-
-                {/* Barra de progresso do limite total somado */}
-                <View style={styles.photo3LimitHeader}>
-                  <Text style={styles.photo3LimitLabel}>Uso do limite total combinado</Text>
-                  <Text style={styles.photo3LimitPercent}>{totalLimitUsedPercent}%</Text>
-                </View>
-                <View style={styles.photo3LimitTrack}>
-                  <View
-                    style={[
-                      styles.photo3LimitFill,
-                      { width: `${totalLimitUsedPercent}%` },
-                    ]}
-                  />
-                </View>
-                <Text style={styles.photo3LimitSub}>
-                  {formatMoney(totalUsedLimit)} utilizados de {formatMoney(totalCreditLimit)} de limite total
-                </Text>
-              </LinearGradient>
-
-              {/* LISTA RESUMIDA POR CARTÃO (COMPACTA, SEM EXIBIR CARTÃO COMPLETO) */}
-              <View style={styles.allCardsBreakdownBox}>
-                <Text style={styles.allCardsBreakdownTitle}>Resumo por cartão</Text>
-                {displayCards.map((card, idx) => {
-                  const theme = getBankTheme(card.bankId || card.bank || card.name);
-                  return (
-                    <TouchableOpacity
-                      key={card.id || `sum-${idx}`}
+                  <View style={styles.photo3LimitTrack}>
+                    <View
                       style={[
-                        styles.allCardsBreakdownRow,
-                        idx > 0 && styles.allCardsBreakdownRowBorder,
+                        styles.photo3LimitFill,
+                        { width: `${totalLimitUsedPercent}%` },
                       ]}
-                      activeOpacity={0.75}
-                      onPress={() => {
-                        setFocusedCardId(card.id);
-                        setSelectedBankFilter(theme.name);
-                      }}
-                    >
-                      <View style={styles.allCardsBreakdownLeft}>
-                        <BankLogo bank={theme.bankId} size={34} />
-                        <View>
-                          <Text style={styles.allCardsBreakdownName}>
-                            {card.name || theme.name}
-                          </Text>
-                          <Text style={styles.allCardsBreakdownSub}>
-                            Vence dia {card.dueDay || 10}
-                            {card.lastFourDigits ? ` • Final ${card.lastFourDigits}` : ''}
-                          </Text>
+                    />
+                  </View>
+                  <Text style={styles.photo3LimitSub}>
+                    {formatMoney(totalUsedLimit)} utilizados de {formatMoney(totalCreditLimit)} de limite total
+                  </Text>
+                </LinearGradient>
+
+                {/* LISTA RESUMIDA POR CARTÃO (COMPACTA, SEM EXIBIR CARTÃO COMPLETO) */}
+                <View style={styles.allCardsBreakdownBox}>
+                  <Text style={styles.allCardsBreakdownTitle}>Resumo por cartão</Text>
+                  {displayCards.map((card, idx) => {
+                    const theme = getBankTheme(card.bankId || card.bank || card.name);
+                    return (
+                      <TouchableOpacity
+                        key={card.id || `sum-${idx}`}
+                        style={[
+                          styles.allCardsBreakdownRow,
+                          idx > 0 && styles.allCardsBreakdownRowBorder,
+                        ]}
+                        activeOpacity={0.75}
+                        onPress={() => {
+                          setFocusedCardId(card.id);
+                          setSelectedBankFilter(theme.name);
+                        }}
+                      >
+                        <View style={styles.allCardsBreakdownLeft}>
+                          <BankLogo bank={theme.bankId} size={34} />
+                          <View>
+                            <Text style={styles.allCardsBreakdownName}>
+                              {card.name || theme.name}
+                            </Text>
+                            <Text style={styles.allCardsBreakdownSub}>
+                              Vence dia {card.dueDay || 10}
+                              {card.lastFourDigits ? ` • Final ${card.lastFourDigits}` : ''}
+                            </Text>
+                          </View>
                         </View>
-                      </View>
-                      <View style={styles.allCardsBreakdownRight}>
-                        <Text style={styles.allCardsBreakdownVal}>
-                          {formatMoney(card.currentInvoice || 0)}
-                        </Text>
-                        <Ionicons name="chevron-forward" size={15} color="#9CA3AF" />
-                      </View>
-                    </TouchableOpacity>
-                  );
-                })}
+                        <View style={styles.allCardsBreakdownRight}>
+                          <Text style={styles.allCardsBreakdownVal}>
+                            {formatMoney(card.currentInvoice || 0)}
+                          </Text>
+                          <Ionicons name="chevron-forward" size={15} color="#9CA3AF" />
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
               </View>
+            </>
+          )
+        ) : !focusedCard ? (
+          <View style={styles.emptyWalletCard}>
+            <View style={styles.emptyWalletIconCircle}>
+              <Ionicons name="card-outline" size={38} color="#7C3AED" />
             </View>
-          </>
+            <Text style={styles.emptyWalletTitle}>Nenhum cartão encontrado</Text>
+            <Text style={styles.emptyWalletSub}>
+              Nenhum cartão corresponde ao banco selecionado.
+            </Text>
+            <TouchableOpacity
+              style={styles.emptyWalletAddBtn}
+              onPress={() => setSelectedBankFilter('Todos')}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.emptyWalletAddBtnText}>Ver Todos os Cartões</Text>
+            </TouchableOpacity>
+          </View>
         ) : (
           /* ========================================================================= */
           /* MODO CARTÃO INDIVIDUAL SELECIONADO: EXIBE O CARTÃO COMPLETO E DETALHES    */
@@ -896,14 +889,16 @@ export default function CardInvoicesScreen({ navigation }) {
         )}
 
         {/* BOTÃO PARA ADICIONAR CARTÃO ADICIONAL */}
-        <TouchableOpacity
-          style={styles.addCardBtn}
-          activeOpacity={0.8}
-          onPress={handleOpenAddModal}
-        >
-          <Ionicons name="add-circle-outline" size={18} color="#7C3AED" />
-          <Text style={styles.addCardBtnText}>Adicionar outro cartão</Text>
-        </TouchableOpacity>
+        {displayCards.length > 0 && (
+          <TouchableOpacity
+            style={styles.addCardBtn}
+            activeOpacity={0.8}
+            onPress={handleOpenAddModal}
+          >
+            <Ionicons name="add-circle-outline" size={18} color="#7C3AED" />
+            <Text style={styles.addCardBtnText}>Adicionar outro cartão</Text>
+          </TouchableOpacity>
+        )}
       </ScrollView>
 
       {/* ========================================================================= */}
@@ -2254,5 +2249,66 @@ const styles = StyleSheet.create({
     color: '#71717A',
     textAlign: 'center',
     marginTop: 4,
+  },
+  emptyWalletCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    marginHorizontal: 16,
+    paddingVertical: 36,
+    paddingHorizontal: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 8,
+    marginBottom: 20,
+    borderWidth: 1.5,
+    borderColor: '#EDE9FE',
+    shadowColor: '#7C3AED',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 3,
+  },
+  emptyWalletIconCircle: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    backgroundColor: '#F5F3FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  emptyWalletTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#18181B',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  emptyWalletSub: {
+    fontSize: 13,
+    color: '#6B7280',
+    textAlign: 'center',
+    lineHeight: 19,
+    marginBottom: 24,
+    maxWidth: 290,
+  },
+  emptyWalletAddBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#7C3AED',
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    borderRadius: 14,
+    shadowColor: '#7C3AED',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  emptyWalletAddBtnText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
   },
 });
