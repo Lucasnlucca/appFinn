@@ -6,7 +6,7 @@ import { setRememberedCredentials } from './biometricService';
 // Web Client ID oficial do Google Cloud Console ("Web application")
 export const GOOGLE_WEB_CLIENT_ID =
   process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ||
-  '633573458015-t6vg6msh5goa9aehacg6pcgct6519l56.apps.googleusercontent.com';
+  '76639341833-lv3ud7239sr11g9v9rlcmbtkvr95i7ca.apps.googleusercontent.com';
 
 let isConfigured = false;
 
