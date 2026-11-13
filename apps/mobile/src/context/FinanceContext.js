@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { AppState } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   sendTextMessageToGemini,
@@ -33,6 +34,8 @@ import {
   mergeWithSavedProfile,
   savePersistentUserProfile,
   fetchCurrentHouseholdApi,
+  fetchUserHouseholdsApi,
+  fetchTransactions,
   createHouseholdApi,
   createHouseholdInvitationApi,
   acceptHouseholdInvitationApi,
@@ -702,103 +705,196 @@ export function FinanceProvider({ children }) {
     }).catch(() => {});
   };
 
-  // Sincronização em Livetime das Finanças Compartilhadas (Membros e Grupo em tempo real)
+  // Sincronização em Realtime das Finanças Compartilhadas (Membros, Grupos e Despesas)
   useEffect(() => {
     if (!loggedInUser?.id) return;
 
     let isMounted = true;
+    let isSyncing = false;
+
     const syncSharedLivetime = async () => {
+      if (isSyncing || !isMounted) return;
+      isSyncing = true;
       try {
-        const hh = await fetchCurrentHouseholdApi();
-        if (hh && hh.id && isMounted) {
-          const ownerMember = (hh.members || []).find((m) => m.role === 'OWNER') || hh.members?.[0];
-          const mappedMembers = (hh.members || []).map((m) => ({
-            id: m.id,
-            name: m.fullName || m.name || (m.role === 'OWNER' ? 'Organizador(a)' : 'Membro'),
-            email: m.email || '',
-            avatarUrl: sanitizeAvatarUri(m.avatarUrl || null),
-            role: m.role || 'MEMBER',
-            isCreator: m.role === 'OWNER',
-          }));
+        // 1. Busca todos os grupos que o usuário participa no PostgreSQL (não só o primeiro!)
+        const myGroups = await fetchUserHouseholdsApi().catch(() => null);
+        const householdsList = Array.isArray(myGroups) && myGroups.length > 0 ? myGroups : [];
 
+        // Fallback: se my-groups estiver vazio, consulta o current
+        if (householdsList.length === 0) {
+          const single = await fetchCurrentHouseholdApi().catch(() => null);
+          if (single?.id) householdsList.push(single);
+        }
+
+        if (householdsList.length > 0 && isMounted) {
           setSharedGroups((prev) => {
-            const existing = prev.find((g) => g.remoteId === hh.id || g.id === hh.id);
-            if (!existing) {
-              return prev;
-            }
+            let listChanged = false;
+            const updatedList = [...prev];
 
-            const existingCount = existing.members?.length || 0;
-            const newCount = mappedMembers.length;
-            const hasChanged =
-              existingCount !== newCount ||
-              JSON.stringify(existing.members) !== JSON.stringify(mappedMembers) ||
-              existing.name !== hh.name;
+            for (const hh of householdsList) {
+              if (!hh?.id) continue;
+              const ownerMember = (hh.members || []).find((m) => m.role === 'OWNER') || hh.members?.[0];
+              const mappedMembers = (hh.members || []).map((m) => ({
+                id: m.id,
+                name: m.fullName || m.name || (m.role === 'OWNER' ? 'Organizador(a)' : 'Membro'),
+                email: m.email || '',
+                avatarUrl: sanitizeAvatarUri(m.avatarUrl || null),
+                role: m.role || 'MEMBER',
+                isCreator: m.role === 'OWNER',
+              }));
 
-            if (hasChanged) {
-              const grpTitle = hh.name || existing.name || 'Grupo';
-              if (newCount > existingCount) {
-                const existingIds = new Set((existing.members || []).map((m) => m.id || m.email));
-                const joinedMember = mappedMembers.find((m) => !existingIds.has(m.id || m.email));
-                const joinedName = joinedMember?.name || 'Um novo participante';
-                pushGroupNotification({
-                  title: `🎉 Convite aceito no grupo ${grpTitle}!`,
-                  message: `${joinedName} aceitou o convite e entrou no grupo '${grpTitle}'. Agora vocês podem dividir contas em tempo real!`,
-                  icon: 'person-add',
-                  color: '#10B981',
-                  groupId: existing.id,
-                });
-              } else if (newCount < existingCount) {
-                pushGroupNotification({
-                  title: `👋 Participante saiu de ${grpTitle}`,
-                  message: `Houve uma atualização nos membros do grupo '${grpTitle}' (${newCount} participante${newCount > 1 ? 's' : ''}).`,
-                  icon: 'person-remove',
-                  color: '#F59E0B',
-                  groupId: existing.id,
-                });
-              } else if (existing.name && hh.name && existing.name !== hh.name) {
-                pushGroupNotification({
-                  title: `✏️ Grupo atualizado: ${hh.name}`,
-                  message: `O nome do grupo compartilhado foi alterado de '${existing.name}' para '${hh.name}'.`,
-                  icon: 'create-outline',
-                  color: '#7C3AED',
-                  groupId: existing.id,
-                });
-              }
+              const existingIdx = updatedList.findIndex((g) => g.remoteId === hh.id || g.id === hh.id);
 
-              const updated = prev.map((g) => {
-                if (g.id === existing.id || g.remoteId === hh.id) {
-                  return {
-                    ...g,
-                    name: hh.name || g.name,
-                    creatorId: ownerMember?.id || g.creatorId,
-                    creatorName: ownerMember?.fullName || g.creatorName,
+              if (existingIdx === -1) {
+                // Novo grupo detectado no PostgreSQL que ainda não estava no estado local
+                const newGrp = {
+                  id: hh.id,
+                  remoteId: hh.id,
+                  name: hh.name || 'Grupo Compartilhado',
+                  type: 'Casal',
+                  description: 'Sincronizado do PostgreSQL',
+                  createdAt: new Date().toISOString(),
+                  creatorId: ownerMember?.id || 'owner',
+                  creatorName: ownerMember?.fullName || ownerMember?.name || 'Organizador(a)',
+                  members: mappedMembers,
+                };
+                updatedList.push(newGrp);
+                listChanged = true;
+              } else {
+                const existing = updatedList[existingIdx];
+                const existingCount = existing.members?.length || 0;
+                const newCount = mappedMembers.length;
+                const membersChanged =
+                  existingCount !== newCount ||
+                  JSON.stringify(existing.members) !== JSON.stringify(mappedMembers);
+                const nameChanged = existing.name !== hh.name;
+
+                if (membersChanged || nameChanged) {
+                  listChanged = true;
+                  const grpTitle = hh.name || existing.name || 'Grupo';
+
+                  if (newCount > existingCount) {
+                    const existingIds = new Set((existing.members || []).map((m) => m.id || m.email));
+                    const joinedMember = mappedMembers.find((m) => !existingIds.has(m.id || m.email));
+                    const joinedName = joinedMember?.name || 'Um novo participante';
+                    pushGroupNotification({
+                      title: `🎉 Convite aceito no grupo ${grpTitle}!`,
+                      message: `${joinedName} aceitou o convite e entrou no grupo '${grpTitle}'. Agora vocês podem dividir contas em tempo real!`,
+                      icon: 'person-add',
+                      color: '#10B981',
+                      groupId: existing.id,
+                    });
+                  } else if (newCount < existingCount) {
+                    pushGroupNotification({
+                      title: `👋 Participante saiu de ${grpTitle}`,
+                      message: `Houve uma atualização nos membros do grupo '${grpTitle}' (${newCount} participante${newCount > 1 ? 's' : ''}).`,
+                      icon: 'person-remove',
+                      color: '#F59E0B',
+                      groupId: existing.id,
+                    });
+                  }
+
+                  updatedList[existingIdx] = {
+                    ...existing,
+                    name: hh.name || existing.name,
+                    creatorId: ownerMember?.id || existing.creatorId,
+                    creatorName: ownerMember?.fullName || existing.creatorName,
                     members: mappedMembers,
                   };
                 }
-                return g;
-              });
-              saveUserItem('shared_groups', updated);
-              return updated;
+              }
+            }
+
+            if (listChanged) {
+              saveUserItem('shared_groups', updatedList);
+              return updatedList;
             }
             return prev;
           });
         }
+
+        // 2. Busca lançamentos compartilhados no PostgreSQL (scope: HOUSEHOLD) para atualizar valores em realtime
+        if (householdsList.length > 0 && isMounted) {
+          const remoteSharedTxs = await fetchTransactions({ limit: 60, scope: 'HOUSEHOLD' }).catch(() => []);
+          if (Array.isArray(remoteSharedTxs) && remoteSharedTxs.length > 0) {
+            setTransactions((prev) => {
+              let txsChanged = false;
+              const nextTxs = [...prev];
+              const norm = (s) => String(s || '').trim().toLowerCase();
+
+              for (const rt of remoteSharedTxs) {
+                if (!rt) continue;
+                const rtTitle = rt.description || rt.title || 'Movimentação';
+                const rtAmt = parseFloat(rt.amount) || 0;
+                const rtDate = rt.date ? rt.date.split('T')[0] : '';
+
+                const existingIdx = nextTxs.findIndex(
+                  (lt) =>
+                    lt.id === rt.id ||
+                    lt.remoteId === rt.id ||
+                    (lt.isShared &&
+                      norm(lt.title || lt.description) === norm(rtTitle) &&
+                      Math.abs((parseFloat(lt.amount) || 0) - rtAmt) < 0.01 &&
+                      String(lt.date || '').split('T')[0] === rtDate)
+                );
+
+                if (existingIdx === -1) {
+                  // Nova transação compartilhada criada pelo outro participante
+                  const mappedShared = {
+                    id: rt.id,
+                    remoteId: rt.id,
+                    title: rtTitle,
+                    description: rtTitle,
+                    amount: rtAmt,
+                    type: (rt.type || 'EXPENSE').toLowerCase() === 'income' ? 'income' : 'expense',
+                    category: rt.category?.name || 'alimentacao',
+                    author: rt.user?.fullName || 'Participante',
+                    paidBy: rt.user?.fullName || 'Participante',
+                    isShared: true,
+                    groupId: activeGroupId || householdsList[0]?.id,
+                    sharedGroupId: activeGroupId || householdsList[0]?.id,
+                    date: rtDate || new Date().toISOString().split('T')[0],
+                    createdAt: rt.createdAt || new Date().toISOString(),
+                  };
+                  nextTxs.unshift(mappedShared);
+                  txsChanged = true;
+                }
+              }
+
+              if (txsChanged) {
+                saveUserItem('transactions', nextTxs);
+                return nextTxs;
+              }
+              return prev;
+            });
+          }
+        }
       } catch (e) {
         // silencioso
+      } finally {
+        isSyncing = false;
       }
     };
 
     // Dispara imediatamente
     syncSharedLivetime();
 
-    // Sincroniza periodicamente a cada 5 segundos para garantir atualização em livetime
-    const interval = setInterval(syncSharedLivetime, 5000);
+    // Sincroniza periodicamente a cada 3 segundos em background para garantir atualização em tempo real
+    const interval = setInterval(syncSharedLivetime, 3000);
+
+    // Também sincroniza imediatamente sempre que o app voltar ao primeiro plano (active)
+    const appStateSub = AppState.addEventListener('change', (nextAppState) => {
+      if (nextAppState === 'active') {
+        syncSharedLivetime();
+      }
+    });
 
     return () => {
       isMounted = false;
       clearInterval(interval);
+      appStateSub?.remove?.();
     };
-  }, [loggedInUser?.id]);
+  }, [loggedInUser?.id, activeGroupId]);
 
   const toggleHideBalances = async () => {
     const nextVal = !hideBalances;
@@ -2237,6 +2333,17 @@ export function FinanceProvider({ children }) {
     const nextTxs = [newTx, ...transactions];
     setTransactions(nextTxs);
     await saveUserItem('transactions', nextTxs);
+
+    // Envia a transação compartilhada ao PostgreSQL para sincronização realtime entre os participantes
+    apiCreateTransaction({
+      description: newTx.description,
+      title: newTx.description,
+      amount: newTx.amount,
+      type: 'EXPENSE',
+      date: newTx.date,
+      isHouseholdShared: true,
+      notes: newTx.notes,
+    }).catch((e) => console.log('Envio da despesa compartilhada ao Postgres:', e?.message));
 
     const fmtAmt = Number(newTx.amount || 0).toLocaleString('pt-BR', {
       minimumFractionDigits: 2,
