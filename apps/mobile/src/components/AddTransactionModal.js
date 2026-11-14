@@ -15,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { COLORS } from '../theme/colors';
 import { useFinance, CATEGORIES } from '../context/FinanceContext';
+import { playExpenseSound } from '../services/soundService';
 
 export default function AddTransactionModal({ visible, onClose }) {
   const { addTransaction, addBill, accounts, loggedInUser, sharedGroups = [] } = useFinance();
@@ -159,6 +160,11 @@ export default function AddTransactionModal({ visible, onClose }) {
       setNotes('');
       setSelectedGroupId(null);
       onClose();
+
+      // Tocar som de confirmação se for registro de gasto
+      if (mode !== 'income') {
+        playExpenseSound();
+      }
     } catch (e) {
       Alert.alert('Erro ao salvar', e.message);
     }

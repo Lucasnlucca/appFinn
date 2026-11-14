@@ -21,6 +21,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as Clipboard from 'expo-clipboard';
 import { COLORS } from '../theme/colors';
 import { useFinance, CATEGORIES } from '../context/FinanceContext';
+import { playExpenseSound } from '../services/soundService';
 
 export default function SharedFinancesScreen({ navigation, route }) {
   const insets = useSafeAreaInsets();
@@ -798,6 +799,7 @@ export default function SharedFinancesScreen({ navigation, route }) {
       setModalNewExpense(false);
       setExpDesc('');
       setExpAmount('');
+      playExpenseSound();
       Alert.alert('Lançado!', 'Despesa compartilhada registrada com divisão calculada.');
     } catch (e) {
       Alert.alert('Erro', e.message);
