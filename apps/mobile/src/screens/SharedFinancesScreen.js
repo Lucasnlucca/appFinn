@@ -1998,11 +1998,22 @@ export default function SharedFinancesScreen({ navigation, route }) {
                   <View style={styles.inviteCodeBox}>
                     <TouchableOpacity
                       onPress={async () => {
+                        if (inviteCodeStatus.isExpired) {
+                          Alert.alert(
+                            'Código Expirado ⏳',
+                            'Este código de convite já expirou. Deseja gerar um novo código válido pelos próximos 30 minutos agora?',
+                            [
+                              { text: 'Cancelar', style: 'cancel' },
+                              { text: 'Gerar Novo Código', onPress: handleRegenerateInviteCode },
+                            ]
+                          );
+                          return;
+                        }
                         if (activeGroup?.inviteCode) {
                           await Clipboard.setStringAsync(activeGroup.inviteCode);
                           Alert.alert(
                             'Código Copiado! 📋',
-                            `Código de Convite: ${activeGroup.inviteCode}\n\nO código foi copiado para a área de transferência. Envie para os membros que deseja convidar.`
+                            `Código de Convite: ${activeGroup.inviteCode}\n\nO código foi copiado para a área de transferência. Envie para quem deseja convidar (válido por 30 minutos).`
                           );
                         }
                       }}
@@ -2020,6 +2031,17 @@ export default function SharedFinancesScreen({ navigation, route }) {
                     <TouchableOpacity
                       style={styles.shareCodeBtn}
                       onPress={() => {
+                        if (inviteCodeStatus.isExpired) {
+                          Alert.alert(
+                            'Código Expirado ⏳',
+                            'Este código de convite já expirou. Gere um novo código antes de compartilhar.',
+                            [
+                              { text: 'Cancelar', style: 'cancel' },
+                              { text: 'Gerar Novo Código', onPress: handleRegenerateInviteCode },
+                            ]
+                          );
+                          return;
+                        }
                         Share.share({
                           message: `Olá! Estou te convidando para participar do grupo '${activeGroup?.name}' no app FINN. Baixe o app e entre com o código de convite: ${activeGroup?.inviteCode} (válido por 30 minutos).`,
                         });
@@ -2321,6 +2343,17 @@ export default function SharedFinancesScreen({ navigation, route }) {
                 <TouchableOpacity
                   style={{ backgroundColor: '#7C3AED', paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10, flexDirection: 'row', alignItems: 'center', gap: 4 }}
                   onPress={() => {
+                    if (inviteCodeStatus.isExpired) {
+                      Alert.alert(
+                        'Código Expirado ⏳',
+                        'Este código de convite já expirou. Gere um novo código antes de compartilhar.',
+                        [
+                          { text: 'Cancelar', style: 'cancel' },
+                          { text: 'Gerar Novo Código', onPress: handleRegenerateInviteCode },
+                        ]
+                      );
+                      return;
+                    }
                     Share.share({
                       message: `Olá! Estou te convidando para o grupo '${activeGroup?.name}' no FINN. Baixe o app e entre com o código: ${activeGroup?.inviteCode} (válido por 30 minutos).`,
                     });

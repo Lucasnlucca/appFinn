@@ -43,6 +43,16 @@ export class HouseholdsService {
       const tokenHash = crypto.createHash('sha256').update(code).digest('hex');
       const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
 
+      // Limpa qualquer colisão anterior no banco
+      await tx.householdInvitation.deleteMany({
+        where: {
+          OR: [
+            { tokenHash },
+            { email: `code-${code}@finn.local` },
+          ],
+        },
+      });
+
       await tx.householdInvitation.create({
         data: {
           householdId: household.id,
@@ -267,13 +277,18 @@ export class HouseholdsService {
     const tokenHash = crypto.createHash('sha256').update(code).digest('hex');
     const expiresAt = new Date(Date.now() + 30 * 60 * 1000); // 30 minutos!
 
-    await this.prisma.householdInvitation.updateMany({
+    // Limpa convites anteriores para evitar erro P2002 de chave única token_hash
+    await this.prisma.householdInvitation.deleteMany({
       where: {
-        householdId: targetHouseholdId,
-        email: { startsWith: 'code-' },
-        status: 'PENDING',
+        OR: [
+          { tokenHash },
+          { email: `code-${code}@finn.local` },
+          {
+            householdId: targetHouseholdId,
+            email: { startsWith: 'code-' },
+          },
+        ],
       },
-      data: { status: 'REVOKED' },
     });
 
     await this.prisma.householdInvitation.create({
@@ -329,12 +344,16 @@ export class HouseholdsService {
       },
     });
 
-    if (!invitation || invitation.status !== 'PENDING') {
-      throw new BadRequestException('Código de convite não encontrado ou inválido.');
+    if (!invitation) {
+      throw new BadRequestException('Código de convite não encontrado. Verifique se digitou os 6 caracteres corretamente.');
     }
 
     if (invitation.expiresAt < new Date()) {
       throw new BadRequestException('Este código de convite expirou (validade de 30 minutos). Solicite um novo código ao criador do grupo.');
+    }
+
+    if (invitation.status === 'REVOKED') {
+      throw new BadRequestException('Este código de convite foi substituído por um novo. Solicite o código atualizado ao criador do grupo.');
     }
 
     return {
@@ -378,14 +397,11 @@ export class HouseholdsService {
       },
     });
 
-    if (!invitation || invitation.status !== 'PENDING') {
+    if (!invitation) {
       throw new BadRequestException('Código de convite não encontrado ou inválido. Verifique os caracteres e tente novamente.');
     }
 
-    if (invitation.expiresAt < new Date()) {
-      throw new BadRequestException('Este código de convite expirou (validade de 30 minutos). Solicite um novo código ao criador do grupo.');
-    }
-
+    // 1. Se o usuário já é membro do grupo, retorna sucesso sem erro
     const existingMembership = await this.prisma.householdMember.findUnique({
       where: {
         householdId_userId: {
@@ -429,6 +445,17 @@ export class HouseholdsService {
       };
     }
 
+    // 2. Valida expiração de 30 minutos
+    if (invitation.expiresAt < new Date()) {
+      throw new BadRequestException('Este código de convite expirou (validade de 30 minutos). Solicite um novo código ao criador do grupo.');
+    }
+
+    // 3. Valida se o código foi revogado
+    if (invitation.status === 'REVOKED') {
+      throw new BadRequestException('Este código de convite foi substituído por um novo. Solicite o código atualizado ao criador do grupo.');
+    }
+
+    // 4. Adiciona como membro e marca convite como aceito
     await this.prisma.$transaction([
       this.prisma.householdMember.create({
         data: {

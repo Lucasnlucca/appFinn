@@ -1771,16 +1771,23 @@ export function FinanceProvider({ children }) {
       const apiRes = await createHouseholdApi(cleanName);
       if (apiRes?.id) {
         remoteHouseholdId = apiRes.id;
-        try {
-          // Registra código oficial de 30 minutos diretamente no PostgreSQL
-          const codeRes = await generateHouseholdInviteCodeApi(remoteHouseholdId, initialCode);
-          if (codeRes?.code) {
-            initialCode = codeRes.code;
-            if (codeRes.expiresAt) inviteCodeExpiresAt = codeRes.expiresAt;
-            invitationToken = codeRes.code;
+        // Prioriza 100% o código gerado e persistido diretamente no PostgreSQL
+        if (apiRes.inviteCode) {
+          initialCode = apiRes.inviteCode;
+          if (apiRes.inviteCodeExpiresAt) inviteCodeExpiresAt = apiRes.inviteCodeExpiresAt;
+          invitationToken = apiRes.inviteCode;
+        } else {
+          try {
+            // Registra código oficial de 30 minutos diretamente no PostgreSQL
+            const codeRes = await generateHouseholdInviteCodeApi(remoteHouseholdId, initialCode);
+            if (codeRes?.code) {
+              initialCode = codeRes.code;
+              if (codeRes.expiresAt) inviteCodeExpiresAt = codeRes.expiresAt;
+              invitationToken = codeRes.code;
+            }
+          } catch (invErr) {
+            console.log('Código inicial PostgreSQL:', invErr.message);
           }
-        } catch (invErr) {
-          console.log('Código inicial PostgreSQL:', invErr.message);
         }
       }
     } catch (e) {
@@ -1890,8 +1897,27 @@ export function FinanceProvider({ children }) {
     let newExpiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
     let invitationToken = null;
 
-    const targetHhId = targetGroup.remoteId || (targetGroup.id && !targetGroup.id.startsWith('grp-') ? targetGroup.id : null);
-    if (targetHhId) {
+    let targetHhId = targetGroup.remoteId || (targetGroup.id && !targetGroup.id.startsWith('grp-') ? targetGroup.id : null);
+
+    // Se o grupo ainda não tem id remoto no PostgreSQL, sincroniza no backend agora
+    if (!targetHhId) {
+      try {
+        const createdHh = await createHouseholdApi(targetGroup.name || 'Finanças Compartilhadas');
+        if (createdHh?.id) {
+          targetHhId = createdHh.id;
+          targetGroup.remoteId = createdHh.id;
+          if (createdHh.inviteCode) {
+            baseCode = createdHh.inviteCode;
+            if (createdHh.inviteCodeExpiresAt) newExpiresAt = createdHh.inviteCodeExpiresAt;
+            invitationToken = createdHh.inviteCode;
+          }
+        }
+      } catch (createErr) {
+        console.warn('Falha ao registrar grupo no PostgreSQL:', createErr.message);
+      }
+    }
+
+    if (targetHhId && !invitationToken) {
       try {
         const codeRes = await generateHouseholdInviteCodeApi(targetHhId, baseCode);
         if (codeRes?.code) {
@@ -1925,6 +1951,8 @@ export function FinanceProvider({ children }) {
       if (g.id === targetGroupId) {
         updatedTargetGroup = {
           ...g,
+          id: targetHhId || g.id,
+          remoteId: targetHhId || g.remoteId,
           inviteCode: finalCode,
           inviteCodeExpiresAt: newExpiresAt,
         };
@@ -2213,8 +2241,13 @@ export function FinanceProvider({ children }) {
       apiAcceptResult = await acceptHouseholdInvitationApi(codeToTry);
     } catch (apiErr) {
       const errMsg = apiErr.message || '';
-      if (errMsg.includes('expirou')) {
-        throw new Error('Este código de convite expirou (validade de 30 minutos). Solicite um novo código ao criador do grupo.');
+      if (
+        errMsg.includes('expirou') ||
+        errMsg.includes('substituído') ||
+        errMsg.includes('cancelado') ||
+        errMsg.includes('já faz parte')
+      ) {
+        throw new Error(errMsg);
       }
     }
 
