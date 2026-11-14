@@ -14,6 +14,7 @@ import {
   Platform,
   Keyboard,
   KeyboardAvoidingView,
+  ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -86,6 +87,7 @@ export default function SharedFinancesScreen({ navigation, route }) {
 
   // Formulário Entrar com Código
   const [joinCode, setJoinCode] = useState('');
+  const [regeneratingCode, setRegeneratingCode] = useState(false);
 
   // Formulário Despesa Compartilhada
   const [expDesc, setExpDesc] = useState('');
@@ -687,22 +689,23 @@ export default function SharedFinancesScreen({ navigation, route }) {
     }
   };
 
-  // Gerar Novo Código de Convite (Válido por 30 min)
+  // Gerar Novo Código de Convite Oficial (Válido por 30 min)
   const handleRegenerateInviteCode = async () => {
-    if (!activeGroup?.id) return;
+    if (!activeGroup?.id || regeneratingCode) return;
+    setRegeneratingCode(true);
     try {
       const res = await generateNewGroupInviteCode(activeGroup.id);
       if (res?.inviteCode) {
         Alert.alert(
-          'Novo Código Gerado! 🔄',
-          `Novo Código: ${res.inviteCode}\n\nEste código é único e está válido pelos próximos 30 minutos.`,
+          'Código Oficial Ativo! 🔄',
+          `Novo Código: ${res.inviteCode}\n\nEste código oficial foi registrado no servidor e está válido pelos próximos 30 minutos para qualquer participante ingressar.`,
           [
             { text: 'OK' },
             {
               text: 'Compartilhar',
               onPress: () => {
                 Share.share({
-                  message: `Olá! Aqui está o novo código de convite para o grupo '${activeGroup.name}' no FINN: ${res.inviteCode} (válido por 30 minutos).`,
+                  message: `Olá! Aqui está o código de convite para o grupo '${activeGroup.name}' no FINN: ${res.inviteCode} (válido por 30 minutos).`,
                 });
               },
             },
@@ -710,7 +713,9 @@ export default function SharedFinancesScreen({ navigation, route }) {
         );
       }
     } catch (e) {
-      Alert.alert('Erro ao gerar código', e.message);
+      Alert.alert('Erro ao gerar código oficial', e.message || 'Verifique sua conexão ou refaça o login.');
+    } finally {
+      setRegeneratingCode(false);
     }
   };
 
@@ -2059,14 +2064,34 @@ export default function SharedFinancesScreen({ navigation, route }) {
                     </TouchableOpacity>
                   </View>
 
+                  {!activeGroup?.remoteId && (
+                    <View style={{ backgroundColor: '#FEF3C7', padding: 10, borderRadius: 10, marginTop: 10, borderWidth: 1, borderColor: '#FDE68A' }}>
+                      <Text style={{ fontSize: 12, color: '#B45309', fontWeight: '700' }}>
+                        ⚠️ Grupo pendente de sincronização
+                      </Text>
+                      <Text style={{ fontSize: 11, color: '#92400E', marginTop: 2 }}>
+                        Toque no botão abaixo para registrar o grupo no servidor oficial e gerar um código válido para outros aparelhos entrarem.
+                      </Text>
+                    </View>
+                  )}
+
                   {/* Botão de Gerar Novo Código de Convite */}
                   <TouchableOpacity
-                    style={styles.btnRegenerateCode}
+                    style={[styles.btnRegenerateCode, regeneratingCode && { opacity: 0.7 }]}
                     onPress={handleRegenerateInviteCode}
+                    disabled={regeneratingCode}
                     activeOpacity={0.8}
                   >
-                    <Ionicons name="refresh" size={15} color="#7C3AED" />
-                    <Text style={styles.btnRegenerateCodeText}>Gerar novo código de convite</Text>
+                    {regeneratingCode ? (
+                      <ActivityIndicator size="small" color="#7C3AED" />
+                    ) : (
+                      <>
+                        <Ionicons name="refresh" size={15} color="#7C3AED" />
+                        <Text style={styles.btnRegenerateCodeText}>
+                          {!activeGroup?.remoteId ? 'Conectar à nuvem e gerar código oficial' : 'Gerar novo código de convite'}
+                        </Text>
+                      </>
+                    )}
                   </TouchableOpacity>
                 </View>
 
@@ -2412,11 +2437,20 @@ export default function SharedFinancesScreen({ navigation, route }) {
                       </TouchableOpacity>
                     </View>
                     <TouchableOpacity
-                      style={{ marginTop: 10, alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 4 }}
+                      style={[{ marginTop: 10, alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 4 }, regeneratingCode && { opacity: 0.7 }]}
                       onPress={handleRegenerateInviteCode}
+                      disabled={regeneratingCode}
                     >
-                      <Ionicons name="refresh" size={14} color="#7C3AED" />
-                      <Text style={{ color: '#7C3AED', fontSize: 11.5, fontWeight: '700' }}>Gerar outro código</Text>
+                      {regeneratingCode ? (
+                        <ActivityIndicator size="small" color="#7C3AED" />
+                      ) : (
+                        <>
+                          <Ionicons name="refresh" size={14} color="#7C3AED" />
+                          <Text style={{ color: '#7C3AED', fontSize: 11.5, fontWeight: '700' }}>
+                            {!activeGroup?.remoteId ? 'Sincronizar e gerar código oficial' : 'Gerar outro código oficial'}
+                          </Text>
+                        </>
+                      )}
                     </TouchableOpacity>
                   </View>
 

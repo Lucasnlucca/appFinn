@@ -1789,9 +1789,16 @@ export function FinanceProvider({ children }) {
             console.log('Código inicial PostgreSQL:', invErr.message);
           }
         }
+      } else {
+        throw new Error('Servidor não retornou o identificador do grupo.');
       }
     } catch (e) {
-      console.log('Grupo criado offline/localmente:', e.message);
+      console.error('Falha ao criar grupo no servidor:', e);
+      throw new Error(
+        e.message?.includes('Sessão não autenticada')
+          ? 'Sua sessão expirou. Saia e entre novamente no app para criar grupos compartilhados.'
+          : `Não foi possível registrar o grupo no servidor (${e.message}). Verifique sua conexão e tente novamente.`
+      );
     }
 
     // 2. Registra convite na nuvem e no registro local do dispositivo (sem sobrescrever o código!)
@@ -1888,16 +1895,15 @@ export function FinanceProvider({ children }) {
   // Gerar NOVO código de convite único para o grupo (válido por 30 minutos)
   const generateNewGroupInviteCode = async (groupId) => {
     const targetGroupId = groupId || activeGroupId || sharedGroups[0]?.id;
-    if (!targetGroupId) return null;
+    if (!targetGroupId) throw new Error('Selecione um grupo para gerar o código.');
 
     const targetGroup = sharedGroups.find((g) => g.id === targetGroupId);
-    if (!targetGroup) return null;
-
-    let baseCode = generateGroupInviteCode();
-    let newExpiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
-    let invitationToken = null;
+    if (!targetGroup) throw new Error('Grupo não encontrado.');
 
     let targetHhId = targetGroup.remoteId || (targetGroup.id && !targetGroup.id.startsWith('grp-') ? targetGroup.id : null);
+    let baseCode = null;
+    let newExpiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+    let invitationToken = null;
 
     // Se o grupo ainda não tem id remoto no PostgreSQL, sincroniza no backend agora
     if (!targetHhId) {
@@ -1911,23 +1917,41 @@ export function FinanceProvider({ children }) {
             if (createdHh.inviteCodeExpiresAt) newExpiresAt = createdHh.inviteCodeExpiresAt;
             invitationToken = createdHh.inviteCode;
           }
+        } else {
+          throw new Error('Servidor não retornou o identificador do grupo.');
         }
       } catch (createErr) {
-        console.warn('Falha ao registrar grupo no PostgreSQL:', createErr.message);
+        console.error('Falha ao registrar grupo no PostgreSQL:', createErr);
+        throw new Error(
+          createErr.message?.includes('Sessão não autenticada')
+            ? 'Sua sessão expirou. Saia e entre novamente no app para sincronizar o grupo.'
+            : `Falha ao conectar com o servidor para registrar o grupo (${createErr.message}). Tente novamente.`
+        );
       }
     }
 
     if (targetHhId && !invitationToken) {
       try {
-        const codeRes = await generateHouseholdInviteCodeApi(targetHhId, baseCode);
+        const codeRes = await generateHouseholdInviteCodeApi(targetHhId);
         if (codeRes?.code) {
           baseCode = codeRes.code;
           if (codeRes.expiresAt) newExpiresAt = codeRes.expiresAt;
           invitationToken = codeRes.code;
+        } else {
+          throw new Error('Servidor não retornou o novo código.');
         }
       } catch (e) {
-        console.log('Renovação de convite backend:', e.message);
+        console.error('Renovação de convite backend:', e);
+        throw new Error(
+          e.message?.includes('Sessão não autenticada')
+            ? 'Sua sessão expirou. Saia e entre novamente no app para renovar o código.'
+            : `Não foi possível gerar novo código no servidor (${e.message}). Tente novamente.`
+        );
       }
+    }
+
+    if (!baseCode) {
+      throw new Error('Não foi possível obter o código oficial do servidor.');
     }
 
     let finalCode = baseCode;
@@ -1962,6 +1986,10 @@ export function FinanceProvider({ children }) {
     });
 
     setSharedGroups(updatedGroups);
+    if (activeGroupId === targetGroupId && targetHhId && targetHhId !== targetGroupId) {
+      setActiveGroupIdState(targetHhId);
+      await saveUserItem('active_group_id', targetHhId);
+    }
     await saveUserItem('shared_groups', updatedGroups);
 
     pushGroupNotification({
@@ -1969,7 +1997,7 @@ export function FinanceProvider({ children }) {
       message: `Um novo código de convite (${finalCode}) válido por 30 minutos foi gerado para o grupo '${targetGroup.name}'.`,
       icon: 'key-outline',
       color: '#0EA5E9',
-      groupId: targetGroup.id,
+      groupId: targetHhId || targetGroup.id,
     });
 
     return {
