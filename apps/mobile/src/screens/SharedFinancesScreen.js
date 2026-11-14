@@ -23,6 +23,7 @@ import * as Clipboard from 'expo-clipboard';
 import { COLORS } from '../theme/colors';
 import { useFinance, CATEGORIES } from '../context/FinanceContext';
 import { playExpenseSound } from '../services/soundService';
+import { getHouseholdInvitationInfoApi } from '../services/apiService';
 
 export default function SharedFinancesScreen({ navigation, route }) {
   const insets = useSafeAreaInsets();
@@ -642,6 +643,46 @@ export default function SharedFinancesScreen({ navigation, route }) {
       text: `Válido por mais ${minutesLeft} min`,
     };
   }, [activeGroup?.inviteCode, activeGroup?.inviteCodeExpiresAt]);
+
+  // Auto-sincronização: garante que todo grupo e código exibido na tela existam de verdade no PostgreSQL
+  useEffect(() => {
+    let cancelled = false;
+    async function ensureGroupAndCodeSynced() {
+      if (!activeGroup?.id || regeneratingCode) return;
+      const isLocalOnly = !activeGroup.remoteId || String(activeGroup.id).startsWith('grp-');
+      if (isLocalOnly) {
+        try {
+          setRegeneratingCode(true);
+          await generateNewGroupInviteCode(activeGroup.id);
+        } catch (err) {
+          console.log('Auto-sync de grupo pendente:', err?.message);
+        } finally {
+          if (!cancelled) setRegeneratingCode(false);
+        }
+        return;
+      }
+
+      if (activeGroup.inviteCode) {
+        try {
+          await getHouseholdInvitationInfoApi(activeGroup.inviteCode);
+        } catch {
+          if (cancelled) return;
+          try {
+            setRegeneratingCode(true);
+            await generateNewGroupInviteCode(activeGroup.id);
+          } catch (err2) {
+            console.log('Auto-renovação de código no PostgreSQL:', err2?.message);
+          } finally {
+            if (!cancelled) setRegeneratingCode(false);
+          }
+        }
+      }
+    }
+    ensureGroupAndCodeSynced();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeGroup?.id, activeGroup?.remoteId]);
 
   const formatMoney = (val) => {
     return (

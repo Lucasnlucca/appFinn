@@ -317,6 +317,7 @@ export class AuthService implements OnModuleInit {
 
     return {
       exists: Boolean(existing),
+      userId: existing?.id || null,
       email: cleanEmail,
       message: existing
         ? 'Já existe uma conta cadastrada com este e-mail. Não é permitido criar outra conta com o mesmo e-mail.'

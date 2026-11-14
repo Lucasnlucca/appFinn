@@ -48,6 +48,7 @@ import {
   markNotificationReadApi,
   markAllNotificationsReadApi,
   sanitizeAvatarUri,
+  autoHealAuthSession,
 } from '../services/apiService';
 import {
   publishCloudInvite,
@@ -240,6 +241,7 @@ export function FinanceProvider({ children }) {
               setMembers((prev) => ({ ...prev, user1: uName }));
               setActiveMember(uName);
             }
+            autoHealAuthSession().catch(() => {});
           }
         } else {
           setLoggedInUser(null);
@@ -1941,12 +1943,24 @@ export function FinanceProvider({ children }) {
           throw new Error('Servidor não retornou o novo código.');
         }
       } catch (e) {
-        console.error('Renovação de convite backend:', e);
-        throw new Error(
-          e.message?.includes('Sessão não autenticada')
-            ? 'Sua sessão expirou. Saia e entre novamente no app para renovar o código.'
-            : `Não foi possível gerar novo código no servidor (${e.message}). Tente novamente.`
-        );
+        // Auto-recuperação: caso o householdId antigo não exista mais no banco, recria no servidor agora
+        try {
+          const recreatedHh = await createHouseholdApi(targetGroup.name || 'Finanças Compartilhadas');
+          if (recreatedHh?.id) {
+            targetHhId = recreatedHh.id;
+            targetGroup.remoteId = recreatedHh.id;
+            if (recreatedHh.inviteCode) {
+              baseCode = recreatedHh.inviteCode;
+              if (recreatedHh.inviteCodeExpiresAt) newExpiresAt = recreatedHh.inviteCodeExpiresAt;
+              invitationToken = recreatedHh.inviteCode;
+            }
+          }
+        } catch (fallbackErr) {
+          console.error('Renovação de convite backend:', fallbackErr);
+          throw new Error(
+            `Não foi possível gerar novo código no servidor (${fallbackErr.message || e.message}). Tente novamente.`
+          );
+        }
       }
     }
 
