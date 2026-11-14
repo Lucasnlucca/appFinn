@@ -5,12 +5,16 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  TouchableWithoutFeedback,
   StatusBar,
   Image,
   Dimensions,
   Modal,
   TextInput,
   Alert,
+  Platform,
+  Keyboard,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -648,238 +652,282 @@ export default function MonthlyAgendaScreen({ navigation }) {
       </ScrollView>
 
       {/* MODAL ADICIONAR CONTA */}
-      <Modal visible={modalNewBill} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalBox}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Nova Conta / Fatura</Text>
-              <TouchableOpacity onPress={() => setModalNewBill(false)}>
-                <Ionicons name="close" size={24} color="#71717A" />
-              </TouchableOpacity>
-            </View>
+      <Modal
+        visible={modalNewBill}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setModalNewBill(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalOverlay}
+        >
+          <TouchableOpacity
+            style={{ flex: 1, width: '100%', justifyContent: 'flex-end' }}
+            activeOpacity={1}
+            onPress={Keyboard.dismiss}
+          >
+            <TouchableWithoutFeedback>
+              <View style={[styles.modalBox, { maxHeight: '90%' }]}>
+                <View style={styles.modalHeader}>
+                  <Text style={styles.modalTitle}>Nova Conta / Fatura</Text>
+                  <TouchableOpacity onPress={() => setModalNewBill(false)}>
+                    <Ionicons name="close" size={24} color="#71717A" />
+                  </TouchableOpacity>
+                </View>
 
-            <Text style={styles.inputLabel}>Nome da Conta</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Ex: Condomínio, Energia, Academia"
-              placeholderTextColor="#9CA3AF"
-              value={billTitle}
-              onChangeText={setBillTitle}
-            />
-
-            <View style={{ flexDirection: 'row', gap: 12 }}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.inputLabel}>Valor (R$)</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="150,00"
-                  keyboardType="numeric"
-                  placeholderTextColor="#9CA3AF"
-                  value={billAmount}
-                  onChangeText={setBillAmount}
-                />
-              </View>
-
-              <View style={{ flex: 1 }}>
-                <Text style={styles.inputLabel}>Dia Vencimento</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="10"
-                  keyboardType="number-pad"
-                  placeholderTextColor="#9CA3AF"
-                  value={billDay}
-                  onChangeText={setBillDay}
-                />
-              </View>
-            </View>
-
-            <Text style={styles.inputLabel}>Categoria</Text>
-            <View style={styles.categoryPillsRow}>
-              {[
-                { id: 'moradia', label: 'Moradia' },
-                { id: 'transporte', label: 'Transporte' },
-                { id: 'cartao', label: 'Cartão' },
-                { id: 'outros', label: 'Outros' },
-              ].map((cat) => (
-                <TouchableOpacity
-                  key={cat.id}
-                  style={[
-                    styles.catPill,
-                    billCategory === cat.id && styles.catPillActive,
-                  ]}
-                  onPress={() => setBillCategory(cat.id)}
+                <ScrollView
+                  keyboardShouldPersistTaps="handled"
+                  showsVerticalScrollIndicator={false}
+                  bounces={false}
                 >
-                  <Text
-                    style={[
-                      styles.catPillText,
-                      billCategory === cat.id && styles.catPillTextActive,
-                    ]}
-                  >
-                    {cat.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+                  <Text style={styles.inputLabel}>Nome da Conta</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Ex: Condomínio, Energia, Academia"
+                    placeholderTextColor="#9CA3AF"
+                    value={billTitle}
+                    onChangeText={setBillTitle}
+                  />
 
-            <TouchableOpacity
-              style={styles.modalSaveBtn}
-              activeOpacity={0.85}
-              onPress={handleCreateBill}
-            >
-              <Text style={styles.modalSaveBtnText}>Adicionar Conta</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+                  <View style={{ flexDirection: 'row', gap: 12 }}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.inputLabel}>Valor (R$)</Text>
+                      <TextInput
+                        style={styles.input}
+                        placeholder="150,00"
+                        keyboardType="numeric"
+                        placeholderTextColor="#9CA3AF"
+                        value={billAmount}
+                        onChangeText={setBillAmount}
+                      />
+                    </View>
+
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.inputLabel}>Dia Vencimento</Text>
+                      <TextInput
+                        style={styles.input}
+                        placeholder="10"
+                        keyboardType="number-pad"
+                        placeholderTextColor="#9CA3AF"
+                        value={billDay}
+                        onChangeText={setBillDay}
+                      />
+                    </View>
+                  </View>
+
+                  <Text style={styles.inputLabel}>Categoria</Text>
+                  <View style={styles.categoryPillsRow}>
+                    {[
+                      { id: 'moradia', label: 'Moradia' },
+                      { id: 'transporte', label: 'Transporte' },
+                      { id: 'cartao', label: 'Cartão' },
+                      { id: 'outros', label: 'Outros' },
+                    ].map((cat) => (
+                      <TouchableOpacity
+                        key={cat.id}
+                        style={[
+                          styles.catPill,
+                          billCategory === cat.id && styles.catPillActive,
+                        ]}
+                        onPress={() => setBillCategory(cat.id)}
+                      >
+                        <Text
+                          style={[
+                            styles.catPillText,
+                            billCategory === cat.id && styles.catPillTextActive,
+                          ]}
+                        >
+                          {cat.label}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+
+                  <TouchableOpacity
+                    style={styles.modalSaveBtn}
+                    activeOpacity={0.85}
+                    onPress={handleCreateBill}
+                  >
+                    <Text style={styles.modalSaveBtnText}>Adicionar Conta</Text>
+                  </TouchableOpacity>
+                </ScrollView>
+              </View>
+            </TouchableWithoutFeedback>
+          </TouchableOpacity>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* MODAL EDITAR CONTA (EDITAR VALORES MENSAIS E EXCLUIR) */}
-      <Modal visible={modalEditBill} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalBox}>
-            <View style={styles.modalHeader}>
-              <View>
-                <Text style={styles.modalTitle}>Editar Conta</Text>
-                <Text style={styles.modalSubtitle}>
-                  Atualize o valor mensal, vencimento ou exclua
-                </Text>
-              </View>
-              <TouchableOpacity onPress={() => setModalEditBill(false)}>
-                <Ionicons name="close" size={24} color="#71717A" />
-              </TouchableOpacity>
-            </View>
+      <Modal
+        visible={modalEditBill}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setModalEditBill(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalOverlay}
+        >
+          <TouchableOpacity
+            style={{ flex: 1, width: '100%', justifyContent: 'flex-end' }}
+            activeOpacity={1}
+            onPress={Keyboard.dismiss}
+          >
+            <TouchableWithoutFeedback>
+              <View style={[styles.modalBox, { maxHeight: '90%' }]}>
+                <View style={styles.modalHeader}>
+                  <View>
+                    <Text style={styles.modalTitle}>Editar Conta</Text>
+                    <Text style={styles.modalSubtitle}>
+                      Atualize o valor mensal, vencimento ou exclua
+                    </Text>
+                  </View>
+                  <TouchableOpacity onPress={() => setModalEditBill(false)}>
+                    <Ionicons name="close" size={24} color="#71717A" />
+                  </TouchableOpacity>
+                </View>
 
-            <Text style={styles.inputLabel}>Nome da Conta</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Ex: Celulares internet, Mei, Aluguel"
-              placeholderTextColor="#9CA3AF"
-              value={editTitle}
-              onChangeText={setEditTitle}
-            />
-
-            <View style={{ flexDirection: 'row', gap: 12 }}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.inputLabel}>Valor Mensal (R$)</Text>
-                <TextInput
-                  style={[styles.input, styles.inputValueHighlight]}
-                  placeholder="0,00"
-                  keyboardType="numeric"
-                  placeholderTextColor="#9CA3AF"
-                  value={editAmount}
-                  onChangeText={setEditAmount}
-                />
-              </View>
-
-              <View style={{ flex: 1 }}>
-                <Text style={styles.inputLabel}>Dia Vencimento</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="10"
-                  keyboardType="number-pad"
-                  placeholderTextColor="#9CA3AF"
-                  value={editDay}
-                  onChangeText={setEditDay}
-                />
-              </View>
-            </View>
-
-            <Text style={styles.inputLabel}>Categoria</Text>
-            <View style={styles.categoryPillsRow}>
-              {[
-                { id: 'moradia', label: 'Moradia' },
-                { id: 'transporte', label: 'Transporte' },
-                { id: 'cartao', label: 'Cartão' },
-                { id: 'outros', label: 'Outros' },
-              ].map((cat) => (
-                <TouchableOpacity
-                  key={cat.id}
-                  style={[
-                    styles.catPill,
-                    editCategory === cat.id && styles.catPillActive,
-                  ]}
-                  onPress={() => setEditCategory(cat.id)}
+                <ScrollView
+                  keyboardShouldPersistTaps="handled"
+                  showsVerticalScrollIndicator={false}
+                  bounces={false}
                 >
-                  <Text
-                    style={[
-                      styles.catPillText,
-                      editCategory === cat.id && styles.catPillTextActive,
-                    ]}
-                  >
-                    {cat.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+                  <Text style={styles.inputLabel}>Nome da Conta</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Ex: Celulares internet, Mei, Aluguel"
+                    placeholderTextColor="#9CA3AF"
+                    value={editTitle}
+                    onChangeText={setEditTitle}
+                  />
 
-            <Text style={styles.inputLabel}>Status da Conta</Text>
-            <View style={styles.statusToggleRow}>
-              <TouchableOpacity
-                style={[
-                  styles.statusToggleBtn,
-                  !editIsPaid && styles.statusToggleBtnPendingActive,
-                ]}
-                onPress={() => setEditIsPaid(false)}
-              >
-                <Ionicons
-                  name="time-outline"
-                  size={16}
-                  color={!editIsPaid ? '#EF4444' : '#6B7280'}
-                />
-                <Text
-                  style={[
-                    styles.statusToggleText,
-                    !editIsPaid && styles.statusToggleTextPendingActive,
-                  ]}
-                >
-                  Pendente
-                </Text>
-              </TouchableOpacity>
+                  <View style={{ flexDirection: 'row', gap: 12 }}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.inputLabel}>Valor Mensal (R$)</Text>
+                      <TextInput
+                        style={[styles.input, styles.inputValueHighlight]}
+                        placeholder="0,00"
+                        keyboardType="numeric"
+                        placeholderTextColor="#9CA3AF"
+                        value={editAmount}
+                        onChangeText={setEditAmount}
+                      />
+                    </View>
 
-              <TouchableOpacity
-                style={[
-                  styles.statusToggleBtn,
-                  editIsPaid && styles.statusToggleBtnPaidActive,
-                ]}
-                onPress={() => setEditIsPaid(true)}
-              >
-                <Ionicons
-                  name="checkmark-circle"
-                  size={16}
-                  color={editIsPaid ? '#10B981' : '#6B7280'}
-                />
-                <Text
-                  style={[
-                    styles.statusToggleText,
-                    editIsPaid && styles.statusToggleTextPaidActive,
-                  ]}
-                >
-                  Já Paga
-                </Text>
-              </TouchableOpacity>
-            </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.inputLabel}>Dia Vencimento</Text>
+                      <TextInput
+                        style={styles.input}
+                        placeholder="10"
+                        keyboardType="number-pad"
+                        placeholderTextColor="#9CA3AF"
+                        value={editDay}
+                        onChangeText={setEditDay}
+                      />
+                    </View>
+                  </View>
 
-            {/* BOTÕES DE AÇÃO: EXCLUIR E SALVAR */}
-            <View style={styles.modalButtonsRow}>
-              <TouchableOpacity
-                style={styles.modalDeleteBtn}
-                activeOpacity={0.8}
-                onPress={handleDeleteBill}
-              >
-                <Ionicons name="trash-outline" size={18} color="#EF4444" />
-                <Text style={styles.modalDeleteBtnText}>Excluir</Text>
-              </TouchableOpacity>
+                  <Text style={styles.inputLabel}>Categoria</Text>
+                  <View style={styles.categoryPillsRow}>
+                    {[
+                      { id: 'moradia', label: 'Moradia' },
+                      { id: 'transporte', label: 'Transporte' },
+                      { id: 'cartao', label: 'Cartão' },
+                      { id: 'outros', label: 'Outros' },
+                    ].map((cat) => (
+                      <TouchableOpacity
+                        key={cat.id}
+                        style={[
+                          styles.catPill,
+                          editCategory === cat.id && styles.catPillActive,
+                        ]}
+                        onPress={() => setEditCategory(cat.id)}
+                      >
+                        <Text
+                          style={[
+                            styles.catPillText,
+                            editCategory === cat.id && styles.catPillTextActive,
+                          ]}
+                        >
+                          {cat.label}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
 
-              <TouchableOpacity
-                style={styles.modalSaveEditBtn}
-                activeOpacity={0.85}
-                onPress={handleSaveEditBill}
-              >
-                <Ionicons name="save-outline" size={18} color="#FFFFFF" />
-                <Text style={styles.modalSaveBtnText}>Salvar Alterações</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
+                  <Text style={styles.inputLabel}>Status da Conta</Text>
+                  <View style={styles.statusToggleRow}>
+                    <TouchableOpacity
+                      style={[
+                        styles.statusToggleBtn,
+                        !editIsPaid && styles.statusToggleBtnPendingActive,
+                      ]}
+                      onPress={() => setEditIsPaid(false)}
+                    >
+                      <Ionicons
+                        name="time-outline"
+                        size={16}
+                        color={!editIsPaid ? '#EF4444' : '#6B7280'}
+                      />
+                      <Text
+                        style={[
+                          styles.statusToggleText,
+                          !editIsPaid && styles.statusToggleTextPendingActive,
+                        ]}
+                      >
+                        Pendente
+                      </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[
+                        styles.statusToggleBtn,
+                        editIsPaid && styles.statusToggleBtnPaidActive,
+                      ]}
+                      onPress={() => setEditIsPaid(true)}
+                    >
+                      <Ionicons
+                        name="checkmark-circle"
+                        size={16}
+                        color={editIsPaid ? '#10B981' : '#6B7280'}
+                      />
+                      <Text
+                        style={[
+                          styles.statusToggleText,
+                          editIsPaid && styles.statusToggleTextPaidActive,
+                        ]}
+                      >
+                        Já Paga
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* BOTÕES DE AÇÃO: EXCLUIR E SALVAR */}
+                  <View style={styles.modalButtonsRow}>
+                    <TouchableOpacity
+                      style={styles.modalDeleteBtn}
+                      activeOpacity={0.8}
+                      onPress={handleDeleteBill}
+                    >
+                      <Ionicons name="trash-outline" size={18} color="#EF4444" />
+                      <Text style={styles.modalDeleteBtnText}>Excluir</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={styles.modalSaveEditBtn}
+                      activeOpacity={0.85}
+                      onPress={handleSaveEditBill}
+                    >
+                      <Ionicons name="save-outline" size={18} color="#FFFFFF" />
+                      <Text style={styles.modalSaveBtnText}>Salvar Alterações</Text>
+                    </TouchableOpacity>
+                  </View>
+                </ScrollView>
+              </View>
+            </TouchableWithoutFeedback>
+          </TouchableOpacity>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* MODAL SELETOR DE MÊS & VER DATA MODERNO */}

@@ -5,9 +5,13 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  TouchableWithoutFeedback,
   TextInput,
   Modal,
   StatusBar,
+  Platform,
+  Keyboard,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -213,95 +217,127 @@ export default function CardsAccountsScreen() {
       </ScrollView>
 
       {/* MODAL DE EDIÇÃO DE CARTÃO (LIMITE E VENCIMENTO) */}
-      <Modal visible={!!editingCard} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalBox}>
-            <Text style={styles.modalTitle}>Editar Cartão</Text>
-            <Text style={styles.modalSub}>{editingCard?.name} ({editingCard?.bank})</Text>
+      <Modal
+        visible={!!editingCard}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setEditingCard(null)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalOverlay}
+        >
+          <TouchableOpacity
+            style={{ flex: 1, width: '100%', justifyContent: 'center', alignItems: 'center' }}
+            activeOpacity={1}
+            onPress={Keyboard.dismiss}
+          >
+            <TouchableWithoutFeedback>
+              <View style={styles.modalBox}>
+                <Text style={styles.modalTitle}>Editar Cartão</Text>
+                <Text style={styles.modalSub}>{editingCard?.name} ({editingCard?.bank})</Text>
 
-            <Text style={[styles.cardMetaLabel, { marginBottom: 6 }]}>Limite Total (R$)</Text>
-            <View style={[styles.modalInputWrap, { marginBottom: 14 }]}>
-              <Text style={styles.modalCurrency}>R$</Text>
-              <TextInput
-                style={styles.modalInput}
-                keyboardType="decimal-pad"
-                value={editCardLimit}
-                onChangeText={setEditCardLimit}
-                placeholder="0,00"
-                placeholderTextColor={COLORS.textMuted}
-              />
-            </View>
+                <Text style={[styles.cardMetaLabel, { marginBottom: 6 }]}>Limite Total (R$)</Text>
+                <View style={[styles.modalInputWrap, { marginBottom: 14 }]}>
+                  <Text style={styles.modalCurrency}>R$</Text>
+                  <TextInput
+                    style={styles.modalInput}
+                    keyboardType="decimal-pad"
+                    value={editCardLimit}
+                    onChangeText={setEditCardLimit}
+                    placeholder="0,00"
+                    placeholderTextColor={COLORS.textMuted}
+                  />
+                </View>
 
-            <Text style={[styles.cardMetaLabel, { marginBottom: 6 }]}>Dia de Vencimento da Fatura</Text>
-            <View style={styles.modalInputWrap}>
-              <Ionicons name="calendar-outline" size={20} color={COLORS.primary} style={{ marginRight: 8 }} />
-              <TextInput
-                style={[styles.modalInput, { fontSize: 20 }]}
-                keyboardType="number-pad"
-                maxLength={2}
-                value={editCardDueDay}
-                onChangeText={setEditCardDueDay}
-                placeholder="10"
-                placeholderTextColor={COLORS.textMuted}
-              />
-            </View>
+                <Text style={[styles.cardMetaLabel, { marginBottom: 6 }]}>Dia de Vencimento da Fatura</Text>
+                <View style={styles.modalInputWrap}>
+                  <Ionicons name="calendar-outline" size={20} color={COLORS.primary} style={{ marginRight: 8 }} />
+                  <TextInput
+                    style={[styles.modalInput, { fontSize: 20 }]}
+                    keyboardType="number-pad"
+                    maxLength={2}
+                    value={editCardDueDay}
+                    onChangeText={setEditCardDueDay}
+                    placeholder="10"
+                    placeholderTextColor={COLORS.textMuted}
+                  />
+                </View>
 
-            <View style={styles.modalActions}>
-              <TouchableOpacity
-                style={styles.modalCancel}
-                onPress={() => setEditingCard(null)}
-              >
-                <Text style={styles.modalCancelText}>Cancelar</Text>
-              </TouchableOpacity>
+                <View style={styles.modalActions}>
+                  <TouchableOpacity
+                    style={styles.modalCancel}
+                    onPress={() => setEditingCard(null)}
+                  >
+                    <Text style={styles.modalCancelText}>Cancelar</Text>
+                  </TouchableOpacity>
 
-              <TouchableOpacity
-                style={styles.modalSave}
-                onPress={handleSaveCard}
-              >
-                <Text style={styles.modalSaveText}>Salvar Alterações</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
+                  <TouchableOpacity
+                    style={styles.modalSave}
+                    onPress={handleSaveCard}
+                  >
+                    <Text style={styles.modalSaveText}>Salvar Alterações</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </TouchableWithoutFeedback>
+          </TouchableOpacity>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* MODAL DE AJUSTE DE SALDO REAL */}
-      <Modal visible={!!editingAcc} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalBox}>
-            <Text style={styles.modalTitle}>Ajustar Saldo Real</Text>
-            <Text style={styles.modalSub}>{editingAcc?.name} ({editingAcc?.bank})</Text>
+      <Modal
+        visible={!!editingAcc}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setEditingAcc(null)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalOverlay}
+        >
+          <TouchableOpacity
+            style={{ flex: 1, width: '100%', justifyContent: 'center', alignItems: 'center' }}
+            activeOpacity={1}
+            onPress={Keyboard.dismiss}
+          >
+            <TouchableWithoutFeedback>
+              <View style={styles.modalBox}>
+                <Text style={styles.modalTitle}>Ajustar Saldo Real</Text>
+                <Text style={styles.modalSub}>{editingAcc?.name} ({editingAcc?.bank})</Text>
 
-            <View style={styles.modalInputWrap}>
-              <Text style={styles.modalCurrency}>R$</Text>
-              <TextInput
-                style={styles.modalInput}
-                keyboardType="decimal-pad"
-                value={newBalance}
-                onChangeText={setNewBalance}
-                placeholder="0,00"
-                placeholderTextColor={COLORS.textMuted}
-                autoFocus
-              />
-            </View>
+                <View style={styles.modalInputWrap}>
+                  <Text style={styles.modalCurrency}>R$</Text>
+                  <TextInput
+                    style={styles.modalInput}
+                    keyboardType="decimal-pad"
+                    value={newBalance}
+                    onChangeText={setNewBalance}
+                    placeholder="0,00"
+                    placeholderTextColor={COLORS.textMuted}
+                    autoFocus
+                  />
+                </View>
 
-            <View style={styles.modalActions}>
-              <TouchableOpacity
-                style={styles.modalCancel}
-                onPress={() => setEditingAcc(null)}
-              >
-                <Text style={styles.modalCancelText}>Cancelar</Text>
-              </TouchableOpacity>
+                <View style={styles.modalActions}>
+                  <TouchableOpacity
+                    style={styles.modalCancel}
+                    onPress={() => setEditingAcc(null)}
+                  >
+                    <Text style={styles.modalCancelText}>Cancelar</Text>
+                  </TouchableOpacity>
 
-              <TouchableOpacity
-                style={styles.modalSave}
-                onPress={handleSaveBalance}
-              >
-                <Text style={styles.modalSaveText}>Salvar Saldo</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
+                  <TouchableOpacity
+                    style={styles.modalSave}
+                    onPress={handleSaveBalance}
+                  >
+                    <Text style={styles.modalSaveText}>Salvar Saldo</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </TouchableWithoutFeedback>
+          </TouchableOpacity>
+        </KeyboardAvoidingView>
       </Modal>
 
       <OpenFinanceModal

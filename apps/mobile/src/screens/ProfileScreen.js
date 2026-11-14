@@ -720,7 +720,7 @@ export default function ProfileScreen({ navigation }) {
       >
         <KeyboardAvoidingView
           style={styles.deleteModalOverlay}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         >
           <View style={styles.deleteModalCard}>
             <View style={styles.deleteModalIconWrap}>

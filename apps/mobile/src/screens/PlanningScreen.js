@@ -5,11 +5,15 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  TouchableWithoutFeedback,
   StatusBar,
   Modal,
   TextInput,
   Alert,
   ActivityIndicator,
+  Platform,
+  Keyboard,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -807,62 +811,78 @@ export default function PlanningScreen({ navigation }) {
       </ScrollView>
 
       {/* MODAL PARA ADICIONAR GASTO FIXO */}
-      <Modal visible={modalNewBill} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Novo Gasto Fixo</Text>
-              <TouchableOpacity onPress={() => setModalNewBill(false)}>
-                <Ionicons name="close" size={22} color={COLORS.textSecondary} />
-              </TouchableOpacity>
-            </View>
+      <Modal
+        visible={modalNewBill}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setModalNewBill(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalOverlay}
+        >
+          <TouchableOpacity
+            style={{ flex: 1, width: '100%', justifyContent: 'center', alignItems: 'center' }}
+            activeOpacity={1}
+            onPress={Keyboard.dismiss}
+          >
+            <TouchableWithoutFeedback>
+              <View style={styles.modalCard}>
+                <View style={styles.modalHeader}>
+                  <Text style={styles.modalTitle}>Novo Gasto Fixo</Text>
+                  <TouchableOpacity onPress={() => setModalNewBill(false)}>
+                    <Ionicons name="close" size={22} color={COLORS.textSecondary} />
+                  </TouchableOpacity>
+                </View>
 
-            <Text style={styles.fieldLabel}>DESCRIÇÃO</Text>
-            <TextInput
-              style={styles.modalInput}
-              placeholder="Ex: Aluguel, Internet, Condomínio..."
-              placeholderTextColor={COLORS.textMuted}
-              value={billTitle}
-              onChangeText={setBillTitle}
-            />
+                <Text style={styles.fieldLabel}>DESCRIÇÃO</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  placeholder="Ex: Aluguel, Internet, Condomínio..."
+                  placeholderTextColor={COLORS.textMuted}
+                  value={billTitle}
+                  onChangeText={setBillTitle}
+                />
 
-            <Text style={styles.fieldLabel}>VALOR (R$)</Text>
-            <TextInput
-              style={styles.modalInput}
-              keyboardType="decimal-pad"
-              placeholder="0,00"
-              placeholderTextColor={COLORS.textMuted}
-              value={billAmount}
-              onChangeText={setBillAmount}
-            />
+                <Text style={styles.fieldLabel}>VALOR (R$)</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  keyboardType="decimal-pad"
+                  placeholder="0,00"
+                  placeholderTextColor={COLORS.textMuted}
+                  value={billAmount}
+                  onChangeText={setBillAmount}
+                />
 
-            <Text style={styles.fieldLabel}>DIA DO VENCIMENTO</Text>
-            <TextInput
-              style={styles.modalInput}
-              keyboardType="number-pad"
-              placeholder="Ex: 5"
-              placeholderTextColor={COLORS.textMuted}
-              value={billDay}
-              onChangeText={setBillDay}
-            />
+                <Text style={styles.fieldLabel}>DIA DO VENCIMENTO</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  keyboardType="number-pad"
+                  placeholder="Ex: 5"
+                  placeholderTextColor={COLORS.textMuted}
+                  value={billDay}
+                  onChangeText={setBillDay}
+                />
 
-            <View style={styles.modalBtnRow}>
-              <TouchableOpacity
-                style={styles.modalCancelBtn}
-                onPress={() => setModalNewBill(false)}
-              >
-                <Text style={styles.modalCancelText}>Cancelar</Text>
-              </TouchableOpacity>
+                <View style={styles.modalBtnRow}>
+                  <TouchableOpacity
+                    style={styles.modalCancelBtn}
+                    onPress={() => setModalNewBill(false)}
+                  >
+                    <Text style={styles.modalCancelText}>Cancelar</Text>
+                  </TouchableOpacity>
 
-              <TouchableOpacity
-                style={styles.modalConfirmBtn}
-                onPress={handleCreateBill}
-              >
-                <Text style={styles.modalConfirmText}>Salvar Gasto Fixo</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
+                  <TouchableOpacity
+                    style={styles.modalConfirmBtn}
+                    onPress={handleCreateBill}
+                  >
+                    <Text style={styles.modalConfirmText}>Salvar Gasto Fixo</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </TouchableWithoutFeedback>
+          </TouchableOpacity>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* MODAL GERAL DE COFRINHOS */}

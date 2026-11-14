@@ -5,10 +5,14 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  TouchableWithoutFeedback,
   StyleSheet,
   ScrollView,
   ActivityIndicator,
   Alert,
+  Platform,
+  Keyboard,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../theme/colors';
@@ -229,123 +233,164 @@ export default function CofrinhosModal({ visible, onClose }) {
       </View>
 
       {/* MODAL PARA ADICIONAR NOVO COFRINHO */}
-      <Modal visible={modalNewCof} transparent animationType="fade">
-        <View style={styles.centerOverlay}>
-          <View style={styles.dialogBox}>
-            <Text style={styles.dialogTitle}>Novo Cofrinho de Metas</Text>
-            <Text style={styles.dialogSubtitle}>
-              O que você e seu cônjuge desejam adquirir ou planejar?
-            </Text>
+      <Modal
+        visible={modalNewCof}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setModalNewCof(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.centerOverlay}
+        >
+          <TouchableOpacity
+            style={{ flex: 1, width: '100%', justifyContent: 'center', alignItems: 'center' }}
+            activeOpacity={1}
+            onPress={Keyboard.dismiss}
+          >
+            <TouchableWithoutFeedback>
+              <View style={[styles.dialogBox, { maxHeight: '88%' }]}>
+                <Text style={styles.dialogTitle}>Novo Cofrinho de Metas</Text>
+                <Text style={styles.dialogSubtitle}>
+                  O que você e seu cônjuge desejam adquirir ou planejar?
+                </Text>
 
-            {/* Seletor de Emoji */}
-            <Text style={styles.miniLabel}>Ícone da Meta:</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
-              {emojisList.map((em) => (
-                <TouchableOpacity
-                  key={em}
-                  style={[styles.emojiPickBtn, newEmoji === em && styles.emojiPickBtnActive]}
-                  onPress={() => setNewEmoji(em)}
+                <ScrollView
+                  keyboardShouldPersistTaps="handled"
+                  showsVerticalScrollIndicator={false}
+                  bounces={false}
                 >
-                  <Text style={{ fontSize: 20 }}>{em}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
+                  {/* Seletor de Emoji */}
+                  <Text style={styles.miniLabel}>Ícone da Meta:</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+                    {emojisList.map((em) => (
+                      <TouchableOpacity
+                        key={em}
+                        style={[styles.emojiPickBtn, newEmoji === em && styles.emojiPickBtnActive]}
+                        onPress={() => setNewEmoji(em)}
+                      >
+                        <Text style={{ fontSize: 20 }}>{em}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
 
-            <Text style={styles.miniLabel}>Nome da Meta (ex: Carro, Viagem):</Text>
-            <TextInput
-              style={styles.dialogInput}
-              placeholder="Ex: Troca de Carro, Reforma"
-              placeholderTextColor="#64748B"
-              value={newTitle}
-              onChangeText={setNewTitle}
-            />
+                  <Text style={styles.miniLabel}>Nome da Meta (ex: Carro, Viagem):</Text>
+                  <TextInput
+                    style={styles.dialogInput}
+                    placeholder="Ex: Troca de Carro, Reforma"
+                    placeholderTextColor="#64748B"
+                    value={newTitle}
+                    onChangeText={setNewTitle}
+                  />
 
-            <Text style={styles.miniLabel}>Valor Alvo Total (R$):</Text>
-            <TextInput
-              style={styles.dialogInput}
-              placeholder="Ex: 80.000,00"
-              placeholderTextColor="#64748B"
-              keyboardType="decimal-pad"
-              value={newTarget}
-              onChangeText={setNewTarget}
-            />
+                  <Text style={styles.miniLabel}>Valor Alvo Total (R$):</Text>
+                  <TextInput
+                    style={styles.dialogInput}
+                    placeholder="Ex: 80.000,00"
+                    placeholderTextColor="#64748B"
+                    keyboardType="decimal-pad"
+                    value={newTarget}
+                    onChangeText={setNewTarget}
+                  />
 
-            <Text style={styles.miniLabel}>Valor que já temos guardado (R$):</Text>
-            <TextInput
-              style={styles.dialogInput}
-              placeholder="Ex: 41.000,00 (ou 0 se for começar)"
-              placeholderTextColor="#64748B"
-              keyboardType="decimal-pad"
-              value={newCurrent}
-              onChangeText={setNewCurrent}
-            />
+                  <Text style={styles.miniLabel}>Valor que já temos guardado (R$):</Text>
+                  <TextInput
+                    style={styles.dialogInput}
+                    placeholder="Ex: 41.000,00 (ou 0 se for começar)"
+                    placeholderTextColor="#64748B"
+                    keyboardType="decimal-pad"
+                    value={newCurrent}
+                    onChangeText={setNewCurrent}
+                  />
 
-            <Text style={styles.miniLabel}>Prazo desejado (opcional):</Text>
-            <TextInput
-              style={styles.dialogInput}
-              placeholder="Ex: Dezembro 2026, ou Sem prazo"
-              placeholderTextColor="#64748B"
-              value={newDeadline}
-              onChangeText={setNewDeadline}
-            />
+                  <Text style={styles.miniLabel}>Prazo desejado (opcional):</Text>
+                  <TextInput
+                    style={styles.dialogInput}
+                    placeholder="Ex: Dezembro 2026, ou Sem prazo"
+                    placeholderTextColor="#64748B"
+                    value={newDeadline}
+                    onChangeText={setNewDeadline}
+                  />
 
-            <View style={styles.dialogButtonsRow}>
-              <TouchableOpacity
-                style={styles.cancelBtn}
-                onPress={() => setModalNewCof(false)}
-              >
-                <Text style={styles.cancelBtnText}>Cancelar</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.confirmCofBtn}
-                onPress={handleCreateCofrinho}
-              >
-                <Text style={styles.confirmCofBtnText}>Criar Cofrinho</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
+                  <View style={styles.dialogButtonsRow}>
+                    <TouchableOpacity
+                      style={styles.cancelBtn}
+                      onPress={() => setModalNewCof(false)}
+                    >
+                      <Text style={styles.cancelBtnText}>Cancelar</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.confirmCofBtn}
+                      onPress={handleCreateCofrinho}
+                    >
+                      <Text style={styles.confirmCofBtnText}>Criar Cofrinho</Text>
+                    </TouchableOpacity>
+                  </View>
+                </ScrollView>
+              </View>
+            </TouchableWithoutFeedback>
+          </TouchableOpacity>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* MODAL DE DEPÓSITO NO COFRINHO */}
-      <Modal visible={!!depositCofId} transparent animationType="fade">
-        <View style={styles.centerOverlay}>
-          <View style={styles.dialogBox}>
-            <Text style={styles.dialogTitle}>Guardar no Cofrinho</Text>
-            <Text style={styles.dialogSubtitle}>Quanto você deseja destinar para esta meta agora?</Text>
+      <Modal
+        visible={!!depositCofId}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          setDepositAmount('');
+          setDepositCofId(null);
+        }}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.centerOverlay}
+        >
+          <TouchableOpacity
+            style={{ flex: 1, width: '100%', justifyContent: 'center', alignItems: 'center' }}
+            activeOpacity={1}
+            onPress={Keyboard.dismiss}
+          >
+            <TouchableWithoutFeedback>
+              <View style={styles.dialogBox}>
+                <Text style={styles.dialogTitle}>Guardar no Cofrinho</Text>
+                <Text style={styles.dialogSubtitle}>Quanto você deseja destinar para esta meta agora?</Text>
 
-            <View style={styles.depositInputRow}>
-              <Text style={styles.depositPrefix}>R$</Text>
-              <TextInput
-                style={styles.depositInput}
-                placeholder="500,00"
-                placeholderTextColor="#64748B"
-                keyboardType="decimal-pad"
-                value={depositAmount}
-                onChangeText={setDepositAmount}
-                autoFocus
-              />
-            </View>
+                <View style={styles.depositInputRow}>
+                  <Text style={styles.depositPrefix}>R$</Text>
+                  <TextInput
+                    style={styles.depositInput}
+                    placeholder="500,00"
+                    placeholderTextColor="#64748B"
+                    keyboardType="decimal-pad"
+                    value={depositAmount}
+                    onChangeText={setDepositAmount}
+                    autoFocus
+                  />
+                </View>
 
-            <View style={styles.dialogButtonsRow}>
-              <TouchableOpacity
-                style={styles.cancelBtn}
-                onPress={() => {
-                  setDepositAmount('');
-                  setDepositCofId(null);
-                }}
-              >
-                <Text style={styles.cancelBtnText}>Cancelar</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.confirmCofBtn}
-                onPress={handleConfirmDeposit}
-              >
-                <Text style={styles.confirmCofBtnText}>Guardar</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
+                <View style={styles.dialogButtonsRow}>
+                  <TouchableOpacity
+                    style={styles.cancelBtn}
+                    onPress={() => {
+                      setDepositAmount('');
+                      setDepositCofId(null);
+                    }}
+                  >
+                    <Text style={styles.cancelBtnText}>Cancelar</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.confirmCofBtn}
+                    onPress={handleConfirmDeposit}
+                  >
+                    <Text style={styles.confirmCofBtnText}>Guardar</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </TouchableWithoutFeedback>
+          </TouchableOpacity>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* MODAL DE RESPOSTA DA IA COM DICAS DE ECONOMIA */}

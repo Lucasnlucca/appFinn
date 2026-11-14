@@ -5,11 +5,15 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  TouchableWithoutFeedback,
   TextInput,
   Modal,
   Alert,
   StatusBar,
   Share,
+  Platform,
+  Keyboard,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -1198,8 +1202,8 @@ export default function SharedFinancesScreen({ navigation, route }) {
                       {debtsCalculation.netOwed > 0
                         ? `${debtsCalculation.member2} deve ${formatMoney(debtsCalculation.netOwed)} para ${debtsCalculation.member1}`
                         : debtsCalculation.netOwed < 0
-                        ? `${debtsCalculation.member1} deve ${formatMoney(Math.abs(debtsCalculation.netOwed))} para ${debtsCalculation.member2}`
-                        : 'Tudo acertado! Ninguém deve nada no momento. 🎉'}
+                          ? `${debtsCalculation.member1} deve ${formatMoney(Math.abs(debtsCalculation.netOwed))} para ${debtsCalculation.member2}`
+                          : 'Tudo acertado! Ninguém deve nada no momento. 🎉'}
                     </Text>
                   </View>
                   {debtsCalculation.netOwed !== 0 && (
@@ -1695,8 +1699,8 @@ export default function SharedFinancesScreen({ navigation, route }) {
                                     {(item.assignedTo || []).length === 0
                                       ? 'Rateado entre todos da conta'
                                       : (item.assignedTo || []).length === 1
-                                      ? `Consumo exclusivo de ${(item.assignedTo || [])[0]}`
-                                      : `Dividido entre ${(item.assignedTo || []).length} pessoas (${formatMoney(item.amount / (item.assignedTo || []).length)} cada)`}
+                                        ? `Consumo exclusivo de ${(item.assignedTo || [])[0]}`
+                                        : `Dividido entre ${(item.assignedTo || []).length} pessoas (${formatMoney(item.amount / (item.assignedTo || []).length)} cada)`}
                                   </Text>
                                 </View>
                               </View>
@@ -1834,8 +1838,8 @@ export default function SharedFinancesScreen({ navigation, route }) {
                     {debtsCalculation.netOwed > 0
                       ? `${debtsCalculation.member2} deve para ${debtsCalculation.member1}`
                       : debtsCalculation.netOwed < 0
-                      ? `${debtsCalculation.member1} deve para ${debtsCalculation.member2}`
-                      : 'Contas 100% equilibradas'}
+                        ? `${debtsCalculation.member1} deve para ${debtsCalculation.member2}`
+                        : 'Contas 100% equilibradas'}
                   </Text>
 
                   <TouchableOpacity
@@ -2090,8 +2094,8 @@ export default function SharedFinancesScreen({ navigation, route }) {
                           {isTargetCreator
                             ? '👑 Criador(a)'
                             : isMe
-                            ? 'Você'
-                            : 'Participante'}
+                              ? 'Você'
+                              : 'Participante'}
                         </Text>
                       </View>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -2151,428 +2155,526 @@ export default function SharedFinancesScreen({ navigation, route }) {
       {/* ============================================================== */}
       {/* MODAL 1: CRIAR GRUPO OU INGRESSAR COM CÓDIGO                   */}
       {/* ============================================================== */}
-      <Modal visible={modalNewGroup} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>
-                {newGroupTab === 'create' ? 'Novo Grupo Financeiro' : 'Ingressar em um Grupo'}
-              </Text>
-              <TouchableOpacity onPress={() => setModalNewGroup(false)}>
-                <Ionicons name="close" size={24} color="#71717A" />
-              </TouchableOpacity>
-            </View>
-
-            {/* ABAS SELETORAS: CRIAR NOVO GRUPO vs EU TENHO UM CÓDIGO */}
-            <View style={styles.modalTabsRow}>
-              <TouchableOpacity
-                style={[styles.modalTabBtn, newGroupTab === 'create' && styles.modalTabBtnActive]}
-                onPress={() => setNewGroupTab('create')}
-                activeOpacity={0.8}
-              >
-                <Ionicons
-                  name="add-circle-outline"
-                  size={16}
-                  color={newGroupTab === 'create' ? '#7C3AED' : '#64748B'}
-                />
-                <Text
-                  style={[
-                    styles.modalTabBtnText,
-                    newGroupTab === 'create' && styles.modalTabBtnTextActive,
-                  ]}
-                >
-                  Criar novo grupo
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.modalTabBtn, newGroupTab === 'join' && styles.modalTabBtnActive]}
-                onPress={() => setNewGroupTab('join')}
-                activeOpacity={0.8}
-              >
-                <Ionicons
-                  name="key-outline"
-                  size={16}
-                  color={newGroupTab === 'join' ? '#7C3AED' : '#64748B'}
-                />
-                <Text
-                  style={[
-                    styles.modalTabBtnText,
-                    newGroupTab === 'join' && styles.modalTabBtnTextActive,
-                  ]}
-                >
-                  Eu tenho um código
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* ABA 1: FORMULÁRIO DE CRIAÇÃO DE GRUPO */}
-            {newGroupTab === 'create' ? (
-              <>
-                <Text style={styles.inputLabel}>NOME DO GRUPO</Text>
-                <TextInput
-                  style={styles.modalInput}
-                  placeholder="Ex: Nossa Casa, Viagem Fim de Ano..."
-                  placeholderTextColor="#9CA3AF"
-                  value={newGroupName}
-                  onChangeText={setNewGroupName}
-                />
-
-                <Text style={styles.inputLabel}>TIPO DE COMPARTILHAMENTO</Text>
-                <View style={styles.typePillsRow}>
-                  {['Casal', 'Família', 'Amigos', 'Moradia'].map((t) => (
-                    <TouchableOpacity
-                      key={t}
-                      style={[styles.typePill, newGroupType === t && styles.typePillActive]}
-                      onPress={() => setNewGroupType(t)}
-                    >
-                      <Text style={[styles.typePillText, newGroupType === t && styles.typePillTextActive]}>
-                        {t}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-
-                <Text style={styles.inputLabel}>DESCRIÇÃO (OPCIONAL)</Text>
-                <TextInput
-                  style={[styles.modalInput, { height: 70 }]}
-                  placeholder="Ex: Despesas conjuntas do apartamento"
-                  placeholderTextColor="#9CA3AF"
-                  multiline
-                  value={newGroupDesc}
-                  onChangeText={setNewGroupDesc}
-                />
-
-                <TouchableOpacity style={styles.btnModalPrimary} onPress={handleCreateGroup}>
-                  <Text style={styles.btnModalPrimaryText}>Criar Grupo</Text>
-                </TouchableOpacity>
-              </>
-            ) : (
-              /* ABA 2: FORMULÁRIO EU TENHO UM CÓDIGO COM BARRA E BOTÃO COLAR */
-              <View style={{ marginTop: 4 }}>
-                <Text style={styles.joinCodeSubText}>
-                  Digite ou cole o código único de 6 caracteres fornecido pelo criador do grupo.
-                </Text>
-
-                <Text style={styles.inputLabel}>CÓDIGO DE CONVITE</Text>
-                <View style={styles.codeInputBar}>
-                  <Ionicons name="key" size={20} color="#7C3AED" style={{ marginLeft: 14 }} />
-                  <TextInput
-                    style={styles.codeTextInput}
-                    placeholder="Ex: 50FNH, ABC123 ou cole o código"
-                    placeholderTextColor="#94A3B8"
-                    value={joinCode}
-                    onChangeText={(val) => setJoinCode(val.trim())}
-                    autoCapitalize="characters"
-                    maxLength={80}
-                  />
-                  <TouchableOpacity
-                    style={styles.pasteCodeBtn}
-                    onPress={async () => {
-                      try {
-                        const clipText = await Clipboard.getStringAsync();
-                        if (clipText) {
-                          const hexMatch = clipText.match(/[a-f0-9]{64}/i);
-                          if (hexMatch) {
-                            setJoinCode(hexMatch[0]);
-                            return;
-                          }
-                          const slugMatch = clipText.match(/[a-zA-Z0-9_-]{4,16}/i);
-                          const clean = (slugMatch ? slugMatch[0] : clipText).trim();
-                          setJoinCode(clean);
-                        }
-                      } catch (e) {
-                        console.warn('Erro ao colar código:', e);
-                      }
-                    }}
-                    activeOpacity={0.75}
-                  >
-                    <Ionicons name="clipboard-outline" size={15} color="#7C3AED" />
-                    <Text style={styles.pasteCodeBtnText}>Colar</Text>
+      <Modal
+        visible={modalNewGroup}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setModalNewGroup(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalOverlay}
+        >
+          <TouchableOpacity
+            style={styles.modalBackdropTouchable}
+            activeOpacity={1}
+            onPress={Keyboard.dismiss}
+          >
+            <TouchableWithoutFeedback>
+              <View style={[styles.modalContent, { maxHeight: '92%' }]}>
+                <View style={styles.modalHeader}>
+                  <Text style={styles.modalTitle}>
+                    {newGroupTab === 'create' ? 'Novo Grupo Financeiro' : 'Ingressar em um Grupo'}
+                  </Text>
+                  <TouchableOpacity onPress={() => setModalNewGroup(false)}>
+                    <Ionicons name="close" size={24} color="#71717A" />
                   </TouchableOpacity>
                 </View>
 
-                <View style={styles.codeTimerNotice}>
-                  <Ionicons name="time-outline" size={15} color="#059669" />
-                  <Text style={styles.codeTimerNoticeText}>
-                    O código é único e tem validade de 30 minutos a partir do momento em que foi gerado.
-                  </Text>
-                </View>
-
-                <TouchableOpacity
-                  style={styles.btnModalPrimary}
-                  onPress={async () => {
-                    await handleJoin();
-                    setModalNewGroup(false);
-                  }}
-                  activeOpacity={0.85}
+                <ScrollView
+                  keyboardShouldPersistTaps="handled"
+                  showsVerticalScrollIndicator={false}
+                  bounces={false}
                 >
-                  <Text style={styles.btnModalPrimaryText}>Ingressar no Grupo</Text>
-                </TouchableOpacity>
+                  {/* ABAS SELETORAS: CRIAR NOVO GRUPO vs EU TENHO UM CÓDIGO */}
+                  <View style={styles.modalTabsRow}>
+                    <TouchableOpacity
+                      style={[styles.modalTabBtn, newGroupTab === 'create' && styles.modalTabBtnActive]}
+                      onPress={() => setNewGroupTab('create')}
+                      activeOpacity={0.8}
+                    >
+                      <Ionicons
+                        name="add-circle-outline"
+                        size={16}
+                        color={newGroupTab === 'create' ? '#7C3AED' : '#64748B'}
+                      />
+                      <Text
+                        style={[
+                          styles.modalTabBtnText,
+                          newGroupTab === 'create' && styles.modalTabBtnTextActive,
+                        ]}
+                      >
+                        Criar novo grupo
+                      </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[styles.modalTabBtn, newGroupTab === 'join' && styles.modalTabBtnActive]}
+                      onPress={() => setNewGroupTab('join')}
+                      activeOpacity={0.8}
+                    >
+                      <Ionicons
+                        name="key-outline"
+                        size={16}
+                        color={newGroupTab === 'join' ? '#7C3AED' : '#64748B'}
+                      />
+                      <Text
+                        style={[
+                          styles.modalTabBtnText,
+                          newGroupTab === 'join' && styles.modalTabBtnTextActive,
+                        ]}
+                      >
+                        Eu tenho um código
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* ABA 1: FORMULÁRIO DE CRIAÇÃO DE GRUPO */}
+                  {newGroupTab === 'create' ? (
+                    <>
+                      <Text style={styles.inputLabel}>NOME DO GRUPO</Text>
+                      <TextInput
+                        style={styles.modalInput}
+                        placeholder="Ex: Nossa Casa, Viagem Fim de Ano..."
+                        placeholderTextColor="#9CA3AF"
+                        value={newGroupName}
+                        onChangeText={setNewGroupName}
+                      />
+
+                      <Text style={styles.inputLabel}>TIPO DE COMPARTILHAMENTO</Text>
+                      <View style={styles.typePillsRow}>
+                        {['Casal', 'Família', 'Amigos', 'Moradia'].map((t) => (
+                          <TouchableOpacity
+                            key={t}
+                            style={[styles.typePill, newGroupType === t && styles.typePillActive]}
+                            onPress={() => setNewGroupType(t)}
+                          >
+                            <Text style={[styles.typePillText, newGroupType === t && styles.typePillTextActive]}>
+                              {t}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+
+                      <Text style={styles.inputLabel}>DESCRIÇÃO (OPCIONAL)</Text>
+                      <TextInput
+                        style={[styles.modalInput, { height: 70 }]}
+                        placeholder="Ex: Despesas conjuntas do apartamento"
+                        placeholderTextColor="#9CA3AF"
+                        multiline
+                        value={newGroupDesc}
+                        onChangeText={setNewGroupDesc}
+                      />
+
+                      <TouchableOpacity style={styles.btnModalPrimary} onPress={handleCreateGroup}>
+                        <Text style={styles.btnModalPrimaryText}>Criar Grupo</Text>
+                      </TouchableOpacity>
+                    </>
+                  ) : (
+                    /* ABA 2: FORMULÁRIO EU TENHO UM CÓDIGO COM BARRA E BOTÃO COLAR */
+                    <View style={{ marginTop: 4 }}>
+                      <Text style={styles.joinCodeSubText}>
+                        Digite ou cole o código único de 6 caracteres fornecido pelo criador do grupo.
+                      </Text>
+
+                      <Text style={styles.inputLabel}>CÓDIGO DE CONVITE</Text>
+                      <View style={styles.codeInputBar}>
+                        <Ionicons name="key" size={20} color="#7C3AED" style={{ marginLeft: 14 }} />
+                        <TextInput
+                          style={styles.codeTextInput}
+                          placeholder="Ex: 50FNH, ABC123 ou cole o código"
+                          placeholderTextColor="#94A3B8"
+                          value={joinCode}
+                          onChangeText={(val) => setJoinCode(val.trim())}
+                          autoCapitalize="characters"
+                          maxLength={80}
+                        />
+                        <TouchableOpacity
+                          style={styles.pasteCodeBtn}
+                          onPress={async () => {
+                            try {
+                              const clipText = await Clipboard.getStringAsync();
+                              if (clipText) {
+                                const hexMatch = clipText.match(/[a-f0-9]{64}/i);
+                                if (hexMatch) {
+                                  setJoinCode(hexMatch[0]);
+                                  return;
+                                }
+                                const slugMatch = clipText.match(/[a-zA-Z0-9_-]{4,16}/i);
+                                const clean = (slugMatch ? slugMatch[0] : clipText).trim();
+                                setJoinCode(clean);
+                              }
+                            } catch (e) {
+                              console.warn('Erro ao colar código:', e);
+                            }
+                          }}
+                          activeOpacity={0.75}
+                        >
+                          <Ionicons name="clipboard-outline" size={15} color="#7C3AED" />
+                          <Text style={styles.pasteCodeBtnText}>Colar</Text>
+                        </TouchableOpacity>
+                      </View>
+
+                      <View style={styles.codeTimerNotice}>
+                        <Ionicons name="time-outline" size={15} color="#059669" />
+                        <Text style={styles.codeTimerNoticeText}>
+                          O código é único e tem validade de 30 minutos a partir do momento em que foi gerado.
+                        </Text>
+                      </View>
+
+                      <TouchableOpacity
+                        style={styles.btnModalPrimary}
+                        onPress={async () => {
+                          await handleJoin();
+                          setModalNewGroup(false);
+                        }}
+                        activeOpacity={0.85}
+                      >
+                        <Text style={styles.btnModalPrimaryText}>Ingressar no Grupo</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </ScrollView>
               </View>
-            )}
-          </View>
-        </View>
+            </TouchableWithoutFeedback>
+          </TouchableOpacity>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* ============================================================== */}
       {/* MODAL 2: CONVIDAR PESSOA                                       */}
       {/* ============================================================== */}
-      <Modal visible={modalInvite} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Convidar Pessoa</Text>
-              <TouchableOpacity onPress={() => setModalInvite(false)}>
-                <Ionicons name="close" size={24} color="#71717A" />
-              </TouchableOpacity>
-            </View>
+      <Modal
+        visible={modalInvite}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setModalInvite(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalOverlay}
+        >
+          <TouchableOpacity
+            style={styles.modalBackdropTouchable}
+            activeOpacity={1}
+            onPress={Keyboard.dismiss}
+          >
+            <TouchableWithoutFeedback>
+              <View style={[styles.modalContent, { maxHeight: '92%' }]}>
+                <View style={styles.modalHeader}>
+                  <Text style={styles.modalTitle}>Convidar Pessoa</Text>
+                  <TouchableOpacity onPress={() => setModalInvite(false)}>
+                    <Ionicons name="close" size={24} color="#71717A" />
+                  </TouchableOpacity>
+                </View>
 
-            {/* CÓDIGO DIRETO DE 30 MINUTOS */}
-            <View style={{ backgroundColor: '#F5EEFD', borderRadius: 14, padding: 14, marginBottom: 14, borderWidth: 1, borderColor: '#DDD6FE' }}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Text style={{ fontSize: 11, fontWeight: '800', color: '#6D28D9' }}>CÓDIGO RÁPIDO (30 MIN)</Text>
-                <Text style={{ fontSize: 11, fontWeight: '700', color: inviteCodeStatus.isExpired ? '#EF4444' : '#059669' }}>
-                  {inviteCodeStatus.text}
-                </Text>
-              </View>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
-                <Text style={{ fontSize: 22, fontWeight: '900', color: '#7C3AED', letterSpacing: 3, fontFamily: 'monospace' }}>
-                  {activeGroup?.inviteCode || '------'}
-                </Text>
-                <TouchableOpacity
-                  style={{ backgroundColor: '#7C3AED', paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10, flexDirection: 'row', alignItems: 'center', gap: 4 }}
-                  onPress={() => {
-                    if (inviteCodeStatus.isExpired) {
-                      Alert.alert(
-                        'Código Expirado ⏳',
-                        'Este código de convite já expirou. Gere um novo código antes de compartilhar.',
-                        [
-                          { text: 'Cancelar', style: 'cancel' },
-                          { text: 'Gerar Novo Código', onPress: handleRegenerateInviteCode },
-                        ]
-                      );
-                      return;
-                    }
-                    Share.share({
-                      message: `Olá! Estou te convidando para o grupo '${activeGroup?.name}' no FINN. Baixe o app e entre com o código: ${activeGroup?.inviteCode} (válido por 30 minutos).`,
-                    });
-                  }}
-                  activeOpacity={0.8}
+                <ScrollView
+                  keyboardShouldPersistTaps="handled"
+                  showsVerticalScrollIndicator={false}
+                  bounces={false}
                 >
-                  <Ionicons name="share-social" size={13} color="#FFFFFF" />
-                  <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '700' }}>Compartilhar</Text>
-                </TouchableOpacity>
-              </View>
-              <TouchableOpacity
-                style={{ marginTop: 10, alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 4 }}
-                onPress={handleRegenerateInviteCode}
-              >
-                <Ionicons name="refresh" size={14} color="#7C3AED" />
-                <Text style={{ color: '#7C3AED', fontSize: 11.5, fontWeight: '700' }}>Gerar outro código</Text>
-              </TouchableOpacity>
-            </View>
+                  {/* CÓDIGO DIRETO DE 30 MINUTOS */}
+                  <View style={{ backgroundColor: '#F5EEFD', borderRadius: 14, padding: 14, marginBottom: 14, borderWidth: 1, borderColor: '#DDD6FE' }}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <Text style={{ fontSize: 11, fontWeight: '800', color: '#6D28D9' }}>CÓDIGO RÁPIDO (30 MIN)</Text>
+                      <Text style={{ fontSize: 11, fontWeight: '700', color: inviteCodeStatus.isExpired ? '#EF4444' : '#059669' }}>
+                        {inviteCodeStatus.text}
+                      </Text>
+                    </View>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
+                      <Text style={{ fontSize: 22, fontWeight: '900', color: '#7C3AED', letterSpacing: 3, fontFamily: 'monospace' }}>
+                        {activeGroup?.inviteCode || '------'}
+                      </Text>
+                      <TouchableOpacity
+                        style={{ backgroundColor: '#7C3AED', paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10, flexDirection: 'row', alignItems: 'center', gap: 4 }}
+                        onPress={() => {
+                          if (inviteCodeStatus.isExpired) {
+                            Alert.alert(
+                              'Código Expirado ⏳',
+                              'Este código de convite já expirou. Gere um novo código antes de compartilhar.',
+                              [
+                                { text: 'Cancelar', style: 'cancel' },
+                                { text: 'Gerar Novo Código', onPress: handleRegenerateInviteCode },
+                              ]
+                            );
+                            return;
+                          }
+                          Share.share({
+                            message: `Olá! Estou te convidando para o grupo '${activeGroup?.name}' no FINN. Baixe o app e entre com o código: ${activeGroup?.inviteCode} (válido por 30 minutos).`,
+                          });
+                        }}
+                        activeOpacity={0.8}
+                      >
+                        <Ionicons name="share-social" size={13} color="#FFFFFF" />
+                        <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '700' }}>Compartilhar</Text>
+                      </TouchableOpacity>
+                    </View>
+                    <TouchableOpacity
+                      style={{ marginTop: 10, alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 4 }}
+                      onPress={handleRegenerateInviteCode}
+                    >
+                      <Ionicons name="refresh" size={14} color="#7C3AED" />
+                      <Text style={{ color: '#7C3AED', fontSize: 11.5, fontWeight: '700' }}>Gerar outro código</Text>
+                    </TouchableOpacity>
+                  </View>
 
-            <Text style={{ fontSize: 11, fontWeight: '800', color: '#94A3B8', textAlign: 'center', marginVertical: 6 }}>
-              ── OU ENVIAR CONVITE POR E-MAIL ──
-            </Text>
-
-            <Text style={styles.inputLabel}>E-MAIL DO CONVIDADO(A)</Text>
-            <TextInput
-              style={styles.modalInput}
-              placeholder="exemplo@email.com"
-              placeholderTextColor="#9CA3AF"
-              keyboardType="email-address"
-              autoCapitalize="none"
-              value={inviteEmail}
-              onChangeText={setInviteEmail}
-            />
-
-            <Text style={styles.inputLabel}>RELAÇÃO / TIPO</Text>
-            <View style={styles.typePillsRow}>
-              {['Casal', 'Família', 'Amigos', 'Moradia'].map((t) => (
-                <TouchableOpacity
-                  key={t}
-                  style={[styles.typePill, inviteType === t && styles.typePillActive]}
-                  onPress={() => setInviteType(t)}
-                >
-                  <Text style={[styles.typePillText, inviteType === t && styles.typePillTextActive]}>
-                    {t}
+                  <Text style={{ fontSize: 11, fontWeight: '800', color: '#94A3B8', textAlign: 'center', marginVertical: 6 }}>
+                    ── OU ENVIAR CONVITE POR E-MAIL ──
                   </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
 
-            <Text style={styles.inputLabel}>MENSAGEM (OPCIONAL)</Text>
-            <TextInput
-              style={[styles.modalInput, { height: 65 }]}
-              placeholder="Vamos organizar nossas contas juntos pelo FINN!"
-              placeholderTextColor="#9CA3AF"
-              multiline
-              value={inviteMessage}
-              onChangeText={setInviteMessage}
-            />
+                  <Text style={styles.inputLabel}>E-MAIL DO CONVIDADO(A)</Text>
+                  <TextInput
+                    style={styles.modalInput}
+                    placeholder="exemplo@email.com"
+                    placeholderTextColor="#9CA3AF"
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    value={inviteEmail}
+                    onChangeText={setInviteEmail}
+                  />
 
-            <TouchableOpacity style={styles.btnModalPrimary} onPress={handleInvite}>
-              <Text style={styles.btnModalPrimaryText}>Gerar Convite Seguro</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+                  <Text style={styles.inputLabel}>RELAÇÃO / TIPO</Text>
+                  <View style={styles.typePillsRow}>
+                    {['Casal', 'Família', 'Amigos', 'Moradia'].map((t) => (
+                      <TouchableOpacity
+                        key={t}
+                        style={[styles.typePill, inviteType === t && styles.typePillActive]}
+                        onPress={() => setInviteType(t)}
+                      >
+                        <Text style={[styles.typePillText, inviteType === t && styles.typePillTextActive]}>
+                          {t}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+
+                  <Text style={styles.inputLabel}>MENSAGEM (OPCIONAL)</Text>
+                  <TextInput
+                    style={[styles.modalInput, { height: 65 }]}
+                    placeholder="Vamos organizar nossas contas juntos pelo FINN!"
+                    placeholderTextColor="#9CA3AF"
+                    multiline
+                    value={inviteMessage}
+                    onChangeText={setInviteMessage}
+                  />
+
+                  <TouchableOpacity style={styles.btnModalPrimary} onPress={handleInvite}>
+                    <Text style={styles.btnModalPrimaryText}>Gerar Convite Seguro</Text>
+                  </TouchableOpacity>
+                </ScrollView>
+              </View>
+            </TouchableWithoutFeedback>
+          </TouchableOpacity>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* ============================================================== */}
       {/* MODAL 3: ENTRAR COM CÓDIGO                                     */}
       {/* ============================================================== */}
-      <Modal visible={modalJoin} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Entrar com Código</Text>
-              <TouchableOpacity onPress={() => setModalJoin(false)}>
-                <Ionicons name="close" size={24} color="#71717A" />
-              </TouchableOpacity>
-            </View>
+      <Modal
+        visible={modalJoin}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setModalJoin(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalOverlay}
+        >
+          <TouchableOpacity
+            style={styles.modalBackdropTouchable}
+            activeOpacity={1}
+            onPress={Keyboard.dismiss}
+          >
+            <TouchableWithoutFeedback>
+              <View style={styles.modalContent}>
+                <View style={styles.modalHeader}>
+                  <Text style={styles.modalTitle}>Entrar com Código</Text>
+                  <TouchableOpacity onPress={() => setModalJoin(false)}>
+                    <Ionicons name="close" size={24} color="#71717A" />
+                  </TouchableOpacity>
+                </View>
 
-            <Text style={styles.inputLabel}>CÓDIGO DE CONVITE (VÁLIDO POR 30 MIN)</Text>
-            <TextInput
-              style={[styles.modalInput, { textAlign: 'center', fontSize: 24, fontWeight: '900', letterSpacing: 4, fontFamily: 'monospace', color: '#7C3AED' }]}
-              placeholder="ABC123"
-              placeholderTextColor="#CBD5E1"
-              autoCapitalize="characters"
-              maxLength={80}
-              value={joinCode}
-              onChangeText={setJoinCode}
-            />
-            <Text style={{ fontSize: 11.5, color: '#64748B', marginTop: 8, textAlign: 'center' }}>
-              Insira ou cole o código único de convite gerado pelo organizador do grupo (válido por 30 minutos).
-            </Text>
+                <Text style={styles.inputLabel}>CÓDIGO DE CONVITE (VÁLIDO POR 30 MIN)</Text>
+                <TextInput
+                  style={[styles.modalInput, { textAlign: 'center', fontSize: 24, fontWeight: '900', letterSpacing: 4, fontFamily: 'monospace', color: '#7C3AED' }]}
+                  placeholder="ABC123"
+                  placeholderTextColor="#CBD5E1"
+                  autoCapitalize="characters"
+                  maxLength={80}
+                  value={joinCode}
+                  onChangeText={setJoinCode}
+                />
+                <Text style={{ fontSize: 11.5, color: '#64748B', marginTop: 8, textAlign: 'center' }}>
+                  Insira ou cole o código único de convite gerado pelo organizador do grupo (válido por 30 minutos).
+                </Text>
 
-            <TouchableOpacity style={styles.btnModalPrimary} onPress={handleJoin}>
-              <Text style={styles.btnModalPrimaryText}>Ingressar no Grupo</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+                <TouchableOpacity style={styles.btnModalPrimary} onPress={handleJoin}>
+                  <Text style={styles.btnModalPrimaryText}>Ingressar no Grupo</Text>
+                </TouchableOpacity>
+              </View>
+            </TouchableWithoutFeedback>
+          </TouchableOpacity>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* ============================================================== */}
       {/* MODAL 4: LANÇAR DESPESA COMPARTILHADA COM DIVISÃO INTELIGENTE */}
       {/* ============================================================== */}
-      <Modal visible={modalNewExpense} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Despesa Compartilhada</Text>
-              <TouchableOpacity onPress={() => setModalNewExpense(false)}>
-                <Ionicons name="close" size={24} color="#71717A" />
-              </TouchableOpacity>
-            </View>
+      <Modal
+        visible={modalNewExpense}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setModalNewExpense(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalOverlay}
+        >
+          <TouchableOpacity
+            style={styles.modalBackdropTouchable}
+            activeOpacity={1}
+            onPress={Keyboard.dismiss}
+          >
+            <TouchableWithoutFeedback>
+              <View style={[styles.modalContent, { maxHeight: '92%' }]}>
+                <View style={styles.modalHeader}>
+                  <Text style={styles.modalTitle}>Despesa Compartilhada</Text>
+                  <TouchableOpacity onPress={() => setModalNewExpense(false)}>
+                    <Ionicons name="close" size={24} color="#71717A" />
+                  </TouchableOpacity>
+                </View>
 
-            <Text style={styles.inputLabel}>DESCRIÇÃO</Text>
-            <TextInput
-              style={styles.modalInput}
-              placeholder="Ex: Supermercado, Aluguel, Jantar..."
-              placeholderTextColor="#9CA3AF"
-              value={expDesc}
-              onChangeText={setExpDesc}
-            />
-
-            <Text style={styles.inputLabel}>VALOR TOTAL (R$)</Text>
-            <TextInput
-              style={styles.modalInput}
-              placeholder="0,00"
-              placeholderTextColor="#9CA3AF"
-              keyboardType="numeric"
-              value={expAmount}
-              onChangeText={setExpAmount}
-            />
-
-            <Text style={styles.inputLabel}>QUEM PAGOU?</Text>
-            <View style={styles.typePillsRow}>
-              {groupMembers.map((m) => (
-                <TouchableOpacity
-                  key={m.id}
-                  style={[styles.typePill, expPaidBy === m.name && styles.typePillActive]}
-                  onPress={() => setExpPaidBy(m.name)}
+                <ScrollView
+                  keyboardShouldPersistTaps="handled"
+                  showsVerticalScrollIndicator={false}
+                  bounces={false}
                 >
-                  <Text style={[styles.typePillText, expPaidBy === m.name && styles.typePillTextActive]}>
-                    {m.name}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+                  <Text style={styles.inputLabel}>DESCRIÇÃO</Text>
+                  <TextInput
+                    style={styles.modalInput}
+                    placeholder="Ex: Supermercado, Aluguel, Jantar..."
+                    placeholderTextColor="#9CA3AF"
+                    value={expDesc}
+                    onChangeText={setExpDesc}
+                  />
 
-            <Text style={styles.inputLabel}>DIVISÃO</Text>
-            <View style={styles.typePillsRow}>
-              <TouchableOpacity
-                style={[styles.typePill, expSplitMethod === 'equal' && styles.typePillActive]}
-                onPress={() => setExpSplitMethod('equal')}
-              >
-                <Text style={[styles.typePillText, expSplitMethod === 'equal' && styles.typePillTextActive]}>
-                  Igual (50% / 50%)
-                </Text>
-              </TouchableOpacity>
-            </View>
+                  <Text style={styles.inputLabel}>VALOR TOTAL (R$)</Text>
+                  <TextInput
+                    style={styles.modalInput}
+                    placeholder="0,00"
+                    placeholderTextColor="#9CA3AF"
+                    keyboardType="numeric"
+                    value={expAmount}
+                    onChangeText={setExpAmount}
+                  />
 
-            <TouchableOpacity style={styles.btnModalPrimary} onPress={handleSaveSharedExpense}>
-              <Text style={styles.btnModalPrimaryText}>Salvar e Dividir</Text>
-            </TouchableOpacity>
+                  <Text style={styles.inputLabel}>QUEM PAGOU?</Text>
+                  <View style={styles.typePillsRow}>
+                    {groupMembers.map((m) => (
+                      <TouchableOpacity
+                        key={m.id}
+                        style={[styles.typePill, expPaidBy === m.name && styles.typePillActive]}
+                        onPress={() => setExpPaidBy(m.name)}
+                      >
+                        <Text style={[styles.typePillText, expPaidBy === m.name && styles.typePillTextActive]}>
+                          {m.name}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
 
-            <TouchableOpacity
-              style={styles.btnOpenSplitFromModal}
-              onPress={() => {
-                setModalNewExpense(false);
-                if (expAmount) setSplitTotal(expAmount);
-                if (expDesc) setSplitDesc(expDesc);
-                setActiveTab('divisao');
-              }}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="pie-chart-outline" size={16} color="#7C3AED" />
-              <Text style={styles.btnOpenSplitFromModalText}>
-                Divisão Detalhada por Itens / Seleção
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+                  <Text style={styles.inputLabel}>DIVISÃO</Text>
+                  <View style={styles.typePillsRow}>
+                    <TouchableOpacity
+                      style={[styles.typePill, expSplitMethod === 'equal' && styles.typePillActive]}
+                      onPress={() => setExpSplitMethod('equal')}
+                    >
+                      <Text style={[styles.typePillText, expSplitMethod === 'equal' && styles.typePillTextActive]}>
+                        Igual (50% / 50%)
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  <TouchableOpacity style={styles.btnModalPrimary} onPress={handleSaveSharedExpense}>
+                    <Text style={styles.btnModalPrimaryText}>Salvar e Dividir</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.btnOpenSplitFromModal}
+                    onPress={() => {
+                      setModalNewExpense(false);
+                      if (expAmount) setSplitTotal(expAmount);
+                      if (expDesc) setSplitDesc(expDesc);
+                      setActiveTab('divisao');
+                    }}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons name="pie-chart-outline" size={16} color="#7C3AED" />
+                    <Text style={styles.btnOpenSplitFromModalText}>
+                      Divisão Detalhada por Itens / Seleção
+                    </Text>
+                  </TouchableOpacity>
+                </ScrollView>
+              </View>
+            </TouchableWithoutFeedback>
+          </TouchableOpacity>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* ============================================================== */}
       {/* MODAL 5: REGISTRAR ACERTO DE CONTAS                            */}
       {/* ============================================================== */}
-      <Modal visible={modalSettlement} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Registrar Acerto</Text>
-              <TouchableOpacity onPress={() => setModalSettlement(false)}>
-                <Ionicons name="close" size={24} color="#71717A" />
-              </TouchableOpacity>
-            </View>
+      <Modal
+        visible={modalSettlement}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setModalSettlement(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalOverlay}
+        >
+          <TouchableOpacity
+            style={styles.modalBackdropTouchable}
+            activeOpacity={1}
+            onPress={Keyboard.dismiss}
+          >
+            <TouchableWithoutFeedback>
+              <View style={styles.modalContent}>
+                <View style={styles.modalHeader}>
+                  <Text style={styles.modalTitle}>Registrar Acerto</Text>
+                  <TouchableOpacity onPress={() => setModalSettlement(false)}>
+                    <Ionicons name="close" size={24} color="#71717A" />
+                  </TouchableOpacity>
+                </View>
 
-            <Text style={styles.inputLabel}>VALOR PAGO / ABATIDO (R$)</Text>
-            <TextInput
-              style={styles.modalInput}
-              placeholder="0,00"
-              placeholderTextColor="#9CA3AF"
-              keyboardType="numeric"
-              value={settleAmount}
-              onChangeText={setSettleAmount}
-            />
+                <Text style={styles.inputLabel}>VALOR PAGO / ABATIDO (R$)</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  placeholder="0,00"
+                  placeholderTextColor="#9CA3AF"
+                  keyboardType="numeric"
+                  value={settleAmount}
+                  onChangeText={setSettleAmount}
+                />
 
-            <Text style={styles.inputLabel}>OBSERVAÇÃO (OPCIONAL)</Text>
-            <TextInput
-              style={styles.modalInput}
-              placeholder="Ex: Transferência PIX Nubank"
-              placeholderTextColor="#9CA3AF"
-              value={settleNotes}
-              onChangeText={setSettleNotes}
-            />
+                <Text style={styles.inputLabel}>OBSERVAÇÃO (OPCIONAL)</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  placeholder="Ex: Transferência PIX Nubank"
+                  placeholderTextColor="#9CA3AF"
+                  value={settleNotes}
+                  onChangeText={setSettleNotes}
+                />
 
-            <TouchableOpacity style={styles.btnModalPrimary} onPress={handleSaveSettlement}>
-              <Text style={styles.btnModalPrimaryText}>Confirmar Pagamento</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+                <TouchableOpacity style={styles.btnModalPrimary} onPress={handleSaveSettlement}>
+                  <Text style={styles.btnModalPrimaryText}>Confirmar Pagamento</Text>
+                </TouchableOpacity>
+              </View>
+            </TouchableWithoutFeedback>
+          </TouchableOpacity>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* ============================================================== */}
@@ -3702,6 +3804,11 @@ const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'flex-end',
+  },
+  modalBackdropTouchable: {
+    flex: 1,
+    width: '100%',
     justifyContent: 'flex-end',
   },
   kickModalOverlay: {

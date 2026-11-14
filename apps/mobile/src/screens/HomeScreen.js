@@ -6,6 +6,7 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  TouchableWithoutFeedback,
   StatusBar,
   Dimensions,
   useWindowDimensions,
@@ -16,6 +17,9 @@ import {
   AppState,
   Share,
   ActivityIndicator,
+  Platform,
+  Keyboard,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -1118,93 +1122,125 @@ export default function HomeScreen({ navigation }) {
       />
 
       {/* MODAL PARA AJUSTAR SALDO REAL DA CONTA */}
-      <Modal visible={!!editingAcc} transparent animationType="fade">
-        <View style={styles.modalOverlayCenter}>
-          <View style={styles.modalBalanceBox}>
-            <Text style={styles.modalBalanceTitle}>Ajustar Saldo Real</Text>
-            <Text style={styles.modalBalanceSub}>
-              {editingAcc?.name} ({editingAcc?.bank})
-            </Text>
+      <Modal
+        visible={!!editingAcc}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setEditingAcc(null)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalOverlayCenter}
+        >
+          <TouchableOpacity
+            style={{ flex: 1, width: '100%', justifyContent: 'center', alignItems: 'center' }}
+            activeOpacity={1}
+            onPress={Keyboard.dismiss}
+          >
+            <TouchableWithoutFeedback>
+              <View style={styles.modalBalanceBox}>
+                <Text style={styles.modalBalanceTitle}>Ajustar Saldo Real</Text>
+                <Text style={styles.modalBalanceSub}>
+                  {editingAcc?.name} ({editingAcc?.bank})
+                </Text>
 
-            <View style={styles.inputCurrencyRow}>
-              <Text style={styles.currencyPrefix}>R$</Text>
-              <TextInput
-                style={styles.balanceInput}
-                keyboardType="decimal-pad"
-                value={accBalanceInput}
-                onChangeText={setAccBalanceInput}
-                placeholder="0,00"
-                placeholderTextColor={COLORS.textMuted}
-                autoFocus
-              />
-            </View>
+                <View style={styles.inputCurrencyRow}>
+                  <Text style={styles.currencyPrefix}>R$</Text>
+                  <TextInput
+                    style={styles.balanceInput}
+                    keyboardType="decimal-pad"
+                    value={accBalanceInput}
+                    onChangeText={setAccBalanceInput}
+                    placeholder="0,00"
+                    placeholderTextColor={COLORS.textMuted}
+                    autoFocus
+                  />
+                </View>
 
-            <View style={styles.modalActionsRow}>
-              <TouchableOpacity
-                style={styles.modalCancelBtn}
-                onPress={() => setEditingAcc(null)}
-              >
-                <Text style={styles.modalCancelText}>Cancelar</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.modalConfirmBtn}
-                onPress={handleSaveBalance}
-              >
-                <Text style={styles.modalConfirmText}>Salvar Saldo</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
+                <View style={styles.modalActionsRow}>
+                  <TouchableOpacity
+                    style={styles.modalCancelBtn}
+                    onPress={() => setEditingAcc(null)}
+                  >
+                    <Text style={styles.modalCancelText}>Cancelar</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.modalConfirmBtn}
+                    onPress={handleSaveBalance}
+                  >
+                    <Text style={styles.modalConfirmText}>Salvar Saldo</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </TouchableWithoutFeedback>
+          </TouchableOpacity>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* MODAL PARA ADICIONAR NOVA CONTA */}
-      <Modal visible={modalNewAcc} transparent animationType="fade">
-        <View style={styles.modalOverlayCenter}>
-          <View style={styles.modalBalanceBox}>
-            <Text style={styles.modalBalanceTitle}>Nova Conta Bancária</Text>
-            <Text style={styles.modalBalanceSub}>Cadastre sua conta real para o casal</Text>
+      <Modal
+        visible={modalNewAcc}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setModalNewAcc(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalOverlayCenter}
+        >
+          <TouchableOpacity
+            style={{ flex: 1, width: '100%', justifyContent: 'center', alignItems: 'center' }}
+            activeOpacity={1}
+            onPress={Keyboard.dismiss}
+          >
+            <TouchableWithoutFeedback>
+              <View style={styles.modalBalanceBox}>
+                <Text style={styles.modalBalanceTitle}>Nova Conta Bancária</Text>
+                <Text style={styles.modalBalanceSub}>Cadastre sua conta real para o casal</Text>
 
-            <TextInput
-              style={styles.formInput}
-              placeholder="Nome da Conta (ex: Conta Principal)"
-              placeholderTextColor={COLORS.textMuted}
-              value={newAccName}
-              onChangeText={setNewAccName}
-            />
+                <TextInput
+                  style={styles.formInput}
+                  placeholder="Nome da Conta (ex: Conta Principal)"
+                  placeholderTextColor={COLORS.textMuted}
+                  value={newAccName}
+                  onChangeText={setNewAccName}
+                />
 
-            <TextInput
-              style={styles.formInput}
-              placeholder="Instituição (ex: Nubank, Inter, Itaú)"
-              placeholderTextColor={COLORS.textMuted}
-              value={newAccBank}
-              onChangeText={setNewAccBank}
-            />
+                <TextInput
+                  style={styles.formInput}
+                  placeholder="Instituição (ex: Nubank, Inter, Itaú)"
+                  placeholderTextColor={COLORS.textMuted}
+                  value={newAccBank}
+                  onChangeText={setNewAccBank}
+                />
 
-            <TextInput
-              style={styles.formInput}
-              placeholder="Saldo Inicial (R$ 0,00)"
-              placeholderTextColor={COLORS.textMuted}
-              keyboardType="decimal-pad"
-              value={newAccBalance}
-              onChangeText={setNewAccBalance}
-            />
+                <TextInput
+                  style={styles.formInput}
+                  placeholder="Saldo Inicial (R$ 0,00)"
+                  placeholderTextColor={COLORS.textMuted}
+                  keyboardType="decimal-pad"
+                  value={newAccBalance}
+                  onChangeText={setNewAccBalance}
+                />
 
-            <View style={styles.modalActionsRow}>
-              <TouchableOpacity
-                style={styles.modalCancelBtn}
-                onPress={() => setModalNewAcc(false)}
-              >
-                <Text style={styles.modalCancelText}>Cancelar</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.modalConfirmBtn}
-                onPress={handleCreateAccount}
-              >
-                <Text style={styles.modalConfirmText}>Adicionar</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
+                <View style={styles.modalActionsRow}>
+                  <TouchableOpacity
+                    style={styles.modalCancelBtn}
+                    onPress={() => setModalNewAcc(false)}
+                  >
+                    <Text style={styles.modalCancelText}>Cancelar</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.modalConfirmBtn}
+                    onPress={handleCreateAccount}
+                  >
+                    <Text style={styles.modalConfirmText}>Adicionar</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </TouchableWithoutFeedback>
+          </TouchableOpacity>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* MODAL SELETOR DE GRUPOS COMPARTILHADOS (CONFORME SOLICITADO) */}
@@ -1342,228 +1378,241 @@ export default function HomeScreen({ navigation }) {
         animationType="fade"
         onRequestClose={() => setModalQuickNewGroup(false)}
       >
-        <TouchableOpacity
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.groupModalOverlay}
-          activeOpacity={1}
-          onPress={() => setModalQuickNewGroup(false)}
         >
-          <View style={styles.groupModalCard} onStartShouldSetResponder={() => true}>
-            <View style={styles.groupModalHeader}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <View style={styles.groupModalIconBox}>
-                  <Ionicons name="people" size={20} color="#7C3AED" />
-                </View>
-                <View>
-                  <Text style={styles.groupModalTitle}>
-                    {quickGroupTab === 'create' ? 'Criar Novo Grupo' : 'Ingressar em um Grupo'}
-                  </Text>
-                  <Text style={styles.groupModalSub}>
-                    {quickGroupTab === 'create'
-                      ? 'Adicione um espaço isolado de finanças'
-                      : 'Use o código de 6 caracteres recebido'}
-                  </Text>
-                </View>
-              </View>
-              <TouchableOpacity
-                onPress={() => setModalQuickNewGroup(false)}
-                style={styles.groupModalCloseBtn}
-              >
-                <Ionicons name="close" size={20} color="#64748B" />
-              </TouchableOpacity>
-            </View>
-
-            {/* SELETOR DE ABAS: CRIAR vs EU TENHO UM CÓDIGO */}
-            <View style={styles.quickModalTabsRow}>
-              <TouchableOpacity
-                style={[
-                  styles.quickModalTabBtn,
-                  quickGroupTab === 'create' && styles.quickModalTabBtnActive,
-                ]}
-                onPress={() => setQuickGroupTab('create')}
-                activeOpacity={0.8}
-              >
-                <Ionicons
-                  name="add-circle-outline"
-                  size={15}
-                  color={quickGroupTab === 'create' ? '#7C3AED' : '#64748B'}
-                />
-                <Text
-                  style={[
-                    styles.quickModalTabBtnText,
-                    quickGroupTab === 'create' && styles.quickModalTabBtnTextActive,
-                  ]}
-                >
-                  Criar novo grupo
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  styles.quickModalTabBtn,
-                  quickGroupTab === 'join' && styles.quickModalTabBtnActive,
-                ]}
-                onPress={() => setQuickGroupTab('join')}
-                activeOpacity={0.8}
-              >
-                <Ionicons
-                  name="key-outline"
-                  size={15}
-                  color={quickGroupTab === 'join' ? '#7C3AED' : '#64748B'}
-                />
-                <Text
-                  style={[
-                    styles.quickModalTabBtnText,
-                    quickGroupTab === 'join' && styles.quickModalTabBtnTextActive,
-                  ]}
-                >
-                  Eu tenho um código
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            {quickGroupTab === 'create' ? (
-              <>
-                <View style={{ marginVertical: 14 }}>
-                  <Text style={{ fontSize: 13, fontWeight: '700', color: '#334155', marginBottom: 6 }}>
-                    Nome do Grupo
-                  </Text>
-                  <TextInput
-                    style={{
-                      backgroundColor: '#F8FAFC',
-                      borderWidth: 1,
-                      borderColor: '#E2E8F0',
-                      borderRadius: 12,
-                      paddingHorizontal: 14,
-                      paddingVertical: 10,
-                      fontSize: 14,
-                      color: '#0F172A',
-                    }}
-                    placeholder="Ex: Viagem de Férias, Família, República..."
-                    placeholderTextColor="#94A3B8"
-                    value={quickGroupName}
-                    onChangeText={setQuickGroupName}
-                  />
-
-                  <Text style={{ fontSize: 13, fontWeight: '700', color: '#334155', marginTop: 14, marginBottom: 8 }}>
-                    Tipo de Grupo
-                  </Text>
-                  <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
-                    {['Casal', 'Família', 'Viagem', 'Amigos', 'Trabalho'].map((t) => (
-                      <TouchableOpacity
-                        key={t}
-                        style={{
-                          paddingVertical: 6,
-                          paddingHorizontal: 12,
-                          borderRadius: 10,
-                          backgroundColor: quickGroupType === t ? '#7C3AED' : '#F1F5F9',
-                        }}
-                        onPress={() => setQuickGroupType(t)}
-                      >
-                        <Text
-                          style={{
-                            fontSize: 12,
-                            fontWeight: '700',
-                            color: quickGroupType === t ? '#FFFFFF' : '#64748B',
-                          }}
-                        >
-                          {t}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
+          <TouchableOpacity
+            style={{ flex: 1, width: '100%', justifyContent: 'center', alignItems: 'center' }}
+            activeOpacity={1}
+            onPress={Keyboard.dismiss}
+          >
+            <TouchableWithoutFeedback>
+              <View style={[styles.groupModalCard, { maxHeight: '88%' }]}>
+                <View style={styles.groupModalHeader}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <View style={styles.groupModalIconBox}>
+                      <Ionicons name="people" size={20} color="#7C3AED" />
+                    </View>
+                    <View>
+                      <Text style={styles.groupModalTitle}>
+                        {quickGroupTab === 'create' ? 'Criar Novo Grupo' : 'Ingressar em um Grupo'}
+                      </Text>
+                      <Text style={styles.groupModalSub}>
+                        {quickGroupTab === 'create'
+                          ? 'Adicione um espaço isolado de finanças'
+                          : 'Use o código de 6 caracteres recebido'}
+                      </Text>
+                    </View>
                   </View>
-                </View>
-
-                <TouchableOpacity
-                  style={{
-                    backgroundColor: '#7C3AED',
-                    borderRadius: 14,
-                    paddingVertical: 13,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                  onPress={handleQuickCreateGroup}
-                  activeOpacity={0.85}
-                >
-                  <Text style={{ color: '#FFFFFF', fontSize: 14, fontWeight: '800' }}>
-                    Salvar e Ativar Grupo
-                  </Text>
-                </TouchableOpacity>
-              </>
-            ) : (
-              /* ABA EU TENHO UM CÓDIGO COM BARRA E BOTÃO COLAR */
-              <View style={{ marginVertical: 12 }}>
-                <Text style={{ fontSize: 13, fontWeight: '500', color: '#475569', lineHeight: 18, marginBottom: 12 }}>
-                  Insira o código de convite de 6 caracteres para participar deste grupo compartilhado.
-                </Text>
-
-                <Text style={{ fontSize: 12, fontWeight: '700', color: '#334155', marginBottom: 6 }}>
-                  CÓDIGO DE CONVITE
-                </Text>
-                <View style={styles.quickCodeInputBar}>
-                  <Ionicons name="key" size={18} color="#7C3AED" style={{ marginLeft: 12 }} />
-                  <TextInput
-                    style={styles.quickCodeTextInput}
-                    placeholder="Ex: 50FNH, ABC123 ou cole o código"
-                    placeholderTextColor="#94A3B8"
-                    value={quickJoinCode}
-                    onChangeText={(val) => setQuickJoinCode(val.trim())}
-                    autoCapitalize="characters"
-                    maxLength={80}
-                  />
                   <TouchableOpacity
-                    style={styles.quickPasteCodeBtn}
-                    onPress={async () => {
-                      try {
-                        const clip = await Clipboard.getStringAsync();
-                        if (clip) {
-                          // Se tiver token hex de 64 chars
-                          const hexMatch = clip.match(/[a-f0-9]{64}/i);
-                          if (hexMatch) {
-                            setQuickJoinCode(hexMatch[0]);
-                            return;
-                          }
-                          // Se tiver código curto
-                          const slugMatch = clip.match(/[a-zA-Z0-9_-]{4,16}/i);
-                          const clean = (slugMatch ? slugMatch[0] : clip).trim();
-                          setQuickJoinCode(clean);
-                        }
-                      } catch (e) {
-                        console.warn('Erro ao colar:', e);
-                      }
-                    }}
-                    activeOpacity={0.75}
+                    onPress={() => setModalQuickNewGroup(false)}
+                    style={styles.groupModalCloseBtn}
                   >
-                    <Ionicons name="clipboard-outline" size={14} color="#7C3AED" />
-                    <Text style={styles.quickPasteCodeBtnText}>Colar</Text>
+                    <Ionicons name="close" size={20} color="#64748B" />
                   </TouchableOpacity>
                 </View>
 
-                <View style={styles.quickCodeTimerNotice}>
-                  <Ionicons name="time-outline" size={14} color="#059669" />
-                  <Text style={styles.quickCodeTimerNoticeText}>
-                    Válido por 30 minutos a partir da geração pelo criador do grupo.
-                  </Text>
-                </View>
-
-                <TouchableOpacity
-                  style={{
-                    backgroundColor: '#7C3AED',
-                    borderRadius: 14,
-                    paddingVertical: 13,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                  onPress={handleQuickJoinGroup}
-                  activeOpacity={0.85}
+                <ScrollView
+                  keyboardShouldPersistTaps="handled"
+                  showsVerticalScrollIndicator={false}
+                  bounces={false}
                 >
-                  <Text style={{ color: '#FFFFFF', fontSize: 14, fontWeight: '800' }}>
-                    Ingressar no Grupo
-                  </Text>
-                </TouchableOpacity>
+                  {/* SELETOR DE ABAS: CRIAR vs EU TENHO UM CÓDIGO */}
+                  <View style={styles.quickModalTabsRow}>
+                    <TouchableOpacity
+                      style={[
+                        styles.quickModalTabBtn,
+                        quickGroupTab === 'create' && styles.quickModalTabBtnActive,
+                      ]}
+                      onPress={() => setQuickGroupTab('create')}
+                      activeOpacity={0.8}
+                    >
+                      <Ionicons
+                        name="add-circle-outline"
+                        size={15}
+                        color={quickGroupTab === 'create' ? '#7C3AED' : '#64748B'}
+                      />
+                      <Text
+                        style={[
+                          styles.quickModalTabBtnText,
+                          quickGroupTab === 'create' && styles.quickModalTabBtnTextActive,
+                        ]}
+                      >
+                        Criar novo grupo
+                      </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[
+                        styles.quickModalTabBtn,
+                        quickGroupTab === 'join' && styles.quickModalTabBtnActive,
+                      ]}
+                      onPress={() => setQuickGroupTab('join')}
+                      activeOpacity={0.8}
+                    >
+                      <Ionicons
+                        name="key-outline"
+                        size={15}
+                        color={quickGroupTab === 'join' ? '#7C3AED' : '#64748B'}
+                      />
+                      <Text
+                        style={[
+                          styles.quickModalTabBtnText,
+                          quickGroupTab === 'join' && styles.quickModalTabBtnTextActive,
+                        ]}
+                      >
+                        Eu tenho um código
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {quickGroupTab === 'create' ? (
+                    <>
+                      <View style={{ marginVertical: 14 }}>
+                        <Text style={{ fontSize: 13, fontWeight: '700', color: '#334155', marginBottom: 6 }}>
+                          Nome do Grupo
+                        </Text>
+                        <TextInput
+                          style={{
+                            backgroundColor: '#F8FAFC',
+                            borderWidth: 1,
+                            borderColor: '#E2E8F0',
+                            borderRadius: 12,
+                            paddingHorizontal: 14,
+                            paddingVertical: 10,
+                            fontSize: 14,
+                            color: '#0F172A',
+                          }}
+                          placeholder="Ex: Viagem de Férias, Família, República..."
+                          placeholderTextColor="#94A3B8"
+                          value={quickGroupName}
+                          onChangeText={setQuickGroupName}
+                        />
+
+                        <Text style={{ fontSize: 13, fontWeight: '700', color: '#334155', marginTop: 14, marginBottom: 8 }}>
+                          Tipo de Grupo
+                        </Text>
+                        <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+                          {['Casal', 'Família', 'Viagem', 'Amigos', 'Trabalho'].map((t) => (
+                            <TouchableOpacity
+                              key={t}
+                              style={{
+                                paddingVertical: 6,
+                                paddingHorizontal: 12,
+                                borderRadius: 10,
+                                backgroundColor: quickGroupType === t ? '#7C3AED' : '#F1F5F9',
+                              }}
+                              onPress={() => setQuickGroupType(t)}
+                            >
+                              <Text
+                                style={{
+                                  fontSize: 12,
+                                  fontWeight: '700',
+                                  color: quickGroupType === t ? '#FFFFFF' : '#64748B',
+                                }}
+                              >
+                                {t}
+                              </Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      </View>
+
+                      <TouchableOpacity
+                        style={{
+                          backgroundColor: '#7C3AED',
+                          borderRadius: 14,
+                          paddingVertical: 13,
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                        onPress={handleQuickCreateGroup}
+                        activeOpacity={0.85}
+                      >
+                        <Text style={{ color: '#FFFFFF', fontSize: 14, fontWeight: '800' }}>
+                          Salvar e Ativar Grupo
+                        </Text>
+                      </TouchableOpacity>
+                    </>
+                  ) : (
+                    /* ABA EU TENHO UM CÓDIGO COM BARRA E BOTÃO COLAR */
+                    <View style={{ marginVertical: 12 }}>
+                      <Text style={{ fontSize: 13, fontWeight: '500', color: '#475569', lineHeight: 18, marginBottom: 12 }}>
+                        Insira o código de convite de 6 caracteres para participar deste grupo compartilhado.
+                      </Text>
+
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: '#334155', marginBottom: 6 }}>
+                        CÓDIGO DE CONVITE
+                      </Text>
+                      <View style={styles.quickCodeInputBar}>
+                        <Ionicons name="key" size={18} color="#7C3AED" style={{ marginLeft: 12 }} />
+                        <TextInput
+                          style={styles.quickCodeTextInput}
+                          placeholder="Ex: 50FNH, ABC123 ou cole o código"
+                          placeholderTextColor="#94A3B8"
+                          value={quickJoinCode}
+                          onChangeText={(val) => setQuickJoinCode(val.trim())}
+                          autoCapitalize="characters"
+                          maxLength={80}
+                        />
+                        <TouchableOpacity
+                          style={styles.quickPasteCodeBtn}
+                          onPress={async () => {
+                            try {
+                              const clip = await Clipboard.getStringAsync();
+                              if (clip) {
+                                // Se tiver token hex de 64 chars
+                                const hexMatch = clip.match(/[a-f0-9]{64}/i);
+                                if (hexMatch) {
+                                  setQuickJoinCode(hexMatch[0]);
+                                  return;
+                                }
+                                // Se tiver código curto
+                                const slugMatch = clip.match(/[a-zA-Z0-9_-]{4,16}/i);
+                                const clean = (slugMatch ? slugMatch[0] : clip).trim();
+                                setQuickJoinCode(clean);
+                              }
+                            } catch (e) {
+                              console.warn('Erro ao colar:', e);
+                            }
+                          }}
+                          activeOpacity={0.75}
+                        >
+                          <Ionicons name="clipboard-outline" size={14} color="#7C3AED" />
+                          <Text style={styles.quickPasteCodeBtnText}>Colar</Text>
+                        </TouchableOpacity>
+                      </View>
+
+                      <View style={styles.quickCodeTimerNotice}>
+                        <Ionicons name="time-outline" size={14} color="#059669" />
+                        <Text style={styles.quickCodeTimerNoticeText}>
+                          Válido por 30 minutos a partir da geração pelo criador do grupo.
+                        </Text>
+                      </View>
+
+                      <TouchableOpacity
+                        style={{
+                          backgroundColor: '#7C3AED',
+                          borderRadius: 14,
+                          paddingVertical: 13,
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                        onPress={handleQuickJoinGroup}
+                        activeOpacity={0.85}
+                      >
+                        <Text style={{ color: '#FFFFFF', fontSize: 14, fontWeight: '800' }}>
+                          Ingressar no Grupo
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </ScrollView>
               </View>
-            )}
-          </View>
-        </TouchableOpacity>
+            </TouchableWithoutFeedback>
+          </TouchableOpacity>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* MODAL CENTRAL DE NOTIFICAÇÕES (ETAPA 3 - NOVO VISUAL) */}

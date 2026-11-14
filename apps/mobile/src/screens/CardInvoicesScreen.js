@@ -906,7 +906,7 @@ export default function CardInvoicesScreen({ navigation }) {
       {/* ========================================================================= */}
       <Modal visible={modalNewCard} transparent animationType="slide">
         <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.modalOverlay}
         >
           <View style={styles.modalBox}>
@@ -1104,7 +1104,7 @@ export default function CardInvoicesScreen({ navigation }) {
       {/* ========================================================================= */}
       <Modal visible={modalEditCard} transparent animationType="slide">
         <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.modalOverlay}
         >
           <View style={styles.modalBox}>
