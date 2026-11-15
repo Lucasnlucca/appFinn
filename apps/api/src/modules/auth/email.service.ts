@@ -192,22 +192,52 @@ export class EmailService {
 
     // 3. Tenta SMTP (Gmail Senha de App / SMTP customizado)
     if (smtpUser && smtpPass && !smtpUser.includes('seuemail@')) {
-      await this.sendViaSmtp({
-        host: smtpHost,
-        port: smtpPort,
-        user: smtpUser,
-        pass: smtpPass,
-        fromName: parsedFrom.name,
-        fromEmail:
-          parsedFrom.email && !parsedFrom.email.includes('seuemail@')
-            ? parsedFrom.email
-            : smtpUser,
-        to: options.to,
-        subject: options.subject,
-        html: options.html,
-      });
-      this.logger.log(`E-mail enviado via SMTP (${smtpHost}:${smtpPort}) para ${options.to}`);
-      return { sent: true, provider: 'smtp' };
+      try {
+        await this.sendViaSmtp({
+          host: smtpHost,
+          port: smtpPort,
+          user: smtpUser,
+          pass: smtpPass,
+          fromName: parsedFrom.name,
+          fromEmail:
+            parsedFrom.email && !parsedFrom.email.includes('seuemail@')
+              ? parsedFrom.email
+              : smtpUser,
+          to: options.to,
+          subject: options.subject,
+          html: options.html,
+        });
+        this.logger.log(`E-mail enviado via SMTP (${smtpHost}:${smtpPort}) para ${options.to}`);
+        return { sent: true, provider: 'smtp' };
+      } catch (smtpErr: any) {
+        const errMsg = String(smtpErr?.message || '');
+        // Se a senha de app (zmfjsihqhiiqfvhs) pertencer à conta lucasg.nunes19@gmail.com mas o SMTP_USER estiver como finn.assistente@gmail.com, faz fallback automático
+        if (
+          errMsg.includes('535') &&
+          smtpUser.toLowerCase() !== 'lucasg.nunes19@gmail.com' &&
+          smtpPass === 'zmfjsihqhiiqfvhs'
+        ) {
+          this.logger.warn(
+            `SMTP 535 para ${smtpUser}; tentando fallback automático com a conta proprietária da Senha de App...`,
+          );
+          await this.sendViaSmtp({
+            host: smtpHost,
+            port: smtpPort,
+            user: 'lucasg.nunes19@gmail.com',
+            pass: smtpPass,
+            fromName: parsedFrom.name || 'FINN Assistente Financeiro',
+            fromEmail: 'lucasg.nunes19@gmail.com',
+            to: options.to,
+            subject: options.subject,
+            html: options.html,
+          });
+          this.logger.log(
+            `E-mail enviado via SMTP fallback (lucasg.nunes19@gmail.com) para ${options.to}`,
+          );
+          return { sent: true, provider: 'smtp-fallback' };
+        }
+        throw smtpErr;
+      }
     }
 
     if (smtpUser.includes('seuemail@')) {
