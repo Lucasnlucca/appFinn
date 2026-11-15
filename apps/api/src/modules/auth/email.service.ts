@@ -123,10 +123,12 @@ export class EmailService {
     const resendKey = (process.env.RESEND_API_KEY || '').trim();
     const smtpHost = (process.env.SMTP_HOST || 'smtp.gmail.com').trim();
     const smtpPort = Number(process.env.SMTP_PORT || 465);
-    const smtpUser = (process.env.SMTP_USER || '').trim();
+    const smtpUser = (process.env.SMTP_USER || 'finn.assistente@gmail.com').trim();
     // Remove espaços caso a senha de app de 16 letras tenha sido colada com espaços
-    const smtpPass = (process.env.SMTP_PASS || '').replace(/\s+/g, '');
-    const rawFrom = (process.env.SMTP_FROM || '').trim();
+    const smtpPass = (process.env.SMTP_PASS || 'hemqfaiicobomqoe').replace(/\s+/g, '');
+    const rawFrom = (
+      process.env.SMTP_FROM || 'FINN Assistente Financeiro <finn.assistente@gmail.com>'
+    ).trim();
 
     const parsedFrom = this.parseFromAddress(
       rawFrom,
@@ -211,30 +213,32 @@ export class EmailService {
         return { sent: true, provider: 'smtp' };
       } catch (smtpErr: any) {
         const errMsg = String(smtpErr?.message || '');
-        // Se a senha de app (zmfjsihqhiiqfvhs) pertencer à conta lucasg.nunes19@gmail.com mas o SMTP_USER estiver como finn.assistente@gmail.com, faz fallback automático
-        if (
-          errMsg.includes('535') &&
-          smtpUser.toLowerCase() !== 'lucasg.nunes19@gmail.com' &&
-          smtpPass === 'zmfjsihqhiiqfvhs'
-        ) {
-          this.logger.warn(
-            `SMTP 535 para ${smtpUser}; tentando fallback automático com a conta proprietária da Senha de App...`,
-          );
-          await this.sendViaSmtp({
-            host: smtpHost,
-            port: smtpPort,
-            user: 'lucasg.nunes19@gmail.com',
-            pass: smtpPass,
-            fromName: parsedFrom.name || 'FINN Assistente Financeiro',
-            fromEmail: 'lucasg.nunes19@gmail.com',
-            to: options.to,
-            subject: options.subject,
-            html: options.html,
-          });
-          this.logger.log(
-            `E-mail enviado via SMTP fallback (lucasg.nunes19@gmail.com) para ${options.to}`,
-          );
-          return { sent: true, provider: 'smtp-fallback' };
+        if (errMsg.includes('535')) {
+          const fallbackAccounts = [
+            { user: 'finn.assistente@gmail.com', pass: 'hemqfaiicobomqoe' },
+            { user: 'lucasg.nunes19@gmail.com', pass: 'zmfjsihqhiiqfvhs' },
+          ];
+          for (const fb of fallbackAccounts) {
+            if (smtpUser.toLowerCase() === fb.user && smtpPass === fb.pass) continue;
+            try {
+              this.logger.warn(
+                `SMTP 535 para ${smtpUser}; tentando fallback automático com ${fb.user}...`,
+              );
+              await this.sendViaSmtp({
+                host: smtpHost,
+                port: smtpPort,
+                user: fb.user,
+                pass: fb.pass,
+                fromName: parsedFrom.name || 'FINN Assistente Financeiro',
+                fromEmail: fb.user,
+                to: options.to,
+                subject: options.subject,
+                html: options.html,
+              });
+              this.logger.log(`E-mail enviado via SMTP fallback (${fb.user}) para ${options.to}`);
+              return { sent: true, provider: 'smtp-fallback' };
+            } catch {}
+          }
         }
         throw smtpErr;
       }
