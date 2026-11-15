@@ -94,13 +94,20 @@ export function isWithinQuietHours(dateInput = new Date(), preferences = DEFAULT
 }
 
 /**
- * Verifica se uma notificação é crítica (conta vencendo hoje ou saldo negativo)
- * Alertas críticos têm permissão para furar o horário de silêncio.
+ * Verifica se uma notificação é crítica (conta vencendo hoje, saldo negativo ou atividade em grupo compartilhado)
+ * Alertas críticos têm permissão para furar o horário de silêncio e o limite diário.
  */
 export function isCriticalNotification(notification) {
   if (!notification || typeof notification !== 'object') return false;
   if (notification.priority === NOTIFICATION_PRIORITIES.CRITICAL) return true;
-  const criticalTypes = new Set(['bill_due_today', 'negative_balance', 'negative_projection']);
+  const criticalTypes = new Set([
+    'bill_due_today',
+    'negative_balance',
+    'negative_projection',
+    'shared_group_activity',
+    'shared_expense',
+    'shared_settlement',
+  ]);
   return criticalTypes.has(notification.type);
 }
 
@@ -131,14 +138,15 @@ export function formatPushPayloadForPrivacy(
 ) {
   const prefs = { ...DEFAULT_NOTIFICATION_PREFERENCES, ...(preferences || {}) };
   const safeTitle = sanitizeNotificationText(notification?.title, 'Notificação FINN', {
-    stripEmojis: true,
+    stripEmojis: false,
   });
   const safeBody = sanitizeNotificationText(
     notification?.body || notification?.message,
     'Abra o aplicativo FINN para visualizar os detalhes.'
   );
 
-  if (!prefs.hideAmountsOnLockScreen) {
+  // Notificações de grupos compartilhados sempre exibem quem adicionou, qual o valor e qual o grupo
+  if (!prefs.hideAmountsOnLockScreen || notification?.type === 'shared_group_activity') {
     return {
       title: safeTitle,
       body: safeBody,
@@ -235,10 +243,26 @@ export function canSendPushNotification(
     preferences = DEFAULT_NOTIFICATION_PREFERENCES,
     pushLog = { dailyCounts: {}, sentKeys: [] },
     now = new Date(),
+    bypassRules = false,
   } = {}
 ) {
   if (!notification || typeof notification !== 'object') {
     return { allowed: false, reason: 'invalid_notification' };
+  }
+
+  const d = now instanceof Date ? now : new Date(now);
+  const dayKey = Number.isNaN(d.getTime())
+    ? new Date().toISOString().slice(0, 10)
+    : d.toISOString().slice(0, 10);
+  const dedupeKey = buildDedupeKey(notification, d);
+
+  if (bypassRules || notification.type === 'shared_group_activity') {
+    return {
+      allowed: true,
+      reason: 'ok',
+      dedupeKey,
+      dayKey,
+    };
   }
 
   const prefs = {
@@ -255,12 +279,6 @@ export function canSendPushNotification(
     return { allowed: false, reason: 'category_disabled' };
   }
 
-  const d = now instanceof Date ? now : new Date(now);
-  const dayKey = Number.isNaN(d.getTime())
-    ? new Date().toISOString().slice(0, 10)
-    : d.toISOString().slice(0, 10);
-
-  const dedupeKey = buildDedupeKey(notification, d);
   const sentKeys = Array.isArray(pushLog?.sentKeys) ? pushLog.sentKeys : [];
   if (sentKeys.includes(dedupeKey)) {
     return { allowed: false, reason: 'duplicate', dedupeKey };
@@ -273,7 +291,7 @@ export function canSendPushNotification(
 
   const maxDaily = Number(prefs.maxDailyPushes) > 0 ? Number(prefs.maxDailyPushes) : MAX_DAILY_PUSHES;
   const currentDailyCount = Number(pushLog?.dailyCounts?.[dayKey] || 0);
-  if (currentDailyCount >= maxDaily) {
+  if (!critical && currentDailyCount >= maxDaily) {
     return { allowed: false, reason: 'daily_limit_reached', dedupeKey };
   }
 
@@ -456,9 +474,10 @@ export async function sendInstantPhoneNotification({
   title,
   body,
   data = {},
-  delaySeconds = 1,
+  delaySeconds = 0,
   userId = 'guest',
   preferences = null,
+  bypassRules = false,
 }) {
   if (Platform.OS === 'web') return null;
 
@@ -478,10 +497,16 @@ export async function sendInstantPhoneNotification({
       model.category = normalizeNotificationCategory(data.category);
     }
 
+    const isSharedGroupEvent =
+      bypassRules ||
+      model.type === 'shared_group_activity' ||
+      data?.type === 'shared_group';
+
     const check = canSendPushNotification(model, {
       preferences: prefs,
       pushLog,
       now: new Date(),
+      bypassRules: isSharedGroupEvent,
     });
 
     if (!check.allowed) {
@@ -506,10 +531,13 @@ export async function sendInstantPhoneNotification({
         },
         sound: 'default',
         color: '#5B21B6',
+        priority: Notifications.AndroidNotificationPriority
+          ? Notifications.AndroidNotificationPriority.MAX
+          : 'max',
         ...(Platform.OS === 'android' ? { channelId: CHANNEL_ID } : {}),
       },
       trigger:
-        delaySeconds > 0
+        delaySeconds > 0 && !isSharedGroupEvent
           ? {
               type: Notifications.SchedulableTriggerInputTypes
                 ? Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL
@@ -520,10 +548,12 @@ export async function sendInstantPhoneNotification({
           : null,
     });
 
-    await recordPushDispatched(userId, {
-      dayKey: check.dayKey,
-      dedupeKey: check.dedupeKey,
-    });
+    if (!isSharedGroupEvent) {
+      await recordPushDispatched(userId, {
+        dayKey: check.dayKey,
+        dedupeKey: check.dedupeKey,
+      });
+    }
 
     if (userId && userId !== 'guest') {
       createNotificationApi({

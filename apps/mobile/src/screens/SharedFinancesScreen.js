@@ -46,6 +46,7 @@ export default function SharedFinancesScreen({ navigation, route }) {
     recordSettlement,
     addSharedExpense,
     transactions,
+    allTransactions,
     viewMode,
     setViewMode,
     notifications = [],
@@ -63,7 +64,10 @@ export default function SharedFinancesScreen({ navigation, route }) {
     if (route?.params?.initialTab) {
       setActiveTab(route.params.initialTab);
     }
-  }, [route?.params?.initialTab]);
+    if (route?.params?.groupId && setActiveGroupId) {
+      setActiveGroupId(route.params.groupId);
+    }
+  }, [route?.params?.initialTab, route?.params?.groupId]);
 
   // Modais
   const [modalNewGroup, setModalNewGroup] = useState(false);
@@ -156,26 +160,58 @@ export default function SharedFinancesScreen({ navigation, route }) {
     }
   }, [groupMembers, loggedInUser]);
 
-  // Transações compartilhadas do grupo (100% isoladas para o grupo ativo)
+  // Transações compartilhadas do grupo (100% em tempo real, independente do viewMode global)
   const sharedTxs = useMemo(() => {
     if (!activeGroup?.id) return [];
-    return transactions.filter(
-      (t) => t.isShared && (t.groupId === activeGroup.id || t.sharedGroupId === activeGroup.id)
+    const sourceList = Array.isArray(allTransactions) ? allTransactions : transactions || [];
+    const validGroupIds = new Set(
+      [activeGroup.id, activeGroup.remoteId].filter(Boolean).map(String)
     );
-  }, [transactions, activeGroup?.id]);
+    const activeNameNorm = String(activeGroup.name || '').trim().toLowerCase();
+
+    return sourceList.filter((t) => {
+      if (!t || (!t.isShared && !t.groupId && !t.sharedGroupId)) return false;
+      if (
+        (t.groupId && validGroupIds.has(String(t.groupId))) ||
+        (t.sharedGroupId && validGroupIds.has(String(t.sharedGroupId)))
+      ) {
+        return true;
+      }
+      if (t.groupName && activeNameNorm && String(t.groupName).trim().toLowerCase() === activeNameNorm) {
+        return true;
+      }
+      if (!t.groupId && !t.sharedGroupId && sharedGroups.length === 1) {
+        return true;
+      }
+      return false;
+    });
+  }, [allTransactions, transactions, activeGroup?.id, activeGroup?.remoteId, activeGroup?.name, sharedGroups.length]);
+
+  // Acertos de contas filtrados para o grupo ativo
+  const groupSettlements = useMemo(() => {
+    if (!activeGroup?.id) return [];
+    const validGroupIds = new Set(
+      [activeGroup.id, activeGroup.remoteId].filter(Boolean).map(String)
+    );
+    const activeNameNorm = String(activeGroup.name || '').trim().toLowerCase();
+    return (settlements || []).filter((s) => {
+      if (!s) return false;
+      if (s.groupId && validGroupIds.has(String(s.groupId))) return true;
+      if (s.groupName && activeNameNorm && String(s.groupName).trim().toLowerCase() === activeNameNorm) return true;
+      if (!s.groupId && sharedGroups.length === 1) return true;
+      return false;
+    });
+  }, [settlements, activeGroup?.id, activeGroup?.remoteId, activeGroup?.name, sharedGroups.length]);
 
   // Total gasto compartilhado no mês
   const totalSharedSpent = useMemo(() => {
     return sharedTxs.reduce((sum, t) => sum + (t.amount || 0), 0);
   }, [sharedTxs]);
 
-  // 1. Auto-preenche o valor da divisão com o total gasto pelo grupo se estiver zerado/vazio
+  // 1. Auto-atualiza o valor da divisão com o total gasto pelo grupo em tempo real
   useEffect(() => {
-    if (activeTab === 'divisao') {
-      const rawTotal = parseFloat(String(splitTotal).replace(',', '.')) || 0;
-      if (rawTotal === 0 && totalSharedSpent > 0) {
-        setSplitTotal(totalSharedSpent.toFixed(2));
-      }
+    if (activeTab === 'divisao' && totalSharedSpent > 0) {
+      setSplitTotal(totalSharedSpent.toFixed(2));
       if (!splitDesc.trim() && activeGroup?.name) {
         setSplitDesc(`Gastos do grupo ${activeGroup.name}`);
       }
@@ -360,7 +396,7 @@ export default function SharedFinancesScreen({ navigation, route }) {
     });
 
     // Subtrai acertos já realizados e confirmados
-    settlements.forEach((s) => {
+    groupSettlements.forEach((s) => {
       if (balances[s.fromMember] !== undefined) balances[s.fromMember] += (s.amount || 0);
       if (balances[s.toMember] !== undefined) balances[s.toMember] -= (s.amount || 0);
     });
@@ -406,7 +442,7 @@ export default function SharedFinancesScreen({ navigation, route }) {
       balances,
       pairwiseDebts,
     };
-  }, [sharedTxs, settlements, groupMembers, loggedInUser]);
+  }, [sharedTxs, groupSettlements, groupMembers, loggedInUser]);
 
   // ==============================================================
   // AÇÕES DA DIVISÃO DE CONTAS (ADICIONAR ITEM, SALVAR, COMPARTILHAR)
@@ -1942,9 +1978,9 @@ export default function SharedFinancesScreen({ navigation, route }) {
                 )}
 
                 {/* HISTÓRICO DE ACERTOS */}
-                <Text style={styles.sectionTitle}>Histórico de liquidações ({settlements.length})</Text>
+                <Text style={styles.sectionTitle}>Histórico de liquidações ({groupSettlements.length})</Text>
 
-                {settlements.length === 0 ? (
+                {groupSettlements.length === 0 ? (
                   <View style={styles.emptyBox}>
                     <Ionicons name="time-outline" size={36} color="#D1D5DB" />
                     <Text style={styles.emptyTitle}>Nenhum acerto registrado</Text>
@@ -1953,7 +1989,7 @@ export default function SharedFinancesScreen({ navigation, route }) {
                     </Text>
                   </View>
                 ) : (
-                  settlements.map((s) => (
+                  groupSettlements.map((s) => (
                     <View key={s.id} style={styles.settlementRow}>
                       <View style={styles.settlementIconBox}>
                         <Ionicons name="checkmark-circle" size={20} color="#10B981" />

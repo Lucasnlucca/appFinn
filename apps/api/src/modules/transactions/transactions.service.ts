@@ -199,13 +199,15 @@ export class TransactionsService {
     if (query.scope === FinancialScope.HOUSEHOLD) {
       const memberships = await this.prisma.householdMember.findMany({ where: { userId } });
       if (memberships.length > 0) {
-        const householdId = memberships[0].householdId;
+        const householdIds = memberships.map((m) => m.householdId);
         const members = await this.prisma.householdMember.findMany({
-          where: { householdId },
+          where: { householdId: { in: householdIds } },
           select: { userId: true },
         });
 
-        const partnerIds = members.map((m) => m.userId).filter((id) => id !== userId);
+        const partnerIds = Array.from(
+          new Set(members.map((m) => m.userId).filter((id) => id !== userId))
+        );
         const permissions = await this.prisma.sharingPermission.findMany({
           where: {
             recipientUserId: userId,
@@ -249,8 +251,8 @@ export class TransactionsService {
         creditCard: { select: { id: true, name: true, colorHex: true } },
         user: { select: { id: true, fullName: true } },
       },
-      orderBy: { date: 'desc' },
-      take: 100,
+      orderBy: [{ createdAt: 'desc' }, { date: 'desc' }],
+      take: 150,
     });
   }
 
