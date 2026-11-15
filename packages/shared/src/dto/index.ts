@@ -254,4 +254,8 @@ export class FinancialQueryDto {
   @IsOptional()
   @IsString()
   categoryId?: string;
+
+  @IsOptional()
+  @IsNumber()
+  limit?: number;
 }

@@ -9,6 +9,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../theme/colors';
@@ -37,9 +38,9 @@ export default function EditTransactionModal({ visible, transaction, onClose, on
     }
   }, [transaction]);
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!description.trim() || !amount) return;
-    const num = parseFloat(amount.replace(',', '.'));
+    const num = parseFloat(String(amount).replace(',', '.'));
     if (isNaN(num) || num <= 0) return;
 
     let finalDate = transaction.date || new Date().toISOString().split('T')[0];
@@ -57,16 +58,24 @@ export default function EditTransactionModal({ visible, transaction, onClose, on
       }
     }
 
-    onSave({
-      ...transaction,
-      description: description.trim(),
-      amount: num,
-      type,
-      category,
-      author: transaction.author || loggedInUser?.name || 'Você',
-      date: finalDate,
-    });
-    onClose();
+    try {
+      await onSave({
+        ...transaction,
+        title: description.trim(),
+        description: description.trim(),
+        amount: num,
+        type,
+        category,
+        author: transaction.author || loggedInUser?.name || 'Você',
+        date: finalDate,
+      });
+      onClose();
+    } catch (err) {
+      Alert.alert(
+        'Não foi possível salvar',
+        err?.message || 'Não foi possível confirmar a edição no servidor. Tente novamente.'
+      );
+    }
   };
 
   if (!transaction) return null;

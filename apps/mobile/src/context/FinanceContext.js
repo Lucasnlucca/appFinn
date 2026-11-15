@@ -169,12 +169,23 @@ export function FinanceProvider({ children }) {
   );
   const [liveGroupBanner, setLiveGroupBanner] = useState(null);
   const [loaded, setLoaded] = useState(false);
+  const [isRefreshingHome, setIsRefreshingHome] = useState(false);
+  const [isRefreshingGroup, setIsRefreshingGroup] = useState(false);
+  const [homeRefreshError, setHomeRefreshError] = useState(null);
+  const [groupRefreshError, setGroupRefreshError] = useState(null);
 
   const sharedGroupsRef = useRef([]);
   const activeGroupIdRef = useRef(null);
   const loggedInUserRef = useRef(null);
+  const transactionsRef = useRef([]);
+  const accountsRef = useRef([]);
+  const cardsRef = useRef([]);
+  const settlementsRef = useRef([]);
   const seenSharedTxIdsRef = useRef(new Set());
   const seenSharedTxInitializedRef = useRef(false);
+  const inFlightHomeRefreshRef = useRef({ userId: null, promise: null });
+  const inFlightGroupRefreshMapRef = useRef(new Map());
+  const groupRefreshSeqRef = useRef(new Map());
 
   useEffect(() => {
     sharedGroupsRef.current = sharedGroups;
@@ -188,7 +199,25 @@ export function FinanceProvider({ children }) {
     loggedInUserRef.current = loggedInUser;
   }, [loggedInUser]);
 
+  useEffect(() => {
+    transactionsRef.current = transactions;
+  }, [transactions]);
+
+  useEffect(() => {
+    accountsRef.current = accounts;
+  }, [accounts]);
+
+  useEffect(() => {
+    cardsRef.current = cards;
+  }, [cards]);
+
+  useEffect(() => {
+    settlementsRef.current = settlements;
+  }, [settlements]);
+
   const dismissLiveGroupBanner = () => setLiveGroupBanner(null);
+  const clearHomeRefreshError = () => setHomeRefreshError(null);
+  const clearGroupRefreshError = () => setGroupRefreshError(null);
 
   // Helper para persistir dados no namespace isolado do usuário conectado (por ID e por E-mail)
   const saveUserItem = async (keyName, val) => {
@@ -519,18 +548,24 @@ export function FinanceProvider({ children }) {
 
   // Sincronização bi-direcional não-destrutiva com PostgreSQL da VPS
   const syncWithPostgres = async (overrides = {}) => {
-    if (isSyncingPostgres || !loggedInUser?.id) return;
+    const reqUserId = loggedInUserRef.current?.id || loggedInUser?.id;
+    if (!reqUserId) {
+      return { success: false, error: 'Sessão não autenticada' };
+    }
+    if (isSyncingPostgres && !overrides.force) {
+      return { success: true, reused: true };
+    }
     setIsSyncingPostgres(true);
     try {
       const currentLocalCards = Array.isArray(overrides.overrideCards)
         ? overrides.overrideCards
-        : cards;
+        : cardsRef.current;
       const currentLocalAccounts = Array.isArray(overrides.overrideAccounts)
         ? overrides.overrideAccounts
-        : accounts;
+        : accountsRef.current;
       const currentLocalTransactions = Array.isArray(overrides.overrideTransactions)
         ? overrides.overrideTransactions
-        : transactions;
+        : transactionsRef.current;
 
       const norm = (s) => String(s || '').trim().toLowerCase();
 
@@ -539,6 +574,11 @@ export function FinanceProvider({ children }) {
         localAccounts: currentLocalAccounts,
         localTransactions: currentLocalTransactions,
       });
+
+      // Isolamento por usuário: se o usuário trocou de conta durante a requisição, descarta
+      if (String(loggedInUserRef.current?.id || '') !== String(reqUserId)) {
+        return { success: false, cancelled: true };
+      }
 
       if (res.success) {
         // 1. Mesclar cartões remotos e locais preservando edições do cliente (limite, vencimento, fatura)
@@ -577,7 +617,7 @@ export function FinanceProvider({ children }) {
               name: localMatch?.name || rc.name,
               bank: localMatch?.bank || rc.name,
               bankId: theme.bankId,
-              holderName: localMatch?.holderName || rc.holderName || loggedInUser?.fullName || loggedInUser?.name || 'TITULAR',
+              holderName: localMatch?.holderName || rc.holderName || loggedInUserRef.current?.fullName || loggedInUserRef.current?.name || 'TITULAR',
               lastFourDigits: localMatch?.lastFourDigits || rc.lastFourDigits || '••••',
               expiryMonth: localMatch?.expiryMonth || rc.expiryMonth || '12',
               expiryYear: localMatch?.expiryYear || rc.expiryYear || '28',
@@ -590,7 +630,7 @@ export function FinanceProvider({ children }) {
               usedPercent,
               color: localMatch?.color || rc.colorHex || theme.gradientColors[0],
               logoType: theme.bankId,
-              owner: localMatch?.owner || loggedInUser?.name || 'Titular',
+              owner: localMatch?.owner || loggedInUserRef.current?.name || 'Titular',
             };
           });
 
@@ -602,13 +642,14 @@ export function FinanceProvider({ children }) {
               )
           );
           const finalCards = [...mappedCards, ...unsyncedCards];
+          cardsRef.current = finalCards;
           setCards(finalCards);
           await saveUserItem('cards', finalCards);
         }
 
-        // 2. Mesclar transações remotas e locais preservando todos os campos (title, description, grupo, etc.)
-        let finalTxs = [...currentLocalTransactions];
+        // 2. Mesclar transações remotas e locais usando os valores confirmados pelo servidor
         if (res.remoteTransactions && res.remoteTransactions.length > 0) {
+          const latestLocalTxs = transactionsRef.current || currentLocalTransactions;
           const mappedRemoteTxs = res.remoteTransactions
             .filter((rt) => {
               const meta = parseSharedNotes(rt?.notes);
@@ -619,7 +660,7 @@ export function FinanceProvider({ children }) {
               const rtTitle = rt.description || rt.title || 'Movimentação';
               const rtAmt = parseFloat(rt.amount) || 0;
               const rtDate = rt.date ? rt.date.split('T')[0] : new Date().toISOString().split('T')[0];
-              const localMatch = currentLocalTransactions.find(
+              const localMatch = latestLocalTxs.find(
                 (lt) =>
                   lt.id === rt.id ||
                   lt.remoteId === rt.id ||
@@ -632,29 +673,29 @@ export function FinanceProvider({ children }) {
                 !!rt.isHouseholdShared ||
                 !!meta;
               const resolvedGrpId =
+                meta?.groupId ||
                 localMatch?.groupId ||
                 localMatch?.sharedGroupId ||
-                meta?.groupId ||
-                (isSharedTx ? activeGroupIdRef.current || sharedGroupsRef.current?.[0]?.id : null);
+                null;
 
               return {
                 ...(localMatch || {}),
                 id: rt.id,
                 remoteId: rt.id,
-                title: localMatch?.title || rtTitle,
-                description: localMatch?.description || rtTitle,
+                title: rtTitle || localMatch?.title || 'Movimentação',
+                description: rtTitle || localMatch?.description || 'Movimentação',
                 amount: rtAmt,
                 type: (rt.type || 'EXPENSE').toLowerCase() === 'income' ? 'income' : 'expense',
-                category: localMatch?.category || meta?.category || rt.category?.name || (isSharedTx ? 'alimentacao' : 'outros'),
-                author: localMatch?.author || meta?.author || meta?.paidBy || rt.user?.fullName || loggedInUser?.name || 'Titular',
-                paidBy: localMatch?.paidBy || meta?.paidBy || meta?.author || rt.user?.fullName || loggedInUser?.name || 'Titular',
+                category: meta?.category || rt.category?.name || localMatch?.category || (isSharedTx ? 'alimentacao' : 'outros'),
+                author: meta?.author || meta?.paidBy || localMatch?.author || rt.user?.fullName || loggedInUserRef.current?.name || 'Titular',
+                paidBy: meta?.paidBy || meta?.author || localMatch?.paidBy || rt.user?.fullName || loggedInUserRef.current?.name || 'Titular',
                 isShared: isSharedTx,
                 groupId: resolvedGrpId,
                 sharedGroupId: resolvedGrpId,
-                groupName: localMatch?.groupName || meta?.groupName || null,
-                splitMethod: localMatch?.splitMethod || meta?.splitMethod || 'equal',
-                splitRatio: localMatch?.splitRatio ?? meta?.splitRatio ?? 0.5,
-                splitDetails: localMatch?.splitDetails || meta?.splitDetails || null,
+                groupName: meta?.groupName || localMatch?.groupName || null,
+                splitMethod: meta?.splitMethod || localMatch?.splitMethod || 'equal',
+                splitRatio: meta?.splitRatio ?? localMatch?.splitRatio ?? 0.5,
+                splitDetails: meta?.splitDetails || localMatch?.splitDetails || null,
                 date: rtDate,
                 createdAt: rt.createdAt || localMatch?.createdAt || new Date().toISOString(),
                 accountId: rt.accountId || localMatch?.accountId,
@@ -663,8 +704,8 @@ export function FinanceProvider({ children }) {
               };
             });
 
-          // Mantém transações locais (ex: de grupos ou recém-criadas) que não estão na lista remota
-          const localOnlyTxs = currentLocalTransactions.filter(
+          // Mantém transações locais (ex: de grupos ou recém-criadas) que não estão na lista remota pessoal
+          const localOnlyTxs = latestLocalTxs.filter(
             (lt) =>
               !mappedRemoteTxs.some(
                 (mt) =>
@@ -677,7 +718,8 @@ export function FinanceProvider({ children }) {
               )
           );
 
-          finalTxs = [...mappedRemoteTxs, ...localOnlyTxs];
+          const finalTxs = [...mappedRemoteTxs, ...localOnlyTxs];
+          transactionsRef.current = finalTxs;
           setTransactions(finalTxs);
           await saveUserItem('transactions', finalTxs);
         }
@@ -714,7 +756,7 @@ export function FinanceProvider({ children }) {
               name: localMatch?.name || ra.name,
               bank: localMatch?.bank || ra.name,
               balance: resolvedBalance,
-              owner: localMatch?.owner || loggedInUser?.name || 'Titular',
+              owner: localMatch?.owner || loggedInUserRef.current?.name || 'Titular',
               icon: localMatch?.icon || 'wallet-outline',
               color: localMatch?.color || ra.colorHex || '#820AD1',
               updatedAt: localMatch?.updatedAt || ra.updatedAt || new Date().toISOString(),
@@ -728,6 +770,7 @@ export function FinanceProvider({ children }) {
               )
           );
           const finalAccs = [...mappedAccs, ...unsyncedAccs];
+          accountsRef.current = finalAccs;
           setAccounts(finalAccs);
           await saveUserItem('accounts', finalAccs);
         }
@@ -792,12 +835,32 @@ export function FinanceProvider({ children }) {
     }).catch(() => {});
   };
 
-  // Sincronização em Realtime das Finanças Compartilhadas (Membros, Grupos, Despesas e Acertos)
-  useEffect(() => {
-    if (!loggedInUser?.id) return;
+  /**
+   * Atualiza os dados de grupos financeiros (membros, gastos compartilhados, abatimentos e saldo em aberto)
+   * consultando a API fresca. Reutiliza consulta em andamento se dois gatilhos pedirem os mesmos dados
+   * ao mesmo tempo e isola respostas por usuário e grupo (evita condição de corrida ao trocar de grupo A -> B).
+   */
+  const refreshGroupData = async (targetGroupId = null, options = {}) => {
+    const { silent = false } = options || {};
+    const reqUserId = loggedInUserRef.current?.id || loggedInUser?.id;
+    if (!reqUserId) {
+      return { success: false, error: 'Sessão não autenticada' };
+    }
 
-    let isMounted = true;
-    let isSyncing = false;
+    const groupScopeKey = targetGroupId ? String(targetGroupId) : 'ALL';
+    const dedupeKey = `${reqUserId}:${groupScopeKey}`;
+
+    const existingInFlight = inFlightGroupRefreshMapRef.current.get(dedupeKey);
+    if (existingInFlight) {
+      return existingInFlight;
+    }
+
+    const nextSeq = (groupRefreshSeqRef.current.get(dedupeKey) || 0) + 1;
+    groupRefreshSeqRef.current.set(dedupeKey, nextSeq);
+
+    if (!silent) {
+      setIsRefreshingGroup(true);
+    }
 
     const persistSeenIds = () => {
       try {
@@ -806,29 +869,48 @@ export function FinanceProvider({ children }) {
       } catch {}
     };
 
-    const syncSharedLivetime = async () => {
-      if (isSyncing || !isMounted) return;
-      isSyncing = true;
+    const refreshPromise = (async () => {
       try {
-        // 1. Busca todos os grupos que o usuário participa no PostgreSQL (não só o primeiro!)
-        const myGroups = await fetchUserHouseholdsApi().catch(() => null);
-        const householdsList = Array.isArray(myGroups) && myGroups.length > 0 ? myGroups : [];
+        await Promise.resolve();
+        let householdsFetchSucceeded = false;
+        let lastNetworkError = null;
+        let householdsList = [];
 
-        // Fallback: se my-groups estiver vazio, consulta o current
+        try {
+          const myGroups = await fetchUserHouseholdsApi();
+          householdsFetchSucceeded = true;
+          if (Array.isArray(myGroups) && myGroups.length > 0) {
+            householdsList = myGroups;
+          }
+        } catch (err) {
+          lastNetworkError = err;
+        }
+
         if (householdsList.length === 0) {
-          const single = await fetchCurrentHouseholdApi().catch(() => null);
-          if (single?.id) householdsList.push(single);
+          try {
+            const single = await fetchCurrentHouseholdApi();
+            householdsFetchSucceeded = true;
+            if (single?.id) householdsList.push(single);
+          } catch (err) {
+            if (!lastNetworkError) lastNetworkError = err;
+          }
+        }
+
+        // Verifica isolamento de usuário e se uma requisição mais recente para a mesma chave já iniciou
+        if (String(loggedInUserRef.current?.id || '') !== String(reqUserId)) {
+          return { success: false, cancelled: true };
         }
 
         let mergedGroupsSnapshot = [...(sharedGroupsRef.current || [])];
 
-        if (householdsList.length > 0 && isMounted) {
+        if (householdsList.length > 0) {
           let listChanged = false;
           const updatedList = [...mergedGroupsSnapshot];
 
           for (const hh of householdsList) {
             if (!hh?.id) continue;
-            const ownerMember = (hh.members || []).find((m) => m.role === 'OWNER') || hh.members?.[0];
+            const ownerMember =
+              (hh.members || []).find((m) => m.role === 'OWNER') || hh.members?.[0];
             const mappedMembers = (hh.members || []).map((m) => ({
               id: m.id,
               name: m.fullName || m.name || (m.role === 'OWNER' ? 'Organizador(a)' : 'Membro'),
@@ -838,7 +920,9 @@ export function FinanceProvider({ children }) {
               isCreator: m.role === 'OWNER',
             }));
 
-            const existingIdx = updatedList.findIndex((g) => g.remoteId === hh.id || g.id === hh.id);
+            const existingIdx = updatedList.findIndex(
+              (g) => g.remoteId === hh.id || g.id === hh.id
+            );
 
             if (existingIdx === -1) {
               const newGrp = {
@@ -868,12 +952,16 @@ export function FinanceProvider({ children }) {
                 const grpTitle = hh.name || existing.name || 'Grupo';
 
                 if (newCount > existingCount) {
-                  const existingIds = new Set((existing.members || []).map((m) => m.id || m.email));
-                  const joinedMember = mappedMembers.find((m) => !existingIds.has(m.id || m.email));
+                  const existingIds = new Set(
+                    (existing.members || []).map((m) => m.id || m.email)
+                  );
+                  const joinedMember = mappedMembers.find(
+                    (m) => !existingIds.has(m.id || m.email)
+                  );
                   const joinedName = joinedMember?.name || 'Um novo participante';
                   pushGroupNotification({
                     title: `🎉 ${joinedName} entrou no grupo ${grpTitle}!`,
-                    message: `${joinedName} aceitou o convite e entrou no grupo "${grpTitle}". Agora vocês podem dividir despesas em tempo real!`,
+                    message: `${joinedName} aceitou o convite e entrou no grupo "${grpTitle}". Agora vocês podem dividir despesas!`,
                     icon: 'person-add',
                     color: '#10B981',
                     groupId: existing.id,
@@ -903,369 +991,564 @@ export function FinanceProvider({ children }) {
 
           mergedGroupsSnapshot = updatedList;
 
-          if (listChanged && isMounted) {
+          if (listChanged && String(loggedInUserRef.current?.id || '') === String(reqUserId)) {
             sharedGroupsRef.current = updatedList;
             setSharedGroups(updatedList);
-            saveUserItem('shared_groups', updatedList);
+            await saveUserItem('shared_groups', updatedList);
           }
 
-          if (!activeGroupIdRef.current && updatedList.length > 0 && isMounted) {
+          if (
+            !activeGroupIdRef.current &&
+            updatedList.length > 0 &&
+            String(loggedInUserRef.current?.id || '') === String(reqUserId)
+          ) {
             const firstId = updatedList[0].id;
             activeGroupIdRef.current = firstId;
             setActiveGroupIdState(firstId);
-            saveUserItem('active_group_id', firstId);
+            await saveUserItem('active_group_id', firstId);
           }
         }
 
-        // 2. Busca lançamentos compartilhados de TODOS os membros dos grupos em tempo real
         const groupsToQuery =
           mergedGroupsSnapshot.length > 0 ? mergedGroupsSnapshot : householdsList;
 
-        if (groupsToQuery.length > 0 && isMounted) {
-          const remoteSharedTxs = await fetchSharedGroupTransactionsApi(groupsToQuery).catch(
-            () => []
-          );
+        let remoteSharedTxs = [];
+        let txFetchSucceeded = false;
 
-          if (Array.isArray(remoteSharedTxs) && remoteSharedTxs.length > 0 && isMounted) {
-            const myId = loggedInUserRef.current?.id
-              ? String(loggedInUserRef.current.id).trim()
-              : '';
-            const myEmail = String(loggedInUserRef.current?.email || '')
-              .trim()
-              .toLowerCase();
-            const myNameNorm = String(
-              loggedInUserRef.current?.fullName || loggedInUserRef.current?.name || ''
+        if (groupsToQuery.length > 0) {
+          try {
+            remoteSharedTxs = await fetchSharedGroupTransactionsApi(groupsToQuery, {
+              targetGroupId,
+            });
+            txFetchSucceeded = true;
+          } catch (txErr) {
+            lastNetworkError = txErr;
+          }
+        } else if (householdsFetchSucceeded) {
+          txFetchSucceeded = true;
+        }
+
+        // Se a rede falhou (ex.: sem internet), preserva os dados anteriores e retorna erro amigável
+        if (!txFetchSucceeded && !householdsFetchSucceeded) {
+          const msg = 'Não foi possível atualizar. Tente novamente.';
+          if (!silent) setGroupRefreshError(msg);
+          return { success: false, error: msg };
+        }
+        if (!txFetchSucceeded && groupsToQuery.length > 0) {
+          const msg = 'Não foi possível atualizar. Tente novamente.';
+          if (!silent) setGroupRefreshError(msg);
+          return { success: false, error: msg };
+        }
+
+        // Verifica novamente se o usuário mudou ou se uma resposta mais recente já aplicou para este escopo
+        if (String(loggedInUserRef.current?.id || '') !== String(reqUserId)) {
+          return { success: false, cancelled: true };
+        }
+        if (groupRefreshSeqRef.current.get(dedupeKey) !== nextSeq) {
+          return { success: true, superseded: true };
+        }
+
+        // Construir conjunto de IDs de grupos permitidos para o usuário atual
+        const allowedGroupIds = new Set();
+        for (const g of groupsToQuery) {
+          if (g?.id) allowedGroupIds.add(String(g.id));
+          if (g?.remoteId) allowedGroupIds.add(String(g.remoteId));
+        }
+
+        const targetGroupObj = targetGroupId
+          ? groupsToQuery.find(
+              (g) =>
+                String(g.id) === String(targetGroupId) ||
+                String(g.remoteId) === String(targetGroupId)
             )
-              .trim()
-              .toLowerCase();
-            const norm = (s) => String(s || '').trim().toLowerCase();
+          : null;
+        const targetGroupValidIds = targetGroupId
+          ? new Set(
+              [targetGroupId, targetGroupObj?.id, targetGroupObj?.remoteId]
+                .filter(Boolean)
+                .map(String)
+            )
+          : null;
 
-            const newlyArrivedNotifications = [];
-            const newSettlementItems = [];
+        if (Array.isArray(remoteSharedTxs) && remoteSharedTxs.length > 0) {
+          const myId = loggedInUserRef.current?.id
+            ? String(loggedInUserRef.current.id).trim()
+            : '';
+          const myEmail = String(loggedInUserRef.current?.email || '')
+            .trim()
+            .toLowerCase();
+          const myNameNorm = String(
+            loggedInUserRef.current?.fullName || loggedInUserRef.current?.name || ''
+          )
+            .trim()
+            .toLowerCase();
+          const norm = (s) => String(s || '').trim().toLowerCase();
 
-            setTransactions((prev) => {
-              let txsChanged = false;
-              const nextTxs = [...prev];
+          const newlyArrivedNotifications = [];
+          const newSettlementItems = [];
 
-              // Percorre do mais antigo para o mais recente para manter ordem cronológica no topo
-              const orderedRemote = [...remoteSharedTxs].reverse();
+          setTransactions((prev) => {
+            let txsChanged = false;
+            const nextTxs = [...prev];
 
-              for (const rt of orderedRemote) {
-                if (!rt?.id) continue;
-                const meta = parseSharedNotes(rt.notes);
-                const rtTitle = rt.description || rt.title || 'Despesa compartilhada';
-                const rtAmt = parseFloat(rt.amount) || 0;
-                const rtDate = rt.date
-                  ? rt.date.split('T')[0]
-                  : new Date().toISOString().split('T')[0];
+            // Percorre do mais antigo para o mais recente para manter ordem cronológica no topo
+            const orderedRemote = [...remoteSharedTxs].reverse();
 
-                const rtUserId = String(rt.userId || rt.user?.id || meta?.authorId || '').trim();
-                const rtEmail = String(rt.user?.email || meta?.authorEmail || '')
-                  .trim()
-                  .toLowerCase();
-                const rawMetaGroupId = meta?.groupId || rt._fallbackGroupId || null;
-                const rawMetaGroupName = meta?.groupName || rt._fallbackGroupName || null;
+            for (const rt of orderedRemote) {
+              if (!rt?.id) continue;
+              const meta = parseSharedNotes(rt.notes);
+              const rtTitle = rt.description || rt.title || 'Despesa compartilhada';
+              const rtAmt = parseFloat(rt.amount) || 0;
+              const rtDate = rt.date
+                ? rt.date.split('T')[0]
+                : new Date().toISOString().split('T')[0];
 
-                // Identifica exatamente a qual grupo pertence esta despesa
-                const matchedGroup =
-                  groupsToQuery.find(
-                    (g) =>
-                      (rawMetaGroupId &&
-                        (String(g.id) === String(rawMetaGroupId) ||
-                          String(g.remoteId) === String(rawMetaGroupId))) ||
-                      (rawMetaGroupName &&
-                        g.name &&
-                        norm(g.name) === norm(rawMetaGroupName))
-                  ) ||
-                  groupsToQuery.find((g) =>
-                    (g.members || []).some(
-                      (m) =>
-                        (rtUserId && m.id && String(m.id) === rtUserId) ||
-                        (rtEmail && m.email && norm(m.email) === rtEmail)
+              const rtUserId = String(rt.userId || rt.user?.id || meta?.authorId || '').trim();
+              const rtEmail = String(rt.user?.email || meta?.authorEmail || '')
+                .trim()
+                .toLowerCase();
+              const rawMetaGroupId = meta?.groupId || rt._fallbackGroupId || null;
+              const rawMetaGroupName = meta?.groupName || rt._fallbackGroupName || null;
+
+              // Rejeita lançamentos de grupos aos quais o usuário não tem acesso
+              if (rawMetaGroupId && !allowedGroupIds.has(String(rawMetaGroupId))) {
+                continue;
+              }
+
+              // Identifica exatamente a qual grupo pertence esta despesa (sem usar activeGroupIdRef na chegada para evitar misturar grupos A e B)
+              const matchedGroup =
+                groupsToQuery.find(
+                  (g) =>
+                    (rawMetaGroupId &&
+                      (String(g.id) === String(rawMetaGroupId) ||
+                        String(g.remoteId) === String(rawMetaGroupId))) ||
+                    (rawMetaGroupName &&
+                      g.name &&
+                      norm(g.name) === norm(rawMetaGroupName))
+                ) ||
+                (!rawMetaGroupId
+                  ? groupsToQuery.find((g) =>
+                      (g.members || []).some(
+                        (m) =>
+                          (rtUserId && m.id && String(m.id) === rtUserId) ||
+                          (rtEmail && m.email && norm(m.email) === rtEmail)
+                      )
                     )
-                  ) ||
-                  groupsToQuery.find((g) => g.id === activeGroupIdRef.current) ||
-                  groupsToQuery[0] ||
-                  null;
+                  : null) ||
+                null;
 
-                const resolvedGroupId =
-                  matchedGroup?.id ||
-                  rawMetaGroupId ||
-                  activeGroupIdRef.current ||
-                  groupsToQuery[0]?.id;
-                const resolvedGroupName =
-                  matchedGroup?.name || rawMetaGroupName || 'Grupo Compartilhado';
+              if (!matchedGroup && rawMetaGroupId && !allowedGroupIds.has(String(rawMetaGroupId))) {
+                continue;
+              }
 
-                const memberInGroup = (matchedGroup?.members || []).find(
-                  (m) =>
-                    (rtUserId && m.id && String(m.id) === rtUserId) ||
-                    (rtEmail && m.email && norm(m.email) === rtEmail)
-                );
+              const resolvedGroupId =
+                matchedGroup?.id ||
+                rawMetaGroupId ||
+                (groupsToQuery.length === 1 ? groupsToQuery[0]?.id : null);
 
-                const isFromMe =
-                  (myId && rtUserId && myId === rtUserId) ||
-                  (myEmail && rtEmail && myEmail === rtEmail) ||
-                  (!rtUserId &&
-                    !rtEmail &&
-                    myNameNorm &&
-                    norm(meta?.author || rt.user?.fullName) === myNameNorm);
+              if (!resolvedGroupId) continue;
 
-                const rawAuthor =
-                  meta?.paidBy ||
-                  meta?.author ||
-                  rt.user?.fullName ||
-                  memberInGroup?.name ||
-                  'Participante';
-                const authorName =
-                  rawAuthor === 'Você' && !isFromMe
-                    ? rt.user?.fullName || memberInGroup?.name || 'Participante'
-                    : rawAuthor;
+              // Se esta consulta foi pedida especificamente para o grupo A (targetGroupId), ignora qualquer item que não seja do grupo A
+              if (
+                targetGroupValidIds &&
+                !targetGroupValidIds.has(String(resolvedGroupId)) &&
+                (!rawMetaGroupId || !targetGroupValidIds.has(String(rawMetaGroupId)))
+              ) {
+                continue;
+              }
 
-                // Se for um acerto de contas sincronizado via banco
-                if (meta?.kind === 'settlement') {
-                  newSettlementItems.push({
-                    id: rt.id,
-                    remoteId: rt.id,
-                    groupId: resolvedGroupId,
-                    groupName: resolvedGroupName,
-                    fromMember: meta.fromMember || authorName,
-                    toMember: meta.toMember || 'Participante',
-                    amount: rtAmt,
-                    notes: meta.userNotes || '',
-                    date: rt.createdAt || rt.date || new Date().toISOString(),
-                    status: 'COMPLETED',
-                    isFromMe,
-                    createdAt: rt.createdAt,
-                  });
-                  continue;
-                }
+              const resolvedGroupName =
+                matchedGroup?.name || rawMetaGroupName || 'Grupo Compartilhado';
 
-                // Verifica se a despesa já existe localmente (por ID remoto ou vínculo otimista do próprio autor)
-                const existingIdx = nextTxs.findIndex(
-                  (lt) =>
-                    lt.id === rt.id ||
-                    lt.remoteId === rt.id ||
-                    (isFromMe &&
-                      lt.isShared &&
-                      !lt.remoteId &&
-                      String(lt.id).startsWith('tx-shared-') &&
-                      norm(lt.title || lt.description) === norm(rtTitle) &&
-                      Math.abs((parseFloat(lt.amount) || 0) - rtAmt) < 0.01 &&
-                      String(lt.date || '').split('T')[0] === rtDate)
-                );
+              const memberInGroup = (matchedGroup?.members || []).find(
+                (m) =>
+                  (rtUserId && m.id && String(m.id) === rtUserId) ||
+                  (rtEmail && m.email && norm(m.email) === rtEmail)
+              );
 
-                if (existingIdx !== -1) {
-                  const existingTx = nextTxs[existingIdx];
-                  if (
-                    existingTx.remoteId !== rt.id ||
-                    existingTx.groupId !== resolvedGroupId ||
-                    existingTx.paidBy !== authorName
-                  ) {
-                    nextTxs[existingIdx] = {
-                      ...existingTx,
-                      id: rt.id,
-                      remoteId: rt.id,
-                      groupId: resolvedGroupId,
-                      sharedGroupId: resolvedGroupId,
-                      groupName: resolvedGroupName,
-                      author: authorName,
-                      paidBy: authorName,
-                      splitMethod: meta?.splitMethod || existingTx.splitMethod || 'equal',
-                      splitRatio: meta?.splitRatio ?? existingTx.splitRatio ?? 0.5,
-                      splitDetails: meta?.splitDetails || existingTx.splitDetails || null,
-                    };
-                    txsChanged = true;
-                  }
-                  seenSharedTxIdsRef.current.add(String(rt.id));
-                } else {
-                  const mappedShared = {
+              const isFromMe =
+                (myId && rtUserId && myId === rtUserId) ||
+                (myEmail && rtEmail && myEmail === rtEmail) ||
+                (!rtUserId &&
+                  !rtEmail &&
+                  myNameNorm &&
+                  norm(meta?.author || rt.user?.fullName) === myNameNorm);
+
+              const rawAuthor =
+                meta?.paidBy ||
+                meta?.author ||
+                rt.user?.fullName ||
+                memberInGroup?.name ||
+                'Participante';
+              const authorName =
+                rawAuthor === 'Você' && !isFromMe
+                  ? rt.user?.fullName || memberInGroup?.name || 'Participante'
+                  : rawAuthor;
+
+              // Se for um acerto de contas / abatimento sincronizado via banco
+              if (meta?.kind === 'settlement') {
+                newSettlementItems.push({
+                  id: rt.id,
+                  remoteId: rt.id,
+                  groupId: resolvedGroupId,
+                  groupName: resolvedGroupName,
+                  fromMember: meta.fromMember || authorName,
+                  toMember: meta.toMember || 'Participante',
+                  amount: rtAmt,
+                  notes: meta.userNotes || '',
+                  date: rt.createdAt || rt.date || new Date().toISOString(),
+                  status: 'COMPLETED',
+                  isFromMe,
+                  createdAt: rt.createdAt,
+                });
+                continue;
+              }
+
+              // Verifica se a despesa já existe localmente (por ID remoto ou vínculo local)
+              const existingIdx = nextTxs.findIndex(
+                (lt) =>
+                  lt.id === rt.id ||
+                  lt.remoteId === rt.id ||
+                  (isFromMe &&
+                    lt.isShared &&
+                    !lt.remoteId &&
+                    String(lt.id).startsWith('tx-shared-') &&
+                    norm(lt.title || lt.description) === norm(rtTitle) &&
+                    Math.abs((parseFloat(lt.amount) || 0) - rtAmt) < 0.01 &&
+                    String(lt.date || '').split('T')[0] === rtDate)
+              );
+
+              if (existingIdx !== -1) {
+                const existingTx = nextTxs[existingIdx];
+                const nextCategory =
+                  meta?.category || rt.category?.name || existingTx.category || 'alimentacao';
+                const nextSplitMethod =
+                  meta?.splitMethod || existingTx.splitMethod || 'equal';
+                const nextSplitRatio =
+                  meta?.splitRatio ?? existingTx.splitRatio ?? 0.5;
+                const nextSplitDetails =
+                  meta?.splitDetails || existingTx.splitDetails || null;
+                const nextUserNotes =
+                  meta?.userNotes !== undefined ? meta.userNotes : existingTx.notes || '';
+
+                if (
+                  existingTx.remoteId !== rt.id ||
+                  existingTx.groupId !== resolvedGroupId ||
+                  existingTx.paidBy !== authorName ||
+                  Math.abs((parseFloat(existingTx.amount) || 0) - rtAmt) > 0.005 ||
+                  existingTx.title !== rtTitle ||
+                  existingTx.description !== rtTitle ||
+                  existingTx.date !== rtDate ||
+                  existingTx.category !== nextCategory ||
+                  existingTx.splitMethod !== nextSplitMethod ||
+                  existingTx.splitRatio !== nextSplitRatio ||
+                  JSON.stringify(existingTx.splitDetails || null) !==
+                    JSON.stringify(nextSplitDetails || null) ||
+                  existingTx.notes !== nextUserNotes
+                ) {
+                  nextTxs[existingIdx] = {
+                    ...existingTx,
                     id: rt.id,
                     remoteId: rt.id,
                     title: rtTitle,
                     description: rtTitle,
                     amount: rtAmt,
-                    type:
-                      (rt.type || 'EXPENSE').toLowerCase() === 'income' ? 'income' : 'expense',
-                    category: meta?.category || rt.category?.name || 'alimentacao',
-                    author: authorName,
-                    paidBy: authorName,
-                    isShared: true,
+                    date: rtDate,
+                    category: nextCategory,
                     groupId: resolvedGroupId,
                     sharedGroupId: resolvedGroupId,
                     groupName: resolvedGroupName,
-                    splitMethod: meta?.splitMethod || 'equal',
-                    splitRatio: meta?.splitRatio !== undefined ? meta.splitRatio : 0.5,
-                    splitDetails: meta?.splitDetails || null,
-                    notes: meta?.userNotes || '',
-                    date: rtDate,
-                    createdAt: rt.createdAt || new Date().toISOString(),
+                    author: authorName,
+                    paidBy: authorName,
+                    splitMethod: nextSplitMethod,
+                    splitRatio: nextSplitRatio,
+                    splitDetails: nextSplitDetails,
+                    notes: nextUserNotes,
                   };
-                  nextTxs.unshift(mappedShared);
                   txsChanged = true;
+                }
+                seenSharedTxIdsRef.current.add(String(rt.id));
+              } else {
+                const mappedShared = {
+                  id: rt.id,
+                  remoteId: rt.id,
+                  title: rtTitle,
+                  description: rtTitle,
+                  amount: rtAmt,
+                  type:
+                    (rt.type || 'EXPENSE').toLowerCase() === 'income' ? 'income' : 'expense',
+                  category: meta?.category || rt.category?.name || 'alimentacao',
+                  author: authorName,
+                  paidBy: authorName,
+                  isShared: true,
+                  groupId: resolvedGroupId,
+                  sharedGroupId: resolvedGroupId,
+                  groupName: resolvedGroupName,
+                  splitMethod: meta?.splitMethod || 'equal',
+                  splitRatio: meta?.splitRatio !== undefined ? meta.splitRatio : 0.5,
+                  splitDetails: meta?.splitDetails || null,
+                  notes: meta?.userNotes || '',
+                  date: rtDate,
+                  createdAt: rt.createdAt || new Date().toISOString(),
+                };
+                nextTxs.unshift(mappedShared);
+                txsChanged = true;
 
-                  const alreadySeen = seenSharedTxIdsRef.current.has(String(rt.id));
-                  seenSharedTxIdsRef.current.add(String(rt.id));
+                const alreadySeen = seenSharedTxIdsRef.current.has(String(rt.id));
+                seenSharedTxIdsRef.current.add(String(rt.id));
 
-                  const txAgeMs = rt.createdAt
-                    ? Math.abs(Date.now() - new Date(rt.createdAt).getTime())
-                    : 0;
-                  const isRecentTx = txAgeMs < 60 * 60 * 1000; // Últimos 60 min
+                const txAgeMs = rt.createdAt
+                  ? Math.abs(Date.now() - new Date(rt.createdAt).getTime())
+                  : 0;
+                const isRecentTx = txAgeMs < 60 * 60 * 1000;
 
-                  if (
-                    !isFromMe &&
-                    !alreadySeen &&
-                    (seenSharedTxInitializedRef.current || isRecentTx)
-                  ) {
-                    newlyArrivedNotifications.push({
-                      id: rt.id,
-                      kind: meta?.splitDetails ? 'split' : 'expense',
-                      author: authorName,
-                      amount: rtAmt,
-                      description: rtTitle,
-                      groupId: resolvedGroupId,
-                      groupName: resolvedGroupName,
-                    });
-                  }
+                if (
+                  !isFromMe &&
+                  !alreadySeen &&
+                  (seenSharedTxInitializedRef.current || isRecentTx)
+                ) {
+                  newlyArrivedNotifications.push({
+                    id: rt.id,
+                    kind: meta?.splitDetails ? 'split' : 'expense',
+                    author: authorName,
+                    amount: rtAmt,
+                    description: rtTitle,
+                    groupId: resolvedGroupId,
+                    groupName: resolvedGroupName,
+                  });
                 }
               }
+            }
 
-              if (txsChanged) {
-                saveUserItem('transactions', nextTxs);
-                return nextTxs;
-              }
-              return prev;
-            });
+            if (txsChanged) {
+              transactionsRef.current = nextTxs;
+              saveUserItem('transactions', nextTxs);
+              return nextTxs;
+            }
+            return prev;
+          });
 
-            // Sincroniza acertos de contas remotos se houver
-            if (newSettlementItems.length > 0) {
-              setSettlements((prevSettles) => {
-                let settlesChanged = false;
-                const nextSettles = [...prevSettles];
-                for (const item of newSettlementItems) {
-                  const exists = nextSettles.some(
-                    (s) => s.id === item.id || s.remoteId === item.id
-                  );
-                  if (!exists) {
-                    nextSettles.unshift(item);
+          // Sincroniza abatimentos / acertos de contas remotos sem duplicar no histórico
+          if (newSettlementItems.length > 0) {
+            setSettlements((prevSettles) => {
+              let settlesChanged = false;
+              const nextSettles = [...prevSettles];
+              for (const item of newSettlementItems) {
+                const existingIdx = nextSettles.findIndex(
+                  (s) => s.id === item.id || s.remoteId === item.id
+                );
+                if (existingIdx === -1) {
+                  nextSettles.unshift(item);
+                  settlesChanged = true;
+                } else {
+                  const existingSettle = nextSettles[existingIdx];
+                  if (
+                    Math.abs((parseFloat(existingSettle.amount) || 0) - item.amount) > 0.005 ||
+                    existingSettle.groupId !== item.groupId ||
+                    existingSettle.fromMember !== item.fromMember ||
+                    existingSettle.toMember !== item.toMember ||
+                    existingSettle.notes !== item.notes
+                  ) {
+                    nextSettles[existingIdx] = {
+                      ...existingSettle,
+                      ...item,
+                      id: item.id,
+                      remoteId: item.id,
+                    };
                     settlesChanged = true;
                   }
-                  const alreadySeen = seenSharedTxIdsRef.current.has(String(item.id));
-                  seenSharedTxIdsRef.current.add(String(item.id));
-                  const settleAgeMs = item.createdAt
-                    ? Math.abs(Date.now() - new Date(item.createdAt).getTime())
-                    : 0;
-                  if (
-                    !item.isFromMe &&
-                    !alreadySeen &&
-                    (seenSharedTxInitializedRef.current || settleAgeMs < 60 * 60 * 1000)
-                  ) {
-                    newlyArrivedNotifications.push({
-                      id: item.id,
-                      kind: 'settlement',
-                      author: item.fromMember,
-                      toMember: item.toMember,
-                      amount: item.amount,
-                      description: `Acerto para ${item.toMember}`,
-                      groupId: item.groupId,
-                      groupName: item.groupName,
-                    });
-                  }
                 }
-                if (settlesChanged) {
-                  saveUserItem('settlements', nextSettles);
-                  return nextSettles;
+                const alreadySeen = seenSharedTxIdsRef.current.has(String(item.id));
+                seenSharedTxIdsRef.current.add(String(item.id));
+                const settleAgeMs = item.createdAt
+                  ? Math.abs(Date.now() - new Date(item.createdAt).getTime())
+                  : 0;
+                if (
+                  !item.isFromMe &&
+                  !alreadySeen &&
+                  (seenSharedTxInitializedRef.current || settleAgeMs < 60 * 60 * 1000)
+                ) {
+                  newlyArrivedNotifications.push({
+                    id: item.id,
+                    kind: 'settlement',
+                    author: item.fromMember,
+                    toMember: item.toMember,
+                    amount: item.amount,
+                    description: `Acerto para ${item.toMember}`,
+                    groupId: item.groupId,
+                    groupName: item.groupName,
+                  });
                 }
-                return prevSettles;
-              });
-            }
-
-            if (!seenSharedTxInitializedRef.current) {
-              seenSharedTxInitializedRef.current = true;
-            }
-            persistSeenIds();
-
-            // Dispara notificações instantâneas (barra do celular + banner no app + toque sonoro)
-            for (const notifItem of newlyArrivedNotifications) {
-              const fmtAmt = Number(notifItem.amount || 0).toLocaleString('pt-BR', {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2,
-              });
-
-              playExpenseSound();
-
-              if (notifItem.kind === 'settlement') {
-                const title = `🤝 ${notifItem.author} acertou R$ ${fmtAmt} em ${notifItem.groupName}`;
-                const message = `${notifItem.author} pagou R$ ${fmtAmt} para ${notifItem.toMember} no grupo "${notifItem.groupName}".`;
-                pushGroupNotification({
-                  title,
-                  message,
-                  icon: 'swap-horizontal',
-                  groupId: notifItem.groupId,
-                  groupName: notifItem.groupName,
-                  bypassRules: true,
-                });
-                setLiveGroupBanner({
-                  id: notifItem.id,
-                  title,
-                  message,
-                  author: notifItem.author,
-                  amount: fmtAmt,
-                  description: notifItem.description,
-                  groupId: notifItem.groupId,
-                  groupName: notifItem.groupName,
-                  timestamp: Date.now(),
-                });
-              } else {
-                const title = `💸 ${notifItem.author} adicionou R$ ${fmtAmt} em ${notifItem.groupName}`;
-                const message = `${notifItem.author} adicionou "${notifItem.description}" no valor de R$ ${fmtAmt} no grupo "${notifItem.groupName}".`;
-                pushGroupNotification({
-                  title,
-                  message,
-                  icon: 'cash-outline',
-                  groupId: notifItem.groupId,
-                  groupName: notifItem.groupName,
-                  bypassRules: true,
-                });
-                setLiveGroupBanner({
-                  id: notifItem.id,
-                  title,
-                  message,
-                  author: notifItem.author,
-                  amount: fmtAmt,
-                  description: notifItem.description,
-                  groupId: notifItem.groupId,
-                  groupName: notifItem.groupName,
-                  timestamp: Date.now(),
-                });
               }
+              if (settlesChanged) {
+                settlementsRef.current = nextSettles;
+                saveUserItem('settlements', nextSettles);
+                return nextSettles;
+              }
+              return prevSettles;
+            });
+          }
+
+          if (!seenSharedTxInitializedRef.current) {
+            seenSharedTxInitializedRef.current = true;
+          }
+          persistSeenIds();
+
+          for (const notifItem of newlyArrivedNotifications) {
+            const fmtAmt = Number(notifItem.amount || 0).toLocaleString('pt-BR', {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            });
+
+            playExpenseSound();
+
+            if (notifItem.kind === 'settlement') {
+              const title = `🤝 ${notifItem.author} acertou R$ ${fmtAmt} em ${notifItem.groupName}`;
+              const message = `${notifItem.author} pagou R$ ${fmtAmt} para ${notifItem.toMember} no grupo "${notifItem.groupName}".`;
+              pushGroupNotification({
+                title,
+                message,
+                icon: 'swap-horizontal',
+                groupId: notifItem.groupId,
+                groupName: notifItem.groupName,
+                bypassRules: true,
+              });
+              setLiveGroupBanner({
+                id: notifItem.id,
+                title,
+                message,
+                author: notifItem.author,
+                amount: fmtAmt,
+                description: notifItem.description,
+                groupId: notifItem.groupId,
+                groupName: notifItem.groupName,
+                timestamp: Date.now(),
+              });
+            } else {
+              const title = `💸 ${notifItem.author} adicionou R$ ${fmtAmt} em ${notifItem.groupName}`;
+              const message = `${notifItem.author} adicionou "${notifItem.description}" no valor de R$ ${fmtAmt} no grupo "${notifItem.groupName}".`;
+              pushGroupNotification({
+                title,
+                message,
+                icon: 'cash-outline',
+                groupId: notifItem.groupId,
+                groupName: notifItem.groupName,
+                bypassRules: true,
+              });
+              setLiveGroupBanner({
+                id: notifItem.id,
+                title,
+                message,
+                author: notifItem.author,
+                amount: fmtAmt,
+                description: notifItem.description,
+                groupId: notifItem.groupId,
+                groupName: notifItem.groupName,
+                timestamp: Date.now(),
+              });
             }
           }
         }
-      } catch (e) {
-        // silencioso
+
+        setGroupRefreshError(null);
+        return {
+          success: true,
+          groupId: targetGroupId || activeGroupIdRef.current || null,
+          syncedAt: new Date().toISOString(),
+        };
+      } catch (err) {
+        const msg = 'Não foi possível atualizar. Tente novamente.';
+        if (!silent) setGroupRefreshError(msg);
+        return { success: false, error: msg, rawError: err?.message };
       } finally {
-        isSyncing = false;
+        inFlightGroupRefreshMapRef.current.delete(dedupeKey);
+        if (!silent) {
+          setIsRefreshingGroup(false);
+        }
       }
-    };
+    })();
 
-    // Dispara imediatamente
-    syncSharedLivetime();
+    inFlightGroupRefreshMapRef.current.set(dedupeKey, refreshPromise);
+    return refreshPromise;
+  };
 
-    // Sincroniza periodicamente a cada 2 segundos para atualização em tempo real
-    const interval = setInterval(syncSharedLivetime, 2000);
+  /**
+   * Atualiza os dados do menu inicial (totais, contas, cartões, lançamentos recentes e resumo compartilhado)
+   * consultando o servidor. Reaproveita consulta em andamento se dois gatilhos dispararem juntos.
+   */
+  const refreshHomeData = async (options = {}) => {
+    const { silent = false } = options || {};
+    const reqUserId = loggedInUserRef.current?.id || loggedInUser?.id;
+    if (!reqUserId) {
+      return { success: false, error: 'Sessão não autenticada' };
+    }
 
-    // Também sincroniza imediatamente sempre que o app voltar ao primeiro plano (active)
-    const appStateSub = AppState.addEventListener('change', (nextAppState) => {
-      if (nextAppState === 'active') {
-        syncSharedLivetime();
+    if (
+      inFlightHomeRefreshRef.current.promise &&
+      String(inFlightHomeRefreshRef.current.userId) === String(reqUserId)
+    ) {
+      return inFlightHomeRefreshRef.current.promise;
+    }
+
+    if (!silent) {
+      setIsRefreshingHome(true);
+    }
+
+    const promise = (async () => {
+      try {
+        await Promise.resolve();
+        const [personalRes, groupRes] = await Promise.all([
+          syncWithPostgres({
+            force: true,
+            overrideCards: cardsRef.current,
+            overrideAccounts: accountsRef.current,
+            overrideTransactions: transactionsRef.current,
+          }),
+          refreshGroupData(null, { ...options, silent: true }),
+        ]);
+
+        if (String(loggedInUserRef.current?.id || '') !== String(reqUserId)) {
+          return { success: false, cancelled: true };
+        }
+
+        if (!personalRes?.success && !groupRes?.success) {
+          const msg = 'Não foi possível atualizar. Tente novamente.';
+          if (!silent) setHomeRefreshError(msg);
+          return { success: false, error: msg };
+        }
+        if (!personalRes?.success) {
+          const msg = 'Não foi possível atualizar. Tente novamente.';
+          if (!silent) setHomeRefreshError(msg);
+          return { success: false, error: msg };
+        }
+
+        setHomeRefreshError(null);
+        return {
+          success: true,
+          syncedAt: new Date().toISOString(),
+        };
+      } catch (err) {
+        const msg = 'Não foi possível atualizar. Tente novamente.';
+        if (!silent) setHomeRefreshError(msg);
+        return { success: false, error: msg, rawError: err?.message };
+      } finally {
+        if (String(inFlightHomeRefreshRef.current.userId) === String(reqUserId)) {
+          inFlightHomeRefreshRef.current = { userId: null, promise: null };
+        }
+        if (!silent) {
+          setIsRefreshingHome(false);
+        }
       }
-    });
+    })();
 
-    return () => {
-      isMounted = false;
-      clearInterval(interval);
-      appStateSub?.remove?.();
-    };
+    inFlightHomeRefreshRef.current = { userId: reqUserId, promise };
+    return promise;
+  };
+
+  // Carrega dados de grupos uma única vez ao iniciar sessão (sem polling periódico)
+  useEffect(() => {
+    if (!loggedInUser?.id) return;
+    refreshGroupData(null, { source: 'init', silent: true }).catch(() => {});
   }, [loggedInUser?.id]);
 
   const toggleHideBalances = async () => {
@@ -1617,20 +1900,90 @@ export function FinanceProvider({ children }) {
     return created;
   };
 
-  // Editar transação
+  // Editar transação (aguarda confirmação da API e aproveita valores confirmados pelo servidor)
   const editTransaction = async (updatedTx) => {
     const oldTx = transactions.find((t) => t.id === updatedTx.id);
-    if (!oldTx) return;
+    if (!oldTx) return null;
+
+    const nextTitle =
+      updatedTx.title || updatedTx.description || oldTx.title || oldTx.description || 'Movimentação';
+    const nextDescription =
+      updatedTx.description || updatedTx.title || oldTx.description || oldTx.title || 'Movimentação';
+    const nextAmount =
+      updatedTx.amount !== undefined
+        ? Math.abs(parseFloat(updatedTx.amount)) || 0
+        : parseFloat(oldTx.amount) || 0;
+    const nextDate = updatedTx.date || oldTx.date || new Date().toISOString().split('T')[0];
+    const isSharedTx = Boolean(oldTx.isShared || oldTx.groupId || oldTx.sharedGroupId);
+
+    let encodedNotesForApi = updatedTx.notes !== undefined ? updatedTx.notes : oldTx.notes || '';
+    if (isSharedTx) {
+      const gId = oldTx.sharedGroupId || oldTx.groupId;
+      const grp = sharedGroups.find((g) => g.id === gId || g.remoteId === gId);
+      encodedNotesForApi = encodeSharedNotes(
+        {
+          kind: 'expense',
+          groupId: grp?.remoteId || gId,
+          groupName: grp?.name || oldTx.groupName || 'Grupo Compartilhado',
+          paidBy: updatedTx.paidBy || oldTx.paidBy || oldTx.author || 'Participante',
+          author: updatedTx.author || oldTx.author || oldTx.paidBy || 'Participante',
+          authorId: loggedInUser?.id || null,
+          authorEmail: (loggedInUser?.email || '').trim().toLowerCase() || null,
+          category: updatedTx.category || oldTx.category || 'alimentacao',
+          splitMethod: updatedTx.splitMethod || oldTx.splitMethod || 'equal',
+          splitRatio:
+            updatedTx.splitRatio !== undefined
+              ? updatedTx.splitRatio
+              : oldTx.splitRatio !== undefined
+                ? oldTx.splitRatio
+                : 0.5,
+          splitDetails:
+            updatedTx.splitDetails !== undefined ? updatedTx.splitDetails : oldTx.splitDetails || null,
+        },
+        updatedTx.notes !== undefined ? updatedTx.notes : oldTx.notes || ''
+      );
+    }
+
+    const remoteTxId = oldTx.remoteId || oldTx.id;
+    let confirmedRemote = null;
+
+    if (remoteTxId && !String(remoteTxId).startsWith('tx-')) {
+      confirmedRemote = await updateTransactionApi(remoteTxId, {
+        ...oldTx,
+        ...updatedTx,
+        title: nextTitle,
+        description: nextDescription,
+        amount: nextAmount,
+        date: nextDate,
+        notes: encodedNotesForApi,
+      });
+    }
+
+    const confirmedAmount =
+      confirmedRemote?.amount !== undefined
+        ? Math.abs(parseFloat(confirmedRemote.amount)) || nextAmount
+        : nextAmount;
+    const confirmedTitle = confirmedRemote?.description || nextTitle;
+    const confirmedDate = confirmedRemote?.date
+      ? String(confirmedRemote.date).split('T')[0]
+      : String(nextDate).split('T')[0];
 
     const normalizedTx = {
       ...oldTx,
       ...updatedTx,
-      title: updatedTx.title || updatedTx.description || oldTx.title || oldTx.description || 'Movimentação',
-      description: updatedTx.description || updatedTx.title || oldTx.description || oldTx.title || 'Movimentação',
+      id: confirmedRemote?.id || oldTx.id,
+      remoteId: confirmedRemote?.id || oldTx.remoteId || oldTx.id,
+      title: confirmedTitle,
+      description: confirmedTitle,
+      amount: confirmedAmount,
+      date: confirmedDate,
       updatedAt: new Date().toISOString(),
     };
 
-    const nextList = transactions.map((t) => (t.id === updatedTx.id ? normalizedTx : t));
+    const nextList = transactionsRef.current.map((t) =>
+      t.id === updatedTx.id || t.id === oldTx.id ? normalizedTx : t
+    );
+    transactionsRef.current = nextList;
     setTransactions(nextList);
     await saveUserItem('transactions', nextList);
 
@@ -1651,6 +2004,7 @@ export function FinanceProvider({ children }) {
           }
           return acc;
         });
+        accountsRef.current = updated;
         saveUserItem('accounts', updated);
         return updated;
       });
@@ -1659,7 +2013,7 @@ export function FinanceProvider({ children }) {
       const fmtNew = Number(normalizedTx.amount || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
       if (normalizedTx.isShared || normalizedTx.groupId || normalizedTx.sharedGroupId) {
         const gId = normalizedTx.groupId || normalizedTx.sharedGroupId;
-        const grp = sharedGroups.find((g) => g.id === gId);
+        const grp = sharedGroups.find((g) => g.id === gId || g.remoteId === gId);
         const grpName = grp?.name || normalizedTx.groupName || 'Grupo Compartilhado';
         pushGroupNotification({
           title: `🔄 Valor alterado no grupo ${grpName}`,
@@ -1671,8 +2025,8 @@ export function FinanceProvider({ children }) {
       }
     }
 
-    updateTransactionApi(normalizedTx.remoteId || normalizedTx.id, normalizedTx).catch(() => {});
     syncTransactionToAppwrite(normalizedTx).catch(() => {});
+    return normalizedTx;
   };
 
   // Remover transação
@@ -2828,7 +3182,7 @@ export function FinanceProvider({ children }) {
     return joinedGroup;
   };
 
-  // Lançar Despesa Compartilhada
+  // Lançar Despesa Compartilhada (aguarda confirmação da API e aproveita a resposta confirmada pelo servidor)
   const addSharedExpense = async (expData) => {
     const myRealName = loggedInUser?.fullName || loggedInUser?.name || 'Você';
     const rawPayer = expData.paidBy || myRealName;
@@ -2840,9 +3194,8 @@ export function FinanceProvider({ children }) {
       sharedGroups[0];
     const remoteGroupId = targetGroup?.remoteId || targetGroup?.id || targetGroupId;
     const grpTitle = targetGroup?.name || 'Grupo Compartilhado';
-
-    const localTempId = 'tx-shared-' + Date.now();
-    seenSharedTxIdsRef.current.add(localTempId);
+    const parsedAmount = parseFloat(expData.amount) || 0;
+    const requestedDate = expData.date || new Date().toISOString().split('T')[0];
 
     const encodedNotes = encodeSharedNotes(
       {
@@ -2861,15 +3214,47 @@ export function FinanceProvider({ children }) {
       expData.notes || ''
     );
 
-    const newTx = {
-      id: localTempId,
+    // Aguarda confirmação do servidor antes de concluir a criação
+    const createdRemote = await apiCreateTransaction({
       description: expData.description,
       title: expData.description,
-      amount: parseFloat(expData.amount) || 0,
+      amount: parsedAmount,
+      type: 'EXPENSE',
+      date: requestedDate,
+      isHouseholdShared: true,
+      notes: encodedNotes,
+    });
+
+    if (!createdRemote || !createdRemote.id) {
+      throw new Error('Não foi possível confirmar o gasto no servidor. Tente novamente.');
+    }
+
+    const confirmedId = String(createdRemote.id);
+    const confirmedAmount =
+      createdRemote.amount !== undefined
+        ? Math.abs(parseFloat(createdRemote.amount)) || parsedAmount
+        : parsedAmount;
+    const confirmedDesc = createdRemote.description || expData.description;
+    const confirmedDate = createdRemote.date
+      ? String(createdRemote.date).split('T')[0]
+      : requestedDate;
+
+    seenSharedTxIdsRef.current.add(confirmedId);
+    saveUserItem(
+      'seen_shared_tx_ids',
+      Array.from(seenSharedTxIdsRef.current).slice(-300)
+    ).catch(() => {});
+
+    const newTx = {
+      id: confirmedId,
+      remoteId: confirmedId,
+      description: confirmedDesc,
+      title: confirmedDesc,
+      amount: confirmedAmount,
       type: expData.type || 'expense',
       category: expData.category || 'alimentacao',
-      date: expData.date || new Date().toISOString().split('T')[0],
-      createdAt: new Date().toISOString(),
+      date: confirmedDate,
+      createdAt: createdRemote.createdAt || new Date().toISOString(),
       author: payer,
       paidBy: payer,
       isShared: true,
@@ -2883,40 +3268,12 @@ export function FinanceProvider({ children }) {
     };
 
     setTransactions((prev) => {
-      const nextTxs = [newTx, ...prev];
+      const filtered = prev.filter((t) => t.id !== confirmedId && t.remoteId !== confirmedId);
+      const nextTxs = [newTx, ...filtered];
+      transactionsRef.current = nextTxs;
       saveUserItem('transactions', nextTxs);
       return nextTxs;
     });
-
-    // Envia a despesa compartilhada ao PostgreSQL para sincronização realtime entre todos os participantes do grupo
-    apiCreateTransaction({
-      description: newTx.description,
-      title: newTx.description,
-      amount: newTx.amount,
-      type: 'EXPENSE',
-      date: newTx.date,
-      isHouseholdShared: true,
-      notes: encodedNotes,
-    })
-      .then((createdRemote) => {
-        if (createdRemote?.id) {
-          seenSharedTxIdsRef.current.add(String(createdRemote.id));
-          saveUserItem(
-            'seen_shared_tx_ids',
-            Array.from(seenSharedTxIdsRef.current).slice(-300)
-          );
-          setTransactions((prev) => {
-            const linked = prev.map((t) =>
-              t.id === localTempId
-                ? { ...t, id: createdRemote.id, remoteId: createdRemote.id }
-                : t
-            );
-            saveUserItem('transactions', linked);
-            return linked;
-          });
-        }
-      })
-      .catch((e) => console.log('Envio da despesa compartilhada ao Postgres:', e?.message));
 
     const fmtAmt = Number(newTx.amount || 0).toLocaleString('pt-BR', {
       minimumFractionDigits: 2,
@@ -2940,7 +3297,7 @@ export function FinanceProvider({ children }) {
     return newTx;
   };
 
-  // Registrar Acerto de Contas
+  // Registrar Acerto de Contas / Abatimento (aguarda confirmação da API e aproveita a resposta confirmada)
   const recordSettlement = async (settlementData) => {
     const myRealName = loggedInUser?.fullName || loggedInUser?.name || 'Você';
     const rawFrom = settlementData.fromMember || myRealName;
@@ -2952,26 +3309,8 @@ export function FinanceProvider({ children }) {
       sharedGroups[0];
     const remoteGroupId = targetGrp?.remoteId || targetGrp?.id || targetGroupId;
     const grpTitle = targetGrp?.name || 'Grupo Compartilhado';
-    const localSetId = 'set-' + Date.now();
-    seenSharedTxIdsRef.current.add(localSetId);
-
-    const newSettlement = {
-      id: localSetId,
-      groupId: targetGrp?.id || targetGroupId,
-      groupName: grpTitle,
-      fromMember,
-      toMember,
-      amount: parseFloat(settlementData.amount) || 0,
-      notes: settlementData.notes || '',
-      date: new Date().toISOString(),
-      status: 'COMPLETED',
-    };
-
-    setSettlements((prev) => {
-      const nextSettlements = [newSettlement, ...prev];
-      saveUserItem('settlements', nextSettlements);
-      return nextSettlements;
-    });
+    const parsedAmount = parseFloat(settlementData.amount) || 0;
+    const requestedDate = new Date().toISOString();
 
     const encodedSettlementNotes = encodeSharedNotes(
       {
@@ -2988,34 +3327,55 @@ export function FinanceProvider({ children }) {
       settlementData.notes || ''
     );
 
-    apiCreateTransaction({
+    // Aguarda confirmação da API antes de registrar o abatimento como concluído
+    const createdRemote = await apiCreateTransaction({
       description: `Acerto: ${fromMember} pagou ${toMember}`,
       title: `Acerto: ${fromMember} pagou ${toMember}`,
-      amount: newSettlement.amount,
+      amount: parsedAmount,
       type: 'EXPENSE',
-      date: newSettlement.date,
+      date: requestedDate,
       isHouseholdShared: true,
       notes: encodedSettlementNotes,
-    })
-      .then((createdRemote) => {
-        if (createdRemote?.id) {
-          seenSharedTxIdsRef.current.add(String(createdRemote.id));
-          saveUserItem(
-            'seen_shared_tx_ids',
-            Array.from(seenSharedTxIdsRef.current).slice(-300)
-          );
-          setSettlements((prev) => {
-            const linked = prev.map((s) =>
-              s.id === localSetId
-                ? { ...s, id: createdRemote.id, remoteId: createdRemote.id }
-                : s
-            );
-            saveUserItem('settlements', linked);
-            return linked;
-          });
-        }
-      })
-      .catch(() => {});
+    });
+
+    if (!createdRemote || !createdRemote.id) {
+      throw new Error('Não foi possível confirmar o abatimento no servidor. Tente novamente.');
+    }
+
+    const confirmedId = String(createdRemote.id);
+    const confirmedAmount =
+      createdRemote.amount !== undefined
+        ? Math.abs(parseFloat(createdRemote.amount)) || parsedAmount
+        : parsedAmount;
+
+    seenSharedTxIdsRef.current.add(confirmedId);
+    saveUserItem(
+      'seen_shared_tx_ids',
+      Array.from(seenSharedTxIdsRef.current).slice(-300)
+    ).catch(() => {});
+
+    const newSettlement = {
+      id: confirmedId,
+      remoteId: confirmedId,
+      groupId: targetGrp?.id || targetGroupId,
+      sharedGroupId: remoteGroupId,
+      groupName: grpTitle,
+      fromMember,
+      toMember,
+      amount: confirmedAmount,
+      notes: settlementData.notes || '',
+      date: createdRemote.createdAt || createdRemote.date || requestedDate,
+      createdAt: createdRemote.createdAt || requestedDate,
+      status: 'COMPLETED',
+    };
+
+    setSettlements((prev) => {
+      const filtered = prev.filter((s) => s.id !== confirmedId && s.remoteId !== confirmedId);
+      const nextSettlements = [newSettlement, ...filtered];
+      settlementsRef.current = nextSettlements;
+      saveUserItem('settlements', nextSettlements);
+      return nextSettlements;
+    });
 
     const fmtSettle = Number(newSettlement.amount || 0).toLocaleString('pt-BR', {
       minimumFractionDigits: 2,
@@ -3038,32 +3398,35 @@ export function FinanceProvider({ children }) {
   // 'personal' (Minhas finanças) | 'shared' (Finanças compartilhadas) | 'consolidated' (Visão consolidada)
   const currentUserName = loggedInUser?.fullName || loggedInUser?.name || members?.user1 || 'Principal';
 
+  const effectiveActiveGroupId = activeGroupId || sharedGroups[0]?.id || null;
+  const activeGroupObj = sharedGroups.find(
+    (g) => g.id === effectiveActiveGroupId || g.remoteId === effectiveActiveGroupId
+  );
+  const activeGroupValidIds = new Set(
+    [effectiveActiveGroupId, activeGroupObj?.id, activeGroupObj?.remoteId]
+      .filter(Boolean)
+      .map(String)
+  );
+
   const filteredTransactions = transactions.filter((t) => {
     if (viewMode === 'shared') {
       if (!t.isShared && !t.groupId && !t.sharedGroupId) return false;
-      const effectiveGrpId = activeGroupId || sharedGroups[0]?.id;
-      if (!effectiveGrpId) return true;
-      const activeGrpObj = sharedGroups.find(
-        (g) => g.id === effectiveGrpId || g.remoteId === effectiveGrpId
-      );
-      const validIds = new Set(
-        [effectiveGrpId, activeGrpObj?.id, activeGrpObj?.remoteId].filter(Boolean).map(String)
-      );
+      if (!effectiveActiveGroupId) return true;
       const gId = t.groupId || t.sharedGroupId;
       if (!gId) {
-        return !activeGroupId || !sharedGroups.length || effectiveGrpId === sharedGroups[0]?.id;
+        return !activeGroupId || !sharedGroups.length || effectiveActiveGroupId === sharedGroups[0]?.id;
       }
-      if (validIds.has(String(t.groupId)) || validIds.has(String(t.sharedGroupId))) {
+      if (activeGroupValidIds.has(String(t.groupId)) || activeGroupValidIds.has(String(t.sharedGroupId))) {
         return true;
       }
       if (
         t.groupName &&
-        activeGrpObj?.name &&
-        t.groupName.trim().toLowerCase() === activeGrpObj.name.trim().toLowerCase()
+        activeGroupObj?.name &&
+        t.groupName.trim().toLowerCase() === activeGroupObj.name.trim().toLowerCase()
       ) {
         return true;
       }
-      return sharedGroups.length <= 1;
+      return false;
     }
     if (viewMode === 'personal') {
       return !t.isShared && !t.groupId;
@@ -3072,11 +3435,58 @@ export function FinanceProvider({ children }) {
     return true;
   });
 
+  // Abatimentos (settlements) confirmados para o grupo ativo
+  const activeGroupSettlements = settlements.filter((s) => {
+    if (!effectiveActiveGroupId) return true;
+    const sGrpId = s.groupId || s.sharedGroupId;
+    if (!sGrpId) return sharedGroups.length <= 1;
+    if (activeGroupValidIds.has(String(s.groupId)) || activeGroupValidIds.has(String(s.sharedGroupId))) {
+      return true;
+    }
+    if (
+      s.groupName &&
+      activeGroupObj?.name &&
+      s.groupName.trim().toLowerCase() === activeGroupObj.name.trim().toLowerCase()
+    ) {
+      return true;
+    }
+    return false;
+  });
+
+  const activeGroupSettledTotal = Math.round(
+    activeGroupSettlements.reduce((sum, s) => sum + (parseFloat(s.amount) || 0), 0) * 100
+  ) / 100;
+
+  const totalSharedGrossExpense = Math.round(
+    transactions
+      .filter((t) => {
+        if (t.type !== 'expense') return false;
+        if (!t.isShared && !t.groupId && !t.sharedGroupId) return false;
+        if (!effectiveActiveGroupId) return true;
+        const gId = t.groupId || t.sharedGroupId;
+        if (!gId) return sharedGroups.length <= 1;
+        if (activeGroupValidIds.has(String(t.groupId)) || activeGroupValidIds.has(String(t.sharedGroupId))) {
+          return true;
+        }
+        return (
+          Boolean(t.groupName && activeGroupObj?.name) &&
+          t.groupName.trim().toLowerCase() === activeGroupObj.name.trim().toLowerCase()
+        );
+      })
+      .reduce((sum, t) => sum + (parseFloat(t.amount) || 0), 0) * 100
+  ) / 100;
+
+  // Saldo em aberto do grupo ativo (Total de gastos compartilhados - Total de abatimentos confirmados)
+  const openGroupBalance = Math.max(
+    0,
+    Math.round((totalSharedGrossExpense - activeGroupSettledTotal) * 100) / 100
+  );
+
   const txIncome = filteredTransactions
     .filter((t) => t.type === 'income')
     .reduce((sum, t) => sum + (t.amount || 0), 0);
 
-  const totalExpense = filteredTransactions
+  const rawTotalExpense = filteredTransactions
     .filter((t) => t.type === 'expense')
     .reduce((sum, t) => {
       if (viewMode === 'consolidated' && t.isShared) {
@@ -3085,6 +3495,13 @@ export function FinanceProvider({ children }) {
       }
       return sum + (t.amount || 0);
     }, 0);
+
+  const totalExpense =
+    viewMode === 'shared'
+      ? Math.max(0, Math.round((rawTotalExpense - activeGroupSettledTotal) * 100) / 100)
+      : viewMode === 'consolidated'
+        ? Math.max(0, Math.round((rawTotalExpense - activeGroupSettledTotal * 0.5) * 100) / 100)
+        : rawTotalExpense;
 
   const accountsBalance = accounts.reduce((sum, a) => sum + (parseFloat(a.balance) || 0), 0);
 
@@ -3953,6 +4370,18 @@ Responda de forma clara, motivadora e estruturada em tópicos!`;
         postgresStatus,
         isSyncingPostgres,
         syncWithPostgres,
+        refreshHomeData,
+        refreshGroupData,
+        isRefreshingHome,
+        isRefreshingGroup,
+        homeRefreshError,
+        groupRefreshError,
+        clearHomeRefreshError,
+        clearGroupRefreshError,
+        openGroupBalance,
+        totalSharedGrossExpense,
+        activeGroupSettledTotal,
+        activeGroupSettlements,
         testPostgresConnection,
         updateUserProfile,
         viewMode,

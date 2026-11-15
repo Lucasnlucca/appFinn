@@ -195,11 +195,14 @@ export class TransactionsService {
    */
   async listTransactions(userId: string, query: FinancialQueryDto) {
     let whereCondition: any = { userId };
+    let allowedHouseholdIds: Set<string> | null = null;
 
     if (query.scope === FinancialScope.HOUSEHOLD) {
       const memberships = await this.prisma.householdMember.findMany({ where: { userId } });
+      const householdIds = memberships.map((m) => m.householdId);
+      allowedHouseholdIds = new Set(householdIds);
+
       if (memberships.length > 0) {
-        const householdIds = memberships.map((m) => m.householdId);
         const members = await this.prisma.householdMember.findMany({
           where: { householdId: { in: householdIds } },
           select: { userId: true },
@@ -243,7 +246,7 @@ export class TransactionsService {
       if (query.endDate) whereCondition.date.lte = new Date(query.endDate);
     }
 
-    return this.prisma.transaction.findMany({
+    const rows = await this.prisma.transaction.findMany({
       where: whereCondition,
       include: {
         category: true,
@@ -254,6 +257,57 @@ export class TransactionsService {
       orderBy: [{ createdAt: 'desc' }, { date: 'desc' }],
       take: 150,
     });
+
+    if (allowedHouseholdIds) {
+      return rows.filter((tx) => {
+        const notes = typeof tx.notes === 'string' ? tx.notes : '';
+        const marker = '__FINN_SHARED__:';
+        const idx = notes.indexOf(marker);
+        if (idx !== -1) {
+          try {
+            const meta = JSON.parse(notes.slice(idx + marker.length).trim());
+            if (meta && meta.groupId) {
+              return allowedHouseholdIds!.has(String(meta.groupId));
+            }
+          } catch {}
+        }
+        return true;
+      });
+    }
+
+    return rows;
+  }
+
+  private async canUserAccessSharedTransaction(userId: string, existing: { userId: string; isHouseholdShared: boolean; notes?: string | null }) {
+    if (existing.userId === userId) return true;
+    if (!existing.isHouseholdShared) return false;
+
+    const myMemberships = await this.prisma.householdMember.findMany({
+      where: { userId },
+      select: { householdId: true },
+    });
+    if (myMemberships.length === 0) return false;
+    const myHouseholdIds = myMemberships.map((m) => m.householdId);
+
+    const notes = typeof existing.notes === 'string' ? existing.notes : '';
+    const marker = '__FINN_SHARED__:';
+    const idx = notes.indexOf(marker);
+    if (idx !== -1) {
+      try {
+        const meta = JSON.parse(notes.slice(idx + marker.length).trim());
+        if (meta && meta.groupId) {
+          return myHouseholdIds.includes(String(meta.groupId));
+        }
+      } catch {}
+    }
+
+    const sharedMembership = await this.prisma.householdMember.findFirst({
+      where: {
+        userId: existing.userId,
+        householdId: { in: myHouseholdIds },
+      },
+    });
+    return Boolean(sharedMembership);
   }
 
   /**
@@ -261,7 +315,7 @@ export class TransactionsService {
    */
   async updateTransaction(userId: string, txId: string, dto: Partial<CreateTransactionDto>) {
     const existing = await this.prisma.transaction.findUnique({ where: { id: txId } });
-    if (!existing || existing.userId !== userId) {
+    if (!existing || !(await this.canUserAccessSharedTransaction(userId, existing))) {
       throw new NotFoundException('Movimentação financeira não encontrada');
     }
 
@@ -293,7 +347,7 @@ export class TransactionsService {
    */
   async deleteTransaction(userId: string, txId: string) {
     const existing = await this.prisma.transaction.findUnique({ where: { id: txId } });
-    if (!existing || existing.userId !== userId) {
+    if (!existing || !(await this.canUserAccessSharedTransaction(userId, existing))) {
       throw new NotFoundException('Movimentação financeira não encontrada');
     }
 

@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { useFocusEffect } from '@react-navigation/native';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
+  RefreshControl,
   TouchableOpacity,
   TouchableWithoutFeedback,
   StatusBar,
@@ -87,6 +88,10 @@ export default function HomeScreen({ navigation }) {
     createSharedGroup,
     acceptGroupInvitation,
     isGroupCreator,
+    settlements = [],
+    refreshHomeData,
+    homeRefreshError,
+    clearHomeRefreshError,
     cards = [],
     loaded = true,
     notifications = [],
@@ -98,6 +103,16 @@ export default function HomeScreen({ navigation }) {
     sendTestSmartNotification,
   } = useFinance();
 
+  const isFocused = useIsFocused();
+  const isFocusedRef = useRef(isFocused);
+  useEffect(() => {
+    isFocusedRef.current = isFocused;
+  }, [isFocused]);
+
+  const [isPullRefreshing, setIsPullRefreshing] = useState(false);
+  const [refreshBannerMsg, setRefreshBannerMsg] = useState(null);
+  const appStateRef = useRef(AppState.currentState);
+
   const [notificationsModalVisible, setNotificationsModalVisible] = useState(false);
   const [notifFilterTab, setNotifFilterTab] = useState('Todas');
   const [groupModalVisible, setGroupModalVisible] = useState(false);
@@ -106,6 +121,65 @@ export default function HomeScreen({ navigation }) {
   const [quickGroupName, setQuickGroupName] = useState('');
   const [quickGroupType, setQuickGroupType] = useState('Casal');
   const [quickJoinCode, setQuickJoinCode] = useState('');
+
+  // Atualização manual ao puxar a tela (arrastar para atualizar)
+  const handlePullToRefresh = useCallback(async () => {
+    if (!refreshHomeData) return;
+    setIsPullRefreshing(true);
+    setRefreshBannerMsg(null);
+    if (clearHomeRefreshError) clearHomeRefreshError();
+    try {
+      const res = await refreshHomeData({ source: 'pull', silent: false });
+      if (!res?.success && !res?.cancelled) {
+        setRefreshBannerMsg(res?.error || 'Não foi possível atualizar. Tente novamente.');
+      } else {
+        setRefreshBannerMsg(null);
+      }
+    } catch {
+      setRefreshBannerMsg('Não foi possível atualizar. Tente novamente.');
+    } finally {
+      setIsPullRefreshing(false);
+    }
+  }, [refreshHomeData, clearHomeRefreshError]);
+
+  // Atualização automática ao abrir a tela ou voltar para ela pela navegação
+  useFocusEffect(
+    useCallback(() => {
+      if (!loggedInUser?.id || !refreshHomeData) return;
+      refreshHomeData({ source: 'focus', silent: true })
+        .then((res) => {
+          if (res?.success) {
+            setRefreshBannerMsg(null);
+          }
+        })
+        .catch(() => {});
+    }, [loggedInUser?.id, refreshHomeData])
+  );
+
+  // Atualização automática quando o FINN voltar do segundo plano enquanto esta tela estiver visível
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (nextState) => {
+      const prevState = appStateRef.current;
+      appStateRef.current = nextState;
+      if (
+        prevState &&
+        prevState.match(/inactive|background/) &&
+        nextState === 'active' &&
+        isFocusedRef.current &&
+        loggedInUser?.id &&
+        refreshHomeData
+      ) {
+        refreshHomeData({ source: 'appstate', silent: true })
+          .then((res) => {
+            if (res?.success) {
+              setRefreshBannerMsg(null);
+            }
+          })
+          .catch(() => {});
+      }
+    });
+    return () => sub?.remove?.();
+  }, [loggedInUser?.id, refreshHomeData]);
 
   const activeSharedGroup = useMemo(() => {
     if (sharedGroups && sharedGroups.length > 0) {
@@ -121,29 +195,31 @@ export default function HomeScreen({ navigation }) {
     return [];
   }, [sharedGroups]);
 
-  // Saldo 100% isolado do grupo ativo: apenas receitas e despesas vinculadas a este grupo
-  const sharedGroupBalance = useMemo(() => {
+  // Abatimentos confirmados pertencentes ao grupo ativo
+  const activeSharedGroupSettledTotal = useMemo(() => {
     if (!activeSharedGroup?.id) return 0;
-    const groupTxs = transactions.filter(
-      (t) => t.isShared && (t.groupId === activeSharedGroup.id || t.sharedGroupId === activeSharedGroup.id)
+    const validIds = new Set(
+      [activeSharedGroup.id, activeSharedGroup.remoteId].filter(Boolean).map(String)
     );
-    const totalExp = groupTxs
-      .filter((t) => t.type === 'expense')
-      .reduce((sum, t) => sum + (t.amount || 0), 0);
-    const totalInc = groupTxs
-      .filter((t) => t.type === 'income')
-      .reduce((sum, t) => sum + (t.amount || 0), 0);
-
-    return totalInc - totalExp;
-  }, [transactions, activeSharedGroup]);
+    return (settlements || [])
+      .filter((s) => {
+        const sGrpId = s.groupId || s.sharedGroupId;
+        if (!sGrpId) return (sharedGroups || []).length <= 1;
+        return validIds.has(String(s.groupId)) || validIds.has(String(s.sharedGroupId));
+      })
+      .reduce((sum, s) => sum + (parseFloat(s.amount) || 0), 0);
+  }, [settlements, activeSharedGroup, sharedGroups]);
 
   const sharedGroupIncome = useMemo(() => {
     if (!activeSharedGroup?.id) return 0;
+    const validIds = new Set(
+      [activeSharedGroup.id, activeSharedGroup.remoteId].filter(Boolean).map(String)
+    );
     return transactions
       .filter(
         (t) =>
           t.isShared &&
-          (t.groupId === activeSharedGroup.id || t.sharedGroupId === activeSharedGroup.id) &&
+          (validIds.has(String(t.groupId)) || validIds.has(String(t.sharedGroupId))) &&
           t.type === 'income'
       )
       .reduce((sum, t) => sum + (t.amount || 0), 0);
@@ -151,15 +227,25 @@ export default function HomeScreen({ navigation }) {
 
   const sharedGroupExpense = useMemo(() => {
     if (!activeSharedGroup?.id) return 0;
-    return transactions
+    const validIds = new Set(
+      [activeSharedGroup.id, activeSharedGroup.remoteId].filter(Boolean).map(String)
+    );
+    const grossExp = transactions
       .filter(
         (t) =>
           t.isShared &&
-          (t.groupId === activeSharedGroup.id || t.sharedGroupId === activeSharedGroup.id) &&
+          (validIds.has(String(t.groupId)) || validIds.has(String(t.sharedGroupId))) &&
           t.type === 'expense'
       )
       .reduce((sum, t) => sum + (t.amount || 0), 0);
-  }, [transactions, activeSharedGroup]);
+    return Math.max(0, Math.round((grossExp - activeSharedGroupSettledTotal) * 100) / 100);
+  }, [transactions, activeSharedGroup, activeSharedGroupSettledTotal]);
+
+  // Saldo 100% isolado do grupo ativo (descontando abatimentos confirmados)
+  const sharedGroupBalance = useMemo(() => {
+    if (!activeSharedGroup?.id) return 0;
+    return Math.round((sharedGroupIncome - sharedGroupExpense) * 100) / 100;
+  }, [sharedGroupIncome, sharedGroupExpense, activeSharedGroup]);
 
   const handleQuickCreateGroup = async () => {
     if (!quickGroupName.trim()) {
@@ -427,11 +513,55 @@ export default function HomeScreen({ navigation }) {
 
       <ScrollView
         showsVerticalScrollIndicator={false}
+        alwaysBounceVertical={true}
+        overScrollMode="always"
+        refreshControl={
+          <RefreshControl
+            refreshing={isPullRefreshing}
+            onRefresh={handlePullToRefresh}
+            tintColor="#7C3AED"
+            colors={['#7C3AED']}
+            progressBackgroundColor="#FFFFFF"
+          />
+        }
         contentContainerStyle={[
           styles.scrollContent,
-          { paddingBottom: insets.bottom + 105 },
+          { flexGrow: 1, paddingBottom: insets.bottom + 105 },
         ]}
       >
+        {(refreshBannerMsg || homeRefreshError) ? (
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              backgroundColor: '#FEF2F2',
+              borderWidth: 1,
+              borderColor: '#FECACA',
+              borderRadius: 12,
+              paddingVertical: 10,
+              paddingHorizontal: 14,
+              marginBottom: 12,
+            }}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, gap: 8 }}>
+              <Ionicons name="cloud-offline-outline" size={18} color="#DC2626" />
+              <Text style={{ fontSize: 13, fontWeight: '600', color: '#991B1B', flex: 1 }}>
+                {refreshBannerMsg || homeRefreshError}
+              </Text>
+            </View>
+            <TouchableOpacity
+              onPress={() => {
+                setRefreshBannerMsg(null);
+                if (clearHomeRefreshError) clearHomeRefreshError();
+              }}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Ionicons name="close" size={16} color="#991B1B" />
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
         {/* SAUDAÇÃO PERSONALIZADA */}
         <View style={styles.greetingWrap}>
           <Text style={styles.greetingTitle}>Olá{currentUserName ? `, ${currentUserName}` : ''} 👋</Text>

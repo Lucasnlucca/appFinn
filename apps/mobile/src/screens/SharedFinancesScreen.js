@@ -1,9 +1,11 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
+  RefreshControl,
   TouchableOpacity,
   TouchableWithoutFeedback,
   TextInput,
@@ -15,6 +17,7 @@ import {
   Keyboard,
   KeyboardAvoidingView,
   ActivityIndicator,
+  AppState,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -24,6 +27,7 @@ import { COLORS } from '../theme/colors';
 import { useFinance, CATEGORIES } from '../context/FinanceContext';
 import { playExpenseSound } from '../services/soundService';
 import { getHouseholdInvitationInfoApi } from '../services/apiService';
+import EditTransactionModal from '../components/EditTransactionModal';
 
 export default function SharedFinancesScreen({ navigation, route }) {
   const insets = useSafeAreaInsets();
@@ -45,6 +49,10 @@ export default function SharedFinancesScreen({ navigation, route }) {
     settlements,
     recordSettlement,
     addSharedExpense,
+    editTransaction,
+    refreshGroupData,
+    groupRefreshError,
+    clearGroupRefreshError,
     transactions,
     allTransactions,
     viewMode,
@@ -56,6 +64,18 @@ export default function SharedFinancesScreen({ navigation, route }) {
     removeNotification,
     clearAllNotifications,
   } = useFinance();
+
+  const isFocused = useIsFocused();
+  const isFocusedRef = useRef(isFocused);
+  useEffect(() => {
+    isFocusedRef.current = isFocused;
+  }, [isFocused]);
+
+  const [isPullRefreshing, setIsPullRefreshing] = useState(false);
+  const [refreshBannerMsg, setRefreshBannerMsg] = useState(null);
+  const [editingSharedTx, setEditingSharedTx] = useState(null);
+  const appStateRef = useRef(AppState.currentState);
+  const groupSwitchTokenRef = useRef(0);
 
   // Abas: 'dashboard' | 'divisao' | 'acertos' | 'membros'
   const [activeTab, setActiveTab] = useState(route?.params?.initialTab || 'dashboard');
@@ -128,6 +148,102 @@ export default function SharedFinancesScreen({ navigation, route }) {
     return sharedGroups.find((g) => g.id === activeGroupId) || sharedGroups[0] || null;
   }, [sharedGroups, activeGroupId]);
 
+  const activeGroupRef = useRef(activeGroup);
+  useEffect(() => {
+    activeGroupRef.current = activeGroup;
+  }, [activeGroup]);
+
+  // Atualização manual ao puxar a tela (arrastar para atualizar)
+  const handlePullToRefresh = useCallback(async () => {
+    if (!refreshGroupData) return;
+    const reqToken = ++groupSwitchTokenRef.current;
+    const targetGrpId = activeGroupRef.current?.id || null;
+    setIsPullRefreshing(true);
+    setRefreshBannerMsg(null);
+    if (clearGroupRefreshError) clearGroupRefreshError();
+    try {
+      const res = await refreshGroupData(targetGrpId, { source: 'pull', silent: false });
+      if (groupSwitchTokenRef.current !== reqToken) return;
+      if (!res?.success && !res?.cancelled) {
+        setRefreshBannerMsg(res?.error || 'Não foi possível atualizar. Tente novamente.');
+      } else {
+        setRefreshBannerMsg(null);
+      }
+    } catch {
+      if (groupSwitchTokenRef.current === reqToken) {
+        setRefreshBannerMsg('Não foi possível atualizar. Tente novamente.');
+      }
+    } finally {
+      setIsPullRefreshing(false);
+    }
+  }, [refreshGroupData, clearGroupRefreshError]);
+
+  // Atualização automática ao abrir a tela ou voltar para ela pela navegação
+  useFocusEffect(
+    useCallback(() => {
+      if (!loggedInUser?.id || !refreshGroupData) return;
+      const reqToken = ++groupSwitchTokenRef.current;
+      const targetGrpId = activeGroupRef.current?.id || null;
+      refreshGroupData(targetGrpId, { source: 'focus', silent: true })
+        .then((res) => {
+          if (groupSwitchTokenRef.current === reqToken && res?.success) {
+            setRefreshBannerMsg(null);
+          }
+        })
+        .catch(() => {});
+    }, [loggedInUser?.id, refreshGroupData])
+  );
+
+  // Atualização automática quando o FINN voltar do segundo plano enquanto esta tela estiver visível
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (nextState) => {
+      const prevState = appStateRef.current;
+      appStateRef.current = nextState;
+      if (
+        prevState &&
+        prevState.match(/inactive|background/) &&
+        nextState === 'active' &&
+        isFocusedRef.current &&
+        loggedInUser?.id &&
+        refreshGroupData
+      ) {
+        const reqToken = ++groupSwitchTokenRef.current;
+        const targetGrpId = activeGroupRef.current?.id || null;
+        refreshGroupData(targetGrpId, { source: 'appstate', silent: true })
+          .then((res) => {
+            if (groupSwitchTokenRef.current === reqToken && res?.success) {
+              setRefreshBannerMsg(null);
+            }
+          })
+          .catch(() => {});
+      }
+    });
+    return () => sub?.remove?.();
+  }, [loggedInUser?.id, refreshGroupData]);
+
+  // Isolamento ao trocar de grupo A -> B: limpa estado transitório e dispara consulta isolada para o novo grupo
+  const prevGroupIdRef = useRef(activeGroup?.id || null);
+  useEffect(() => {
+    const currentId = activeGroup?.id || null;
+    if (prevGroupIdRef.current !== currentId) {
+      prevGroupIdRef.current = currentId;
+      const reqToken = ++groupSwitchTokenRef.current;
+      setSplitDesc('');
+      setSplitTotal('');
+      setSplitItems([]);
+      setRefreshBannerMsg(null);
+      if (currentId && loggedInUser?.id && refreshGroupData) {
+        refreshGroupData(currentId, { source: 'group-switch', silent: true })
+          .then((res) => {
+            if (groupSwitchTokenRef.current === reqToken && res?.success) {
+              setRefreshBannerMsg(null);
+            }
+          })
+          .catch(() => {});
+      }
+    }
+  }, [activeGroup?.id, loggedInUser?.id, refreshGroupData]);
+
   const isOwner = useMemo(() => {
     return isGroupCreator ? isGroupCreator(activeGroup) : false;
   }, [activeGroup, isGroupCreator]);
@@ -162,7 +278,7 @@ export default function SharedFinancesScreen({ navigation, route }) {
     }
   }, [groupMembers, loggedInUser]);
 
-  // Transações compartilhadas do grupo (100% em tempo real, independente do viewMode global)
+  // Transações compartilhadas do grupo (isoladas estritamente por grupo)
   const sharedTxs = useMemo(() => {
     if (!activeGroup?.id) return [];
     const sourceList = Array.isArray(allTransactions) ? allTransactions : transactions || [];
@@ -179,17 +295,23 @@ export default function SharedFinancesScreen({ navigation, route }) {
       ) {
         return true;
       }
-      if (t.groupName && activeNameNorm && String(t.groupName).trim().toLowerCase() === activeNameNorm) {
+      if (
+        !t.groupId &&
+        !t.sharedGroupId &&
+        t.groupName &&
+        activeNameNorm &&
+        String(t.groupName).trim().toLowerCase() === activeNameNorm
+      ) {
         return true;
       }
-      if (!t.groupId && !t.sharedGroupId && sharedGroups.length === 1) {
+      if (!t.groupId && !t.sharedGroupId && !t.groupName && sharedGroups.length === 1) {
         return true;
       }
       return false;
     });
   }, [allTransactions, transactions, activeGroup?.id, activeGroup?.remoteId, activeGroup?.name, sharedGroups.length]);
 
-  // Acertos de contas filtrados para o grupo ativo
+  // Acertos de contas (abatimentos) filtrados estritamente para o grupo ativo
   const groupSettlements = useMemo(() => {
     if (!activeGroup?.id) return [];
     const validGroupIds = new Set(
@@ -198,17 +320,45 @@ export default function SharedFinancesScreen({ navigation, route }) {
     const activeNameNorm = String(activeGroup.name || '').trim().toLowerCase();
     return (settlements || []).filter((s) => {
       if (!s) return false;
-      if (s.groupId && validGroupIds.has(String(s.groupId))) return true;
-      if (s.groupName && activeNameNorm && String(s.groupName).trim().toLowerCase() === activeNameNorm) return true;
-      if (!s.groupId && sharedGroups.length === 1) return true;
+      if (
+        (s.groupId && validGroupIds.has(String(s.groupId))) ||
+        (s.sharedGroupId && validGroupIds.has(String(s.sharedGroupId)))
+      ) {
+        return true;
+      }
+      if (
+        !s.groupId &&
+        !s.sharedGroupId &&
+        s.groupName &&
+        activeNameNorm &&
+        String(s.groupName).trim().toLowerCase() === activeNameNorm
+      ) {
+        return true;
+      }
+      if (!s.groupId && !s.sharedGroupId && !s.groupName && sharedGroups.length === 1) {
+        return true;
+      }
       return false;
     });
   }, [settlements, activeGroup?.id, activeGroup?.remoteId, activeGroup?.name, sharedGroups.length]);
 
-  // Total gasto compartilhado no mês
-  const totalSharedSpent = useMemo(() => {
-    return sharedTxs.reduce((sum, t) => sum + (t.amount || 0), 0);
+  // Total bruto de gastos compartilhados no grupo
+  const totalSharedGrossSpent = useMemo(() => {
+    return Math.round(sharedTxs.reduce((sum, t) => sum + (parseFloat(t.amount) || 0), 0) * 100) / 100;
   }, [sharedTxs]);
+
+  // Total de abatimentos confirmados no grupo
+  const totalSharedSettled = useMemo(() => {
+    return Math.round(groupSettlements.reduce((sum, s) => sum + (parseFloat(s.amount) || 0), 0) * 100) / 100;
+  }, [groupSettlements]);
+
+  // Saldo em aberto do grupo (Gastos compartilhados - Abatimentos confirmados; ex.: R$ 100 - R$ 30 = R$ 70)
+  const openGroupBalance = useMemo(() => {
+    return Math.max(0, Math.round((totalSharedGrossSpent - totalSharedSettled) * 100) / 100);
+  }, [totalSharedGrossSpent, totalSharedSettled]);
+
+  // Mantém alias totalSharedSpent apontando para o total de gastos para a aba de divisão
+  const totalSharedSpent = totalSharedGrossSpent;
 
   // 1. Auto-atualiza o valor da divisão com o total gasto pelo grupo em tempo real
   useEffect(() => {
@@ -1117,7 +1267,53 @@ export default function SharedFinancesScreen({ navigation, route }) {
 
       {/* SE O USUÁRIO AINDA NÃO TEM GRUPO: TELA DE PRIMEIRO ACESSO */}
       {sharedGroups.length === 0 ? (
-        <ScrollView contentContainerStyle={styles.firstAccessWrap}>
+        <ScrollView
+          alwaysBounceVertical={true}
+          overScrollMode="always"
+          refreshControl={
+            <RefreshControl
+              refreshing={isPullRefreshing}
+              onRefresh={handlePullToRefresh}
+              tintColor="#7C3AED"
+              colors={['#7C3AED']}
+              progressBackgroundColor="#FFFFFF"
+            />
+          }
+          contentContainerStyle={[styles.firstAccessWrap, { flexGrow: 1 }]}
+        >
+          {(refreshBannerMsg || groupRefreshError) ? (
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                backgroundColor: '#FEF2F2',
+                borderWidth: 1,
+                borderColor: '#FECACA',
+                borderRadius: 12,
+                paddingVertical: 10,
+                paddingHorizontal: 14,
+                marginBottom: 12,
+              }}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, gap: 8 }}>
+                <Ionicons name="cloud-offline-outline" size={18} color="#DC2626" />
+                <Text style={{ fontSize: 13, fontWeight: '600', color: '#991B1B', flex: 1 }}>
+                  {refreshBannerMsg || groupRefreshError}
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => {
+                  setRefreshBannerMsg(null);
+                  if (clearGroupRefreshError) clearGroupRefreshError();
+                }}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Ionicons name="close" size={16} color="#991B1B" />
+              </TouchableOpacity>
+            </View>
+          ) : null}
+
           <LinearGradient
             colors={['#7C3AED', '#9333EA', '#A855F7']}
             style={styles.firstAccessHero}
@@ -1242,14 +1438,61 @@ export default function SharedFinancesScreen({ navigation, route }) {
 
           <ScrollView
             showsVerticalScrollIndicator={false}
-            contentContainerStyle={[styles.contentScroll, { paddingBottom: insets.bottom + 40 }]}
+            alwaysBounceVertical={true}
+            overScrollMode="always"
+            refreshControl={
+              <RefreshControl
+                refreshing={isPullRefreshing}
+                onRefresh={handlePullToRefresh}
+                tintColor="#7C3AED"
+                colors={['#7C3AED']}
+                progressBackgroundColor="#FFFFFF"
+              />
+            }
+            contentContainerStyle={[
+              styles.contentScroll,
+              { flexGrow: 1, paddingBottom: insets.bottom + 40 },
+            ]}
           >
+            {(refreshBannerMsg || groupRefreshError) ? (
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  backgroundColor: '#FEF2F2',
+                  borderWidth: 1,
+                  borderColor: '#FECACA',
+                  borderRadius: 12,
+                  paddingVertical: 10,
+                  paddingHorizontal: 14,
+                  marginBottom: 12,
+                }}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, gap: 8 }}>
+                  <Ionicons name="cloud-offline-outline" size={18} color="#DC2626" />
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: '#991B1B', flex: 1 }}>
+                    {refreshBannerMsg || groupRefreshError}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  onPress={() => {
+                    setRefreshBannerMsg(null);
+                    if (clearGroupRefreshError) clearGroupRefreshError();
+                  }}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Ionicons name="close" size={16} color="#991B1B" />
+                </TouchableOpacity>
+              </View>
+            ) : null}
+
             {/* ============================================================== */}
             {/* ABA 1: PAINEL / DASHBOARD                                      */}
             {/* ============================================================== */}
             {activeTab === 'dashboard' && (
               <>
-                {/* CARD RESUMO PRINCIPAL DO GRUPO */}
+                {/* CARD RESUMO PRINCIPAL DO GRUPO (SALDO EM ABERTO CONFIRMADO) */}
                 <LinearGradient
                   colors={['#7C3AED', '#9333EA']}
                   start={{ x: 0, y: 0 }}
@@ -1257,12 +1500,27 @@ export default function SharedFinancesScreen({ navigation, route }) {
                   style={styles.summaryCard}
                 >
                   <View style={styles.summaryTopRow}>
-                    <Text style={styles.summaryLabel}>Total compartilhado este mês</Text>
+                    <Text style={styles.summaryLabel}>Saldo em aberto no grupo</Text>
                     <View style={styles.badgeGroupType}>
                       <Text style={styles.badgeGroupTypeText}>{activeGroup?.type || 'Casal'}</Text>
                     </View>
                   </View>
-                  <Text style={styles.summaryValue}>{formatMoney(totalSharedSpent)}</Text>
+                  <Text style={styles.summaryValue}>{formatMoney(openGroupBalance)}</Text>
+
+                  <View style={[styles.splitsSummaryRow, { marginTop: 8, marginBottom: 4 }]}>
+                    <View style={styles.memberSharePill}>
+                      <Ionicons name="receipt-outline" size={13} color="#FFFFFF" />
+                      <Text style={styles.memberShareText}>
+                        Gastos: {formatMoney(totalSharedGrossSpent)}
+                      </Text>
+                    </View>
+                    <View style={styles.memberSharePill}>
+                      <Ionicons name="checkmark-done-outline" size={13} color="#FFFFFF" />
+                      <Text style={styles.memberShareText}>
+                        Abatimentos: {formatMoney(totalSharedSettled)}
+                      </Text>
+                    </View>
+                  </View>
 
                   {/* Divisão Rápida entre Participantes */}
                   <View style={styles.splitsSummaryRow}>
@@ -1270,7 +1528,7 @@ export default function SharedFinancesScreen({ navigation, route }) {
                       <View key={m.id || idx} style={styles.memberSharePill}>
                         <Ionicons name="person" size={13} color="#FFFFFF" />
                         <Text style={styles.memberShareText}>
-                          {m.name}: {formatMoney(totalSharedSpent / groupMembers.length)}
+                          {m.name}: {formatMoney(openGroupBalance / (groupMembers.length || 1))}
                         </Text>
                       </View>
                     ))}
@@ -1283,24 +1541,28 @@ export default function SharedFinancesScreen({ navigation, route }) {
                     <Ionicons name="swap-horizontal" size={20} color="#7C3AED" />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.quickDebtsTitle}>Situação de Acerto</Text>
+                    <Text style={styles.quickDebtsTitle}>
+                      Saldo em Aberto: {formatMoney(openGroupBalance)}
+                    </Text>
                     <Text style={styles.quickDebtsDesc}>
-                      {debtsCalculation.netOwed > 0
-                        ? `${debtsCalculation.member2} deve ${formatMoney(debtsCalculation.netOwed)} para ${debtsCalculation.member1}`
-                        : debtsCalculation.netOwed < 0
-                          ? `${debtsCalculation.member1} deve ${formatMoney(Math.abs(debtsCalculation.netOwed))} para ${debtsCalculation.member2}`
-                          : 'Tudo acertado! Ninguém deve nada no momento. 🎉'}
+                      {openGroupBalance > 0
+                        ? debtsCalculation.netOwed > 0
+                          ? `${debtsCalculation.member2} deve para ${debtsCalculation.member1} • Restam ${formatMoney(openGroupBalance)} em aberto`
+                          : debtsCalculation.netOwed < 0
+                            ? `${debtsCalculation.member1} deve para ${debtsCalculation.member2} • Restam ${formatMoney(openGroupBalance)} em aberto`
+                            : `Restam ${formatMoney(openGroupBalance)} em aberto no grupo`
+                        : 'Tudo acertado! Saldo em aberto zerado no momento. 🎉'}
                     </Text>
                   </View>
-                  {debtsCalculation.netOwed !== 0 && (
+                  {openGroupBalance > 0 && (
                     <TouchableOpacity
                       style={styles.btnPagarPill}
                       onPress={() => {
-                        setSettleAmount(String(Math.abs(debtsCalculation.netOwed)));
+                        setSettleAmount(String(openGroupBalance));
                         setModalSettlement(true);
                       }}
                     >
-                      <Text style={styles.btnPagarPillText}>Acertar</Text>
+                      <Text style={styles.btnPagarPillText}>Abater</Text>
                     </TouchableOpacity>
                   )}
                 </View>
@@ -1353,26 +1615,56 @@ export default function SharedFinancesScreen({ navigation, route }) {
                   </View>
                 ) : (
                   sharedTxs.map((t) => (
-                    <View key={t.id} style={styles.txSharedCard}>
+                    <TouchableOpacity
+                      key={t.id}
+                      style={styles.txSharedCard}
+                      activeOpacity={0.82}
+                      onPress={() => setEditingSharedTx(t)}
+                    >
                       <View style={styles.txSharedLeft}>
                         <View style={styles.txCategoryIcon}>
                           <Ionicons name="cart-outline" size={18} color="#7C3AED" />
                         </View>
                         <View>
-                          <Text style={styles.txSharedDesc}>{t.description}</Text>
+                          <Text style={styles.txSharedDesc}>{t.description || t.title}</Text>
                           <Text style={styles.txSharedMeta}>
-                            Pago por {t.paidBy || 'Você'} • Dividido igual
+                            Pago por {t.paidBy || 'Você'} • Toque para editar
                           </Text>
                         </View>
                       </View>
                       <View style={{ alignItems: 'flex-end' }}>
                         <Text style={styles.txSharedAmount}>{formatMoney(t.amount)}</Text>
                         <Text style={styles.txSharedEach}>
-                          {formatMoney((t.amount || 0) / 2)} cada
+                          {formatMoney((t.amount || 0) / (groupMembers.length || 2))} cada
                         </Text>
                       </View>
-                    </View>
+                    </TouchableOpacity>
                   ))
+                )}
+
+                {/* HISTÓRICO DE ABATIMENTOS NO PAINEL */}
+                {groupSettlements.length > 0 && (
+                  <View style={{ marginTop: 12 }}>
+                    <Text style={styles.sectionTitle}>
+                      Abatimentos registrados ({groupSettlements.length})
+                    </Text>
+                    {groupSettlements.map((s) => (
+                      <View key={s.id} style={styles.settlementRow}>
+                        <View style={styles.settlementIconBox}>
+                          <Ionicons name="checkmark-circle" size={20} color="#10B981" />
+                        </View>
+                        <View style={{ flex: 1, marginHorizontal: 10 }}>
+                          <Text style={styles.settlementTitle}>
+                            {s.fromMember} abateu para {s.toMember}
+                          </Text>
+                          <Text style={styles.settlementDate}>
+                            {String(s.date || '').split('T')[0]} • Confirmado
+                          </Text>
+                        </View>
+                        <Text style={styles.settlementAmount}>-{formatMoney(s.amount)}</Text>
+                      </View>
+                    ))}
+                  </View>
                 )}
               </>
             )}
@@ -1916,22 +2208,20 @@ export default function SharedFinancesScreen({ navigation, route }) {
             {activeTab === 'acertos' && (
               <>
                 <View style={styles.acertoHeroBox}>
-                  <Text style={styles.acertoHeroLabel}>Balanço de Débitos e Créditos</Text>
+                  <Text style={styles.acertoHeroLabel}>Saldo em Aberto no Grupo</Text>
                   <Text style={styles.acertoHeroValue}>
-                    {formatMoney(Math.abs(debtsCalculation.netOwed))}
+                    {formatMoney(openGroupBalance)}
                   </Text>
                   <Text style={styles.acertoHeroSub}>
-                    {debtsCalculation.netOwed > 0
-                      ? `${debtsCalculation.member2} deve para ${debtsCalculation.member1}`
-                      : debtsCalculation.netOwed < 0
-                        ? `${debtsCalculation.member1} deve para ${debtsCalculation.member2}`
-                        : 'Contas 100% equilibradas'}
+                    {openGroupBalance > 0
+                      ? `Total de gastos: ${formatMoney(totalSharedGrossSpent)} • Abatimentos: ${formatMoney(totalSharedSettled)}`
+                      : 'Contas 100% equilibradas'}
                   </Text>
 
                   <TouchableOpacity
                     style={styles.acertoPayBtn}
                     onPress={() => {
-                      setSettleAmount(String(Math.abs(debtsCalculation.netOwed || 50)));
+                      setSettleAmount(String(openGroupBalance || Math.abs(debtsCalculation.netOwed || 50)));
                       setModalSettlement(true);
                     }}
                   >
@@ -3404,6 +3694,17 @@ export default function SharedFinancesScreen({ navigation, route }) {
           </ScrollView>
         </View>
       </Modal>
+
+      <EditTransactionModal
+        visible={!!editingSharedTx}
+        transaction={editingSharedTx}
+        onClose={() => setEditingSharedTx(null)}
+        onSave={async (updatedTx) => {
+          if (editTransaction) {
+            await editTransaction(updatedTx);
+          }
+        }}
+      />
     </View>
   );
 }

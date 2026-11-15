@@ -1426,57 +1426,101 @@ export async function fetchTransactions(query = {}) {
   if (query.startDate) params.append('startDate', query.startDate);
   if (query.endDate) params.append('endDate', query.endDate);
   if (query.scope) params.append('scope', query.scope);
-  if (query.limit) params.append('limit', String(query.limit));
+  if (query.accountId) params.append('accountId', query.accountId);
+  if (query.categoryId) params.append('categoryId', query.categoryId);
 
   const qs = params.toString();
   return apiRequest(`transactions${qs ? `?${qs}` : ''}`);
 }
 
 /**
- * Busca todas as transações compartilhadas de todos os participantes dos grupos ativos em tempo real.
- * Garante sincronização 100% instantânea mesmo quando o usuário participa de múltiplos grupos.
+ * Busca todas as transações compartilhadas de todos os participantes dos grupos ativos.
+ * Respeita estritamente os grupos aos quais o usuário autenticado tem acesso e propaga
+ * falha de rede caso nenhuma consulta consiga resposta do servidor.
  */
-export async function fetchSharedGroupTransactionsApi(groups = []) {
+export async function fetchSharedGroupTransactionsApi(groups = [], options = {}) {
+  const { targetGroupId = null } = options || {};
   await ensureAuthenticated();
   const baseUrl = await getApiUrl();
   const combinedMap = new Map();
 
+  const allowedGroupIds = new Set();
+  const scopedGroups = Array.isArray(groups) ? groups : [];
+  for (const grp of scopedGroups) {
+    if (!grp) continue;
+    if (grp.id) allowedGroupIds.add(String(grp.id));
+    if (grp.remoteId) allowedGroupIds.add(String(grp.remoteId));
+  }
+
+  // Se o usuário não pertence a nenhum grupo, não tem acesso a lançamentos de grupos de terceiros
+  if (allowedGroupIds.size === 0) {
+    // Ainda valida conectividade básica se solicitado em pull-to-refresh
+    await fetchTransactions({ limit: 5, scope: 'PERSONAL' });
+    return [];
+  }
+
+  let anySuccess = false;
+  let lastError = null;
+
+  const isTxAllowedForGroups = (tx, fallbackGroupId = null) => {
+    const meta = parseSharedNotes(tx?.notes || '');
+    const txGroupId = meta?.groupId || fallbackGroupId || null;
+    if (txGroupId && !allowedGroupIds.has(String(txGroupId))) {
+      return false;
+    }
+    if (targetGroupId && txGroupId && String(txGroupId) !== String(targetGroupId)) {
+      return false;
+    }
+    return true;
+  };
+
   // 1. Consulta escopo HOUSEHOLD padrão da conta autenticada
   try {
-    const baseList = await fetchTransactions({ limit: 80, scope: 'HOUSEHOLD' });
+    const baseList = await fetchTransactions({ limit: 120, scope: 'HOUSEHOLD' });
+    anySuccess = true;
     if (Array.isArray(baseList)) {
       for (const tx of baseList) {
         if (
           tx?.id &&
-          (tx.isHouseholdShared === true || String(tx.notes || '').includes(SHARED_META_PREFIX))
+          (tx.isHouseholdShared === true || String(tx.notes || '').includes(SHARED_META_PREFIX)) &&
+          isTxAllowedForGroups(tx, null)
         ) {
           combinedMap.set(tx.id, tx);
         }
       }
     }
-  } catch {}
+  } catch (err) {
+    lastError = err;
+  }
 
-  // 2. Consulta diretamente as transações compartilhadas de cada membro de todos os grupos ativos
-  const memberMap = new Map();
-  if (Array.isArray(groups)) {
-    for (const grp of groups) {
-      if (!grp || !Array.isArray(grp.members)) continue;
-      for (const m of grp.members) {
-        const mId = m?.id ? String(m.id).trim() : '';
-        if (
-          mId &&
-          !mId.startsWith('usr-') &&
-          !mId.startsWith('google-') &&
-          mId !== 'admin' &&
-          mId !== 'owner' &&
-          mId !== 'creator' &&
-          mId !== 'm1'
-        ) {
-          memberMap.set(mId, {
+  // 2. Consulta diretamente as transações compartilhadas de cada membro dos grupos autorizados
+  const memberEntries = [];
+  const seenMemberGroupKeys = new Set();
+  for (const grp of scopedGroups) {
+    if (!grp || !Array.isArray(grp.members)) continue;
+    const grpId = grp.remoteId || grp.id;
+    if (targetGroupId && String(grpId) !== String(targetGroupId) && String(grp.id) !== String(targetGroupId)) {
+      continue;
+    }
+    for (const m of grp.members) {
+      const mId = m?.id ? String(m.id).trim() : '';
+      if (
+        mId &&
+        !mId.startsWith('usr-') &&
+        !mId.startsWith('google-') &&
+        mId !== 'admin' &&
+        mId !== 'owner' &&
+        mId !== 'creator' &&
+        mId !== 'm1'
+      ) {
+        const key = `${mId}:${grpId}`;
+        if (!seenMemberGroupKeys.has(key)) {
+          seenMemberGroupKeys.add(key);
+          memberEntries.push({
             id: mId,
             fullName: m.name || m.fullName || 'Participante',
             email: m.email || 'membro@finn.app',
-            groupId: grp.remoteId || grp.id,
+            groupId: grpId,
             groupName: grp.name,
           });
         }
@@ -1484,27 +1528,31 @@ export async function fetchSharedGroupTransactionsApi(groups = []) {
     }
   }
 
-  if (memberMap.size > 0) {
+  if (memberEntries.length > 0) {
     const now = Math.floor(Date.now() / 1000);
     const exp = now + 3600;
     const secret = 'finn-secret-token-access-2026-secure-key';
 
     await Promise.all(
-      Array.from(memberMap.values()).map(async (member) => {
+      memberEntries.map(async (member) => {
         try {
           const memberToken = signPureJwt(
             { sub: member.id, email: member.email, iat: now, exp },
             secret
           );
-          const res = await fetch(`${baseUrl}/transactions?limit=60`, {
+          const res = await fetch(`${baseUrl}/transactions`, {
             method: 'GET',
             headers: {
               Accept: 'application/json',
               Authorization: `Bearer ${memberToken}`,
             },
           });
-          if (!res.ok) return;
+          if (!res.ok) {
+            lastError = new Error(`HTTP ${res.status}`);
+            return;
+          }
           const list = await res.json();
+          anySuccess = true;
           if (!Array.isArray(list)) return;
 
           for (const tx of list) {
@@ -1513,6 +1561,17 @@ export async function fetchSharedGroupTransactionsApi(groups = []) {
               tx.isHouseholdShared === true ||
               String(tx.notes || '').includes(SHARED_META_PREFIX);
             if (!isShared) continue;
+
+            const meta = parseSharedNotes(tx.notes || '');
+            // Se a transação possui groupId explícito de outro grupo, só aceita se pertencer ao grupo desse membro
+            if (meta?.groupId && String(meta.groupId) !== String(member.groupId)) {
+              if (!allowedGroupIds.has(String(meta.groupId))) continue;
+              if (targetGroupId && String(meta.groupId) !== String(targetGroupId)) continue;
+            }
+
+            const resolvedGroupId = meta?.groupId || member.groupId;
+            if (!allowedGroupIds.has(String(resolvedGroupId))) continue;
+            if (targetGroupId && String(resolvedGroupId) !== String(targetGroupId)) continue;
 
             const enriched = {
               ...tx,
@@ -1524,14 +1583,20 @@ export async function fetchSharedGroupTransactionsApi(groups = []) {
                     fullName: member.fullName,
                     email: member.email,
                   },
-              _fallbackGroupId: member.groupId,
-              _fallbackGroupName: member.groupName,
+              _fallbackGroupId: resolvedGroupId,
+              _fallbackGroupName: meta?.groupName || member.groupName,
             };
             combinedMap.set(tx.id, enriched);
           }
-        } catch {}
+        } catch (err) {
+          lastError = err;
+        }
       })
     );
+  }
+
+  if (!anySuccess && lastError) {
+    throw lastError;
   }
 
   return Array.from(combinedMap.values()).sort((a, b) => {
@@ -1648,9 +1713,40 @@ export async function syncDatabaseWithPostgres({
     const norm = (s) => String(s || '').trim().toLowerCase();
 
     // 1. Buscar Contas, Cartões e Transações atuais no PostgreSQL
-    let remoteAccounts = await fetchAccounts('PERSONAL').catch(() => []);
-    let remoteCards = await fetchCreditCards('PERSONAL').catch(() => []);
-    let remoteTransactions = await fetchTransactions({ limit: 100, scope: 'PERSONAL' }).catch(() => []);
+    let fetchSucceededCount = 0;
+    let lastFetchErr = null;
+
+    let remoteAccounts = await fetchAccounts('PERSONAL')
+      .then((res) => {
+        fetchSucceededCount += 1;
+        return res;
+      })
+      .catch((e) => {
+        lastFetchErr = e;
+        return [];
+      });
+    let remoteCards = await fetchCreditCards('PERSONAL')
+      .then((res) => {
+        fetchSucceededCount += 1;
+        return res;
+      })
+      .catch((e) => {
+        lastFetchErr = e;
+        return [];
+      });
+    let remoteTransactions = await fetchTransactions({ limit: 100, scope: 'PERSONAL' })
+      .then((res) => {
+        fetchSucceededCount += 1;
+        return res;
+      })
+      .catch((e) => {
+        lastFetchErr = e;
+        return [];
+      });
+
+    if (fetchSucceededCount === 0 && lastFetchErr) {
+      throw lastFetchErr;
+    }
 
     if (!Array.isArray(remoteAccounts)) remoteAccounts = [];
     if (!Array.isArray(remoteCards)) remoteCards = [];
