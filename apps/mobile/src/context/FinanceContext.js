@@ -163,6 +163,7 @@ export function FinanceProvider({ children }) {
   const [settlements, setSettlements] = useState([]);
   const [activityNotifications, setActivityNotifications] = useState([]);
   const [readNotificationIds, setReadNotificationIds] = useState([]);
+  const [clearedNotificationIds, setClearedNotificationIds] = useState([]);
   const [notificationPreferences, setNotificationPreferences] = useState(
     DEFAULT_NOTIFICATION_PREFERENCES
   );
@@ -316,6 +317,7 @@ export function FinanceProvider({ children }) {
           savedMode,
           savedActNotifs,
           savedReadNotifs,
+          savedClearedNotifs,
           savedUserProfile,
         ] = await Promise.all([
           readUserRawWithEmailFallback(uid, uEmail, 'transactions'),
@@ -335,6 +337,7 @@ export function FinanceProvider({ children }) {
           readUserRawWithEmailFallback(uid, uEmail, 'view_mode'),
           readUserRawWithEmailFallback(uid, uEmail, 'activity_notifications'),
           readUserRawWithEmailFallback(uid, uEmail, 'read_notifications'),
+          readUserRawWithEmailFallback(uid, uEmail, 'cleared_notifications'),
           readUserRawWithEmailFallback(uid, uEmail, 'user_profile'),
         ]);
 
@@ -438,7 +441,14 @@ export function FinanceProvider({ children }) {
         const parsedSettles = savedSettles ? JSON.parse(savedSettles) : [];
         if (savedSettles) setSettlements(parsedSettles);
         if (savedMode) setViewModeState(savedMode);
-        setActivityNotifications(savedActNotifs ? JSON.parse(savedActNotifs) : []);
+        const parsedClearedNotifs = savedClearedNotifs ? JSON.parse(savedClearedNotifs) : [];
+        const clearedSetOnLoad = new Set(Array.isArray(parsedClearedNotifs) ? parsedClearedNotifs : []);
+        setClearedNotificationIds(Array.isArray(parsedClearedNotifs) ? parsedClearedNotifs : []);
+        setActivityNotifications(
+          (savedActNotifs ? JSON.parse(savedActNotifs) : []).filter(
+            (n) => n && !clearedSetOnLoad.has(n.id) && !clearedSetOnLoad.has(n.dedupeKey)
+          )
+        );
         setReadNotificationIds(savedReadNotifs ? JSON.parse(savedReadNotifs) : []);
         const loadedPrefs = await loadUserNotificationPreferences(uid);
         setNotificationPreferences(loadedPrefs);
@@ -468,6 +478,9 @@ export function FinanceProvider({ children }) {
                 const byKey = new Map();
                 for (const item of [...remoteNotifs, ...(prev || [])]) {
                   if (!item) continue;
+                  if (clearedSetOnLoad.has(item.id) || clearedSetOnLoad.has(item.dedupeKey)) {
+                    continue;
+                  }
                   const k = item.dedupeKey || item.id;
                   if (k && !byKey.has(k)) byKey.set(k, item);
                 }
@@ -3738,12 +3751,17 @@ Responda de forma clara, motivadora e estruturada em tópicos!`;
   const heroAiNotifs = smartSystemNotifications.filter((n) => n.isHeroAi);
   const otherSmartNotifs = smartSystemNotifications.filter((n) => !n.isHeroAi);
 
-  // Deduplica por dedupeKey ou id e respeita as preferências de categoria do usuário
+  // Deduplica por dedupeKey ou id, oculta notificações limpas pelo usuário e respeita preferências
   const rawCombined = [...heroAiNotifs, ...normalizedActivityNotifs, ...otherSmartNotifs];
   const seenKeys = new Set();
+  const clearedSet = new Set(clearedNotificationIds || []);
   const deduplicatedList = [];
 
   for (const item of rawCombined) {
+    if (!item) continue;
+    if (clearedSet.has(item.id) || (item.dedupeKey && clearedSet.has(item.dedupeKey))) {
+      continue;
+    }
     const catKey = normalizeNotificationCategory(item.category);
     if (notificationPreferences?.categories?.[catKey] === false) {
       continue;
@@ -3757,7 +3775,9 @@ Responda de forma clara, motivadora e estruturada em tópicos!`;
     });
   }
 
-  const notifications = groupInsightsNotifications(deduplicatedList);
+  const notifications = groupInsightsNotifications(deduplicatedList).filter(
+    (n) => n && !clearedSet.has(n.id) && (!n.dedupeKey || !clearedSet.has(n.dedupeKey))
+  );
 
   const unreadNotificationsCount = notifications.filter((n) => !n.read).length;
 
@@ -3774,6 +3794,55 @@ Responda de forma clara, motivadora e estruturada em tópicos!`;
     setReadNotificationIds(allIds);
     await saveUserItem('read_notifications', allIds);
     markAllNotificationsReadApi(allIds).catch(() => {});
+  };
+
+  const removeNotification = async (notifId) => {
+    if (!notifId) return;
+    const targetItem =
+      notifications.find((n) => n.id === notifId) ||
+      deduplicatedList.find((n) => n.id === notifId) ||
+      (activityNotifications || []).find((n) => n.id === notifId);
+
+    const keysToClear = [notifId, targetItem?.id, targetItem?.dedupeKey].filter(Boolean);
+    const nextCleared = Array.from(new Set([...(clearedNotificationIds || []), ...keysToClear]));
+    setClearedNotificationIds(nextCleared);
+    await saveUserItem('cleared_notifications', nextCleared);
+
+    setActivityNotifications((prev) => {
+      const filtered = (prev || []).filter(
+        (n) => n && n.id !== notifId && (!targetItem?.dedupeKey || n.dedupeKey !== targetItem.dedupeKey)
+      );
+      saveUserItem('activity_notifications', filtered);
+      return filtered;
+    });
+
+    markNotificationReadApi(notifId).catch(() => {});
+  };
+
+  const clearAllNotifications = async () => {
+    const allKeys = [];
+    for (const n of [...notifications, ...deduplicatedList, ...(activityNotifications || [])]) {
+      if (!n) continue;
+      if (n.id) allKeys.push(n.id);
+      if (n.dedupeKey) allKeys.push(n.dedupeKey);
+    }
+
+    const nextCleared = Array.from(
+      new Set([...(clearedNotificationIds || []), ...allKeys])
+    ).slice(-500);
+    setClearedNotificationIds(nextCleared);
+    setActivityNotifications([]);
+    setLiveGroupBanner(null);
+
+    await Promise.all([
+      saveUserItem('cleared_notifications', nextCleared),
+      saveUserItem('activity_notifications', []),
+    ]).catch(() => {});
+
+    const allIds = notifications.map((n) => n.id).filter(Boolean);
+    if (allIds.length > 0) {
+      markAllNotificationsReadApi(allIds).catch(() => {});
+    }
   };
 
   const sendTestSmartNotification = async () => {
@@ -3815,6 +3884,8 @@ Responda de forma clara, motivadora e estruturada em tópicos!`;
         unreadNotificationsCount,
         markNotificationAsRead,
         markAllNotificationsAsRead,
+        removeNotification,
+        clearAllNotifications,
         sendTestSmartNotification,
         notificationPreferences,
         updateNotificationPreferences,

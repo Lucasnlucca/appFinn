@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   Switch,
   StatusBar,
+  Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -61,6 +62,8 @@ export default function NotificationPreferencesScreen({ navigation }) {
   const {
     notificationPreferences = DEFAULT_NOTIFICATION_PREFERENCES,
     updateNotificationPreferences,
+    notifications = [],
+    clearAllNotifications,
   } = useFinance();
 
   const prefs = {
@@ -292,6 +295,49 @@ export default function NotificationPreferencesScreen({ navigation }) {
                 : 'Gasto de R$ 20,00 em Alimentação registrado. Fique de olho no limite mensal.'}
             </Text>
           </View>
+        </View>
+
+        {/* SEÇÃO 4: HISTÓRICO DE NOTIFICAÇÕES */}
+        <Text style={styles.sectionLabel}>HISTÓRICO NO APLICATIVO</Text>
+        <View style={styles.cardGroup}>
+          <TouchableOpacity
+            style={styles.prefRow}
+            activeOpacity={0.8}
+            onPress={() => {
+              if (!notifications || notifications.length === 0) {
+                Alert.alert('Histórico vazio', 'Não há notificações no histórico para limpar.');
+                return;
+              }
+              Alert.alert(
+                'Limpar Histórico de Notificações',
+                'Deseja remover todas as notificações do histórico do aplicativo?',
+                [
+                  { text: 'Cancelar', style: 'cancel' },
+                  {
+                    text: 'Limpar Tudo',
+                    style: 'destructive',
+                    onPress: () => {
+                      if (clearAllNotifications) clearAllNotifications();
+                      Alert.alert('Pronto', 'O histórico de notificações foi limpo com sucesso.');
+                    },
+                  },
+                ]
+              );
+            }}
+          >
+            <View style={[styles.iconChip, { backgroundColor: '#FEE2E2' }]}>
+              <Ionicons name="trash-outline" size={20} color="#DC2626" />
+            </View>
+            <View style={styles.prefTextCol}>
+              <Text style={[styles.prefTitle, { color: '#DC2626' }]}>
+                Limpar histórico de notificações
+              </Text>
+              <Text style={styles.prefDesc}>
+                Remove todas as notificações ({notifications.length}) exibidas na central do aplicativo.
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
+          </TouchableOpacity>
         </View>
 
         {/* INFORMAÇÃO DE FREQUÊNCIA */}

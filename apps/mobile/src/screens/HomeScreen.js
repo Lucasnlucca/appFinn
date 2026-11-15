@@ -93,6 +93,8 @@ export default function HomeScreen({ navigation }) {
     unreadNotificationsCount = 0,
     markNotificationAsRead,
     markAllNotificationsAsRead,
+    removeNotification,
+    clearAllNotifications,
     sendTestSmartNotification,
   } = useFinance();
 
@@ -1688,23 +1690,59 @@ export default function HomeScreen({ navigation }) {
               </Text>
             </View>
 
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
               <TouchableOpacity
                 onPress={() => markAllNotificationsAsRead && markAllNotificationsAsRead()}
                 activeOpacity={0.8}
                 accessibilityRole="button"
                 accessibilityLabel="Marcar todas as notificações como lidas"
                 style={{
-                  height: 40,
-                  paddingHorizontal: 14,
+                  height: 38,
+                  paddingHorizontal: 12,
                   borderRadius: 999,
                   backgroundColor: '#EDE9FE',
                   alignItems: 'center',
                   justifyContent: 'center',
                 }}
               >
-                <Text style={{ fontSize: 12.5, fontWeight: '700', color: '#5B21B6' }}>
+                <Text style={{ fontSize: 12, fontWeight: '700', color: '#5B21B6' }}>
                   Marcar lidas
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => {
+                  if (!notifications || notifications.length === 0) return;
+                  Alert.alert(
+                    'Limpar Histórico',
+                    'Deseja limpar todas as notificações do histórico?',
+                    [
+                      { text: 'Cancelar', style: 'cancel' },
+                      {
+                        text: 'Limpar Tudo',
+                        style: 'destructive',
+                        onPress: () => clearAllNotifications && clearAllNotifications(),
+                      },
+                    ]
+                  );
+                }}
+                activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityLabel="Limpar histórico de notificações"
+                style={{
+                  height: 38,
+                  paddingHorizontal: 11,
+                  borderRadius: 999,
+                  backgroundColor: '#FEE2E2',
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 4,
+                }}
+              >
+                <Ionicons name="trash-outline" size={14} color="#DC2626" />
+                <Text style={{ fontSize: 12, fontWeight: '700', color: '#DC2626' }}>
+                  Limpar
                 </Text>
               </TouchableOpacity>
 
@@ -1717,15 +1755,15 @@ export default function HomeScreen({ navigation }) {
                 accessibilityRole="button"
                 accessibilityLabel="Preferências de notificação"
                 style={{
-                  width: 40,
-                  height: 40,
-                  borderRadius: 20,
+                  width: 38,
+                  height: 38,
+                  borderRadius: 19,
                   backgroundColor: '#FFFFFF',
                   alignItems: 'center',
                   justifyContent: 'center',
                 }}
               >
-                <Ionicons name="options-outline" size={20} color="#5B21B6" />
+                <Ionicons name="options-outline" size={19} color="#5B21B6" />
               </TouchableOpacity>
             </View>
           </View>
@@ -2126,6 +2164,15 @@ export default function HomeScreen({ navigation }) {
                                   {item.time}
                                 </Text>
                               )}
+                              <TouchableOpacity
+                                onPress={() => removeNotification && removeNotification(item.id)}
+                                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                                accessibilityRole="button"
+                                accessibilityLabel="Remover notificação"
+                                style={{ marginLeft: 4, padding: 2 }}
+                              >
+                                <Ionicons name="close" size={16} color="#94A3B8" />
+                              </TouchableOpacity>
                             </View>
                           </View>
 
