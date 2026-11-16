@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { AppState } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { playExpenseSound } from '../services/soundService';
@@ -215,14 +215,15 @@ export function FinanceProvider({ children }) {
     settlementsRef.current = settlements;
   }, [settlements]);
 
-  const dismissLiveGroupBanner = () => setLiveGroupBanner(null);
-  const clearHomeRefreshError = () => setHomeRefreshError(null);
-  const clearGroupRefreshError = () => setGroupRefreshError(null);
+  const dismissLiveGroupBanner = useCallback(() => setLiveGroupBanner(null), []);
+  const clearHomeRefreshError = useCallback(() => setHomeRefreshError(null), []);
+  const clearGroupRefreshError = useCallback(() => setGroupRefreshError(null), []);
 
   // Helper para persistir dados no namespace isolado do usuário conectado (por ID e por E-mail)
-  const saveUserItem = async (keyName, val) => {
-    const uid = loggedInUser?.id || 'guest';
-    const email = loggedInUser?.email || '';
+  const saveUserItem = useCallback(async (keyName, val) => {
+    const activeUser = loggedInUserRef.current || loggedInUser;
+    const uid = activeUser?.id || 'guest';
+    const email = activeUser?.email || '';
     const key = getUserStorageKey(uid, keyName);
     const emailKey = getUserEmailStorageKey(email, keyName);
     const str = typeof val === 'string' ? val : JSON.stringify(val);
@@ -230,7 +231,7 @@ export function FinanceProvider({ children }) {
     if (emailKey) {
       await AsyncStorage.setItem(emailKey, str);
     }
-  };
+  }, []);
 
   const getUserItem = async (keyName) => {
     const uid = loggedInUser?.id || 'guest';
@@ -458,11 +459,16 @@ export function FinanceProvider({ children }) {
         } else {
           parsedGroups = [];
         }
+        sharedGroupsRef.current = parsedGroups;
         setSharedGroups(parsedGroups);
+        const matchedSavedGroup = savedActiveGrpId
+          ? parsedGroups.find(
+              (g) => g.id === savedActiveGrpId || g.remoteId === savedActiveGrpId
+            )
+          : null;
         const resolvedActiveId =
-          savedActiveGrpId && parsedGroups.some((g) => g.id === savedActiveGrpId)
-            ? savedActiveGrpId
-            : parsedGroups[0]?.id || null;
+          matchedSavedGroup?.id || parsedGroups[0]?.id || null;
+        activeGroupIdRef.current = resolvedActiveId;
         setActiveGroupIdState(resolvedActiveId);
         await saveUserItem('active_group_id', resolvedActiveId);
 
@@ -660,14 +666,18 @@ export function FinanceProvider({ children }) {
               const rtTitle = rt.description || rt.title || 'Movimentação';
               const rtAmt = parseFloat(rt.amount) || 0;
               const rtDate = rt.date ? rt.date.split('T')[0] : new Date().toISOString().split('T')[0];
-              const localMatch = latestLocalTxs.find(
-                (lt) =>
-                  lt.id === rt.id ||
-                  lt.remoteId === rt.id ||
-                  (norm(lt.title || lt.description) === norm(rtTitle) &&
-                    Math.abs((parseFloat(lt.amount) || 0) - rtAmt) < 0.01 &&
-                    String(lt.date || '').split('T')[0] === rtDate)
-              );
+              const localMatch = latestLocalTxs.find((lt) => {
+                if (lt.id === rt.id || lt.remoteId === rt.id) return true;
+                if (meta?.groupId) {
+                  const ltGrp = lt.groupId || lt.sharedGroupId;
+                  if (ltGrp && String(ltGrp) !== String(meta.groupId)) return false;
+                }
+                return (
+                  norm(lt.title || lt.description) === norm(rtTitle) &&
+                  Math.abs((parseFloat(lt.amount) || 0) - rtAmt) < 0.01 &&
+                  String(lt.date || '').split('T')[0] === rtDate
+                );
+              });
               const isSharedTx =
                 !!localMatch?.isShared ||
                 !!rt.isHouseholdShared ||
@@ -835,14 +845,25 @@ export function FinanceProvider({ children }) {
     }).catch(() => {});
   };
 
+  const loadedRef = useRef(false);
+  useEffect(() => {
+    loadedRef.current = loaded;
+  }, [loaded]);
+
+  const syncWithPostgresRef = useRef(null);
+  syncWithPostgresRef.current = syncWithPostgres;
+
+  const pushGroupNotificationRef = useRef(null);
+  pushGroupNotificationRef.current = pushGroupNotification;
+
   /**
    * Atualiza os dados de grupos financeiros (membros, gastos compartilhados, abatimentos e saldo em aberto)
    * consultando a API fresca. Reutiliza consulta em andamento se dois gatilhos pedirem os mesmos dados
    * ao mesmo tempo e isola respostas por usuário e grupo (evita condição de corrida ao trocar de grupo A -> B).
    */
-  const refreshGroupData = async (targetGroupId = null, options = {}) => {
+  const refreshGroupData = useCallback(async (targetGroupId = null, options = {}) => {
     const { silent = false } = options || {};
-    const reqUserId = loggedInUserRef.current?.id || loggedInUser?.id;
+    const reqUserId = loggedInUserRef.current?.id;
     if (!reqUserId) {
       return { success: false, error: 'Sessão não autenticada' };
     }
@@ -997,8 +1018,17 @@ export function FinanceProvider({ children }) {
             await saveUserItem('shared_groups', updatedList);
           }
 
+          const currentActiveId = activeGroupIdRef.current;
+          const activeStillExists =
+            currentActiveId &&
+            updatedList.some(
+              (g) =>
+                String(g.id) === String(currentActiveId) ||
+                String(g.remoteId) === String(currentActiveId)
+            );
           if (
-            !activeGroupIdRef.current &&
+            loadedRef.current &&
+            (!currentActiveId || !activeStillExists) &&
             updatedList.length > 0 &&
             String(loggedInUserRef.current?.id || '') === String(reqUserId)
           ) {
@@ -1126,7 +1156,7 @@ export function FinanceProvider({ children }) {
                       g.name &&
                       norm(g.name) === norm(rawMetaGroupName))
                 ) ||
-                (!rawMetaGroupId
+                (!rawMetaGroupId && groupsToQuery.length === 1
                   ? groupsToQuery.find((g) =>
                       (g.members || []).some(
                         (m) =>
@@ -1405,7 +1435,7 @@ export function FinanceProvider({ children }) {
             if (notifItem.kind === 'settlement') {
               const title = `🤝 ${notifItem.author} acertou R$ ${fmtAmt} em ${notifItem.groupName}`;
               const message = `${notifItem.author} pagou R$ ${fmtAmt} para ${notifItem.toMember} no grupo "${notifItem.groupName}".`;
-              pushGroupNotification({
+              pushGroupNotificationRef.current?.({
                 title,
                 message,
                 icon: 'swap-horizontal',
@@ -1427,7 +1457,7 @@ export function FinanceProvider({ children }) {
             } else {
               const title = `💸 ${notifItem.author} adicionou R$ ${fmtAmt} em ${notifItem.groupName}`;
               const message = `${notifItem.author} adicionou "${notifItem.description}" no valor de R$ ${fmtAmt} no grupo "${notifItem.groupName}".`;
-              pushGroupNotification({
+              pushGroupNotificationRef.current?.({
                 title,
                 message,
                 icon: 'cash-outline',
@@ -1470,15 +1500,15 @@ export function FinanceProvider({ children }) {
 
     inFlightGroupRefreshMapRef.current.set(dedupeKey, refreshPromise);
     return refreshPromise;
-  };
+  }, [saveUserItem]);
 
   /**
    * Atualiza os dados do menu inicial (totais, contas, cartões, lançamentos recentes e resumo compartilhado)
    * consultando o servidor. Reaproveita consulta em andamento se dois gatilhos dispararem juntos.
    */
-  const refreshHomeData = async (options = {}) => {
+  const refreshHomeData = useCallback(async (options = {}) => {
     const { silent = false } = options || {};
-    const reqUserId = loggedInUserRef.current?.id || loggedInUser?.id;
+    const reqUserId = loggedInUserRef.current?.id;
     if (!reqUserId) {
       return { success: false, error: 'Sessão não autenticada' };
     }
@@ -1498,7 +1528,7 @@ export function FinanceProvider({ children }) {
       try {
         await Promise.resolve();
         const [personalRes, groupRes] = await Promise.all([
-          syncWithPostgres({
+          syncWithPostgresRef.current({
             force: true,
             overrideCards: cardsRef.current,
             overrideAccounts: accountsRef.current,
@@ -1543,13 +1573,13 @@ export function FinanceProvider({ children }) {
 
     inFlightHomeRefreshRef.current = { userId: reqUserId, promise };
     return promise;
-  };
+  }, [refreshGroupData]);
 
   // Carrega dados de grupos uma única vez ao iniciar sessão (sem polling periódico)
   useEffect(() => {
-    if (!loggedInUser?.id) return;
+    if (!loaded || !loggedInUser?.id) return;
     refreshGroupData(null, { source: 'init', silent: true }).catch(() => {});
-  }, [loggedInUser?.id]);
+  }, [loaded, loggedInUser?.id, refreshGroupData]);
 
   const toggleHideBalances = async () => {
     const nextVal = !hideBalances;
@@ -2477,10 +2507,11 @@ export function FinanceProvider({ children }) {
     await saveUserItem('view_mode', mode);
   };
 
-  const setActiveGroupId = async (id) => {
+  const setActiveGroupId = useCallback(async (id) => {
+    activeGroupIdRef.current = id;
     setActiveGroupIdState(id);
     await saveUserItem('active_group_id', id);
-  };
+  }, [saveUserItem]);
 
   // Módulo Finanças Compartilhadas: Criar Grupo
   const createSharedGroup = async ({ name, type = 'Casal', description = '' }) => {

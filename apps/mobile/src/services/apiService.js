@@ -1462,13 +1462,32 @@ export async function fetchSharedGroupTransactionsApi(groups = [], options = {})
   let anySuccess = false;
   let lastError = null;
 
+  const targetGroupObj = targetGroupId
+    ? scopedGroups.find(
+        (g) => String(g?.id) === String(targetGroupId) || String(g?.remoteId) === String(targetGroupId)
+      )
+    : null;
+  const targetGroupValidIds = targetGroupId
+    ? new Set([targetGroupId, targetGroupObj?.id, targetGroupObj?.remoteId].filter(Boolean).map(String))
+    : null;
+
   const isTxAllowedForGroups = (tx, fallbackGroupId = null) => {
     const meta = parseSharedNotes(tx?.notes || '');
-    const txGroupId = meta?.groupId || fallbackGroupId || null;
-    if (txGroupId && !allowedGroupIds.has(String(txGroupId))) {
+    let txGroupId = meta?.groupId || fallbackGroupId || null;
+    if (!txGroupId && meta?.groupName) {
+      const nameNorm = String(meta.groupName).trim().toLowerCase();
+      const matched = scopedGroups.find(
+        (g) => g?.name && String(g.name).trim().toLowerCase() === nameNorm
+      );
+      if (matched) txGroupId = matched.remoteId || matched.id;
+    }
+    if (!txGroupId && scopedGroups.length === 1) {
+      txGroupId = scopedGroups[0]?.remoteId || scopedGroups[0]?.id || null;
+    }
+    if (!txGroupId || !allowedGroupIds.has(String(txGroupId))) {
       return false;
     }
-    if (targetGroupId && txGroupId && String(txGroupId) !== String(targetGroupId)) {
+    if (targetGroupValidIds && !targetGroupValidIds.has(String(txGroupId))) {
       return false;
     }
     return true;
@@ -1563,13 +1582,25 @@ export async function fetchSharedGroupTransactionsApi(groups = [], options = {})
             if (!isShared) continue;
 
             const meta = parseSharedNotes(tx.notes || '');
-            // Se a transação possui groupId explícito de outro grupo, só aceita se pertencer ao grupo desse membro
-            if (meta?.groupId && String(meta.groupId) !== String(member.groupId)) {
-              if (!allowedGroupIds.has(String(meta.groupId))) continue;
-              if (targetGroupId && String(meta.groupId) !== String(targetGroupId)) continue;
+            let resolvedGroupId = meta?.groupId || null;
+
+            if (!resolvedGroupId && meta?.groupName) {
+              const nameNorm = String(meta.groupName).trim().toLowerCase();
+              const matchedByName = scopedGroups.find(
+                (g) => g?.name && String(g.name).trim().toLowerCase() === nameNorm
+              );
+              if (matchedByName) {
+                resolvedGroupId = matchedByName.remoteId || matchedByName.id;
+              }
             }
 
-            const resolvedGroupId = meta?.groupId || member.groupId;
+            // Só usa fallback de member.groupId quando o usuário participa de apenas 1 grupo
+            // para evitar que transações sem groupId oscilem entre múltiplos grupos.
+            if (!resolvedGroupId && scopedGroups.length === 1) {
+              resolvedGroupId = member.groupId;
+            }
+
+            if (!resolvedGroupId) continue;
             if (!allowedGroupIds.has(String(resolvedGroupId))) continue;
             if (targetGroupId && String(resolvedGroupId) !== String(targetGroupId)) continue;
 

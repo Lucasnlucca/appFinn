@@ -6,6 +6,7 @@ import {
   StyleSheet,
   ScrollView,
   RefreshControl,
+  Animated,
   TouchableOpacity,
   TouchableWithoutFeedback,
   StatusBar,
@@ -112,6 +113,32 @@ export default function HomeScreen({ navigation }) {
   const [isPullRefreshing, setIsPullRefreshing] = useState(false);
   const [refreshBannerMsg, setRefreshBannerMsg] = useState(null);
   const appStateRef = useRef(AppState.currentState);
+  const [viewSelectorWidth, setViewSelectorWidth] = useState(0);
+  const viewModeSlideAnim = useRef(new Animated.Value(0)).current;
+  const viewModeTabs = useMemo(
+    () => [
+      { id: 'personal', label: 'Pessoal', icon: 'person-outline', activeIcon: 'person' },
+      { id: 'shared', label: 'Grupos', icon: 'people-outline', activeIcon: 'people' },
+      { id: 'consolidated', label: 'Tudo', icon: 'layers-outline', activeIcon: 'layers' },
+    ],
+    []
+  );
+  const activeViewModeIndex = Math.max(
+    0,
+    viewModeTabs.findIndex((t) => t.id === (viewMode || 'personal'))
+  );
+  const viewModeTabWidth = viewSelectorWidth > 8 ? (viewSelectorWidth - 8) / viewModeTabs.length : 0;
+
+  useEffect(() => {
+    if (viewModeTabWidth <= 0) return;
+    Animated.spring(viewModeSlideAnim, {
+      toValue: activeViewModeIndex * viewModeTabWidth,
+      useNativeDriver: true,
+      damping: 18,
+      stiffness: 210,
+      mass: 0.7,
+    }).start();
+  }, [activeViewModeIndex, viewModeTabWidth, viewModeSlideAnim]);
 
   const [notificationsModalVisible, setNotificationsModalVisible] = useState(false);
   const [notifFilterTab, setNotifFilterTab] = useState('Todas');
@@ -183,7 +210,12 @@ export default function HomeScreen({ navigation }) {
 
   const activeSharedGroup = useMemo(() => {
     if (sharedGroups && sharedGroups.length > 0) {
-      return sharedGroups.find((g) => g.id === activeGroupId) || sharedGroups[0];
+      if (!activeGroupId) return sharedGroups[0];
+      return (
+        sharedGroups.find(
+          (g) => String(g.id) === String(activeGroupId) || String(g.remoteId) === String(activeGroupId)
+        ) || sharedGroups[0]
+      );
     }
     return null;
   }, [sharedGroups, activeGroupId]);
@@ -568,107 +600,88 @@ export default function HomeScreen({ navigation }) {
           <Text style={styles.greetingSub}>Aqui está o resumo das suas finanças.</Text>
         </View>
 
-        {/* SELETOR DE MODO DE VISUALIZAÇÃO: Minhas | Compartilhadas | Consolidada */}
-        {isTablet ? (
-          <View style={styles.viewModeContainer}>
-            <View style={styles.viewModePillGroup}>
-              {[
-                { id: 'personal', label: 'Minhas' },
-                { id: 'shared', label: 'Compartilhadas' },
-                { id: 'consolidated', label: 'Consolidada' },
-              ].map((tab) => {
-                const active = (viewMode || 'personal') === tab.id;
-                return (
-                  <TouchableOpacity
-                    key={tab.id}
-                    style={[styles.viewModePill, active && styles.viewModePillActive]}
-                    onPress={() => setViewMode && setViewMode(tab.id)}
-                    activeOpacity={0.8}
-                  >
-                    <Text style={[styles.viewModePillText, active && styles.viewModePillTextActive]}>
-                      {tab.label}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-
-            {viewMode === 'shared' && (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <TouchableOpacity
-                  style={styles.openDivideBtn}
-                  onPress={() => navigation.navigate('SharedFinances', { initialTab: 'divisao' })}
-                  activeOpacity={0.8}
-                >
-                  <Ionicons name="pie-chart-outline" size={13} color="#7C3AED" />
-                  <Text style={styles.openDivideBtnText}>Dividir Conta</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.openSharedBtn}
-                  onPress={() => navigation.navigate('SharedFinances')}
-                  activeOpacity={0.8}
-                >
-                  <Ionicons name="people" size={13} color="#7C3AED" />
-                  <Text style={styles.openSharedBtnText}>Ver Grupo</Text>
-                  <Ionicons name="chevron-forward" size={12} color="#7C3AED" />
-                </TouchableOpacity>
-              </View>
-            )}
-          </View>
-        ) : (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.viewModeScrollWrap}
-            contentContainerStyle={styles.viewModeScrollContainer}
+        {/* SELETOR ANIMADO DE MODO DE VISUALIZAÇÃO: Pessoal | Grupos | Tudo */}
+        <View style={styles.viewModeOuterWrap}>
+          <View
+            style={styles.viewModePillGroup}
+            onLayout={(e) => {
+              const w = e.nativeEvent.layout.width;
+              if (w > 0 && Math.abs(w - viewSelectorWidth) > 0.5) {
+                setViewSelectorWidth(w);
+              }
+            }}
           >
-            <View style={styles.viewModePillGroup}>
-              {[
-                { id: 'personal', label: 'Minhas' },
-                { id: 'shared', label: 'Compartilhadas' },
-                { id: 'consolidated', label: 'Consolidada' },
-              ].map((tab) => {
-                const active = (viewMode || 'personal') === tab.id;
-                return (
-                  <TouchableOpacity
-                    key={tab.id}
-                    style={[styles.viewModePill, active && styles.viewModePillActive]}
-                    onPress={() => setViewMode && setViewMode(tab.id)}
-                    activeOpacity={0.8}
-                  >
-                    <Text style={[styles.viewModePillText, active && styles.viewModePillTextActive]}>
-                      {tab.label}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-
-            {viewMode === 'shared' && (
-              <View style={styles.viewModeSharedActionsRow}>
-                <TouchableOpacity
-                  style={styles.openDivideBtn}
-                  onPress={() => navigation.navigate('SharedFinances', { initialTab: 'divisao' })}
-                  activeOpacity={0.8}
-                >
-                  <Ionicons name="pie-chart-outline" size={13} color="#7C3AED" />
-                  <Text style={styles.openDivideBtnText}>Dividir Conta</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.openSharedBtn}
-                  onPress={() => navigation.navigate('SharedFinances')}
-                  activeOpacity={0.8}
-                >
-                  <Ionicons name="people" size={13} color="#7C3AED" />
-                  <Text style={styles.openSharedBtnText}>Ver Grupo</Text>
-                  <Ionicons name="chevron-forward" size={12} color="#7C3AED" />
-                </TouchableOpacity>
-              </View>
+            {viewModeTabWidth > 0 && (
+              <Animated.View
+                pointerEvents="none"
+                style={[
+                  styles.viewModeSlidingIndicator,
+                  {
+                    width: viewModeTabWidth,
+                    transform: [{ translateX: viewModeSlideAnim }],
+                  },
+                ]}
+              >
+                <LinearGradient
+                  colors={['#7C3AED', '#5B21B6']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={StyleSheet.absoluteFill}
+                />
+              </Animated.View>
             )}
-          </ScrollView>
-        )}
+
+            {viewModeTabs.map((tab) => {
+              const active = (viewMode || 'personal') === tab.id;
+              return (
+                <TouchableOpacity
+                  key={tab.id}
+                  style={styles.viewModePill}
+                  onPress={() => setViewMode && setViewMode(tab.id)}
+                  activeOpacity={0.85}
+                >
+                  <Ionicons
+                    name={active ? tab.activeIcon : tab.icon}
+                    size={21}
+                    color={active ? '#FFFFFF' : '#52525B'}
+                  />
+                  <Text
+                    style={[
+                      styles.viewModePillText,
+                      active && styles.viewModePillTextActive,
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {tab.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {viewMode === 'shared' && (
+            <View style={styles.viewModeSharedActionsRow}>
+              <TouchableOpacity
+                style={styles.openDivideBtn}
+                onPress={() => navigation.navigate('SharedFinances', { initialTab: 'divisao' })}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="pie-chart-outline" size={14} color="#7C3AED" />
+                <Text style={styles.openDivideBtnText}>Dividir Conta</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.openSharedBtn}
+                onPress={() => navigation.navigate('SharedFinances')}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="people" size={14} color="#7C3AED" />
+                <Text style={styles.openSharedBtnText}>Ver Grupo</Text>
+                <Ionicons name="chevron-forward" size={13} color="#7C3AED" />
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
 
         {/* CARD HERO ROBÔ COM VÍDEO NATIVO E SALDO */}
         <View style={styles.heroCardContainer}>
@@ -2870,57 +2883,53 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     gap: 14,
   },
-  viewModeContainer: {
-    paddingHorizontal: 4,
-    marginBottom: 4,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  viewModeScrollWrap: {
-    marginHorizontal: -16,
-    marginBottom: 4,
-  },
-  viewModeScrollContainer: {
-    paddingHorizontal: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+  viewModeOuterWrap: {
+    marginBottom: 8,
+    gap: 10,
   },
   viewModeSharedActionsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    justifyContent: 'flex-end',
+    gap: 8,
   },
   viewModePillGroup: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F1F5F9',
+    backgroundColor: '#EDE7F8',
+    borderRadius: 24,
+    padding: 4,
+    position: 'relative',
+  },
+  viewModeSlidingIndicator: {
+    position: 'absolute',
+    top: 4,
+    left: 4,
+    bottom: 4,
     borderRadius: 20,
-    padding: 3,
+    overflow: 'hidden',
+    shadowColor: '#6D28D9',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.28,
+    shadowRadius: 8,
+    elevation: 4,
   },
   viewModePill: {
-    height: 34,
-    paddingHorizontal: 12,
-    borderRadius: 17,
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  viewModePillActive: {
-    backgroundColor: '#FFFFFF',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
+    gap: 3,
+    zIndex: 1,
   },
   viewModePillText: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '600',
-    color: '#64748B',
+    color: '#3F3F46',
   },
   viewModePillTextActive: {
-    color: '#7C3AED',
+    color: '#FFFFFF',
     fontWeight: '700',
   },
   openDivideBtn: {

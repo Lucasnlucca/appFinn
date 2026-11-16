@@ -82,17 +82,21 @@ export default function SharedFinancesScreen({ navigation, route }) {
   const [modalGroupNotifs, setModalGroupNotifs] = useState(false);
   const [groupNotifFilterTab, setGroupNotifFilterTab] = useState('Todas');
 
+  const lastRouteGroupIdRef = useRef(null);
   useEffect(() => {
     if (route?.params?.initialTab) {
       setActiveTab(route.params.initialTab);
     }
-    if (route?.params?.groupId && setActiveGroupId) {
-      setActiveGroupId(route.params.groupId);
+    const routeGrpId = route?.params?.groupId || null;
+    if (routeGrpId && routeGrpId !== lastRouteGroupIdRef.current && setActiveGroupId) {
+      lastRouteGroupIdRef.current = routeGrpId;
+      setActiveGroupId(routeGrpId);
     }
-  }, [route?.params?.initialTab, route?.params?.groupId]);
+  }, [route?.params?.initialTab, route?.params?.groupId, setActiveGroupId]);
 
   // Modais
   const [modalNewGroup, setModalNewGroup] = useState(false);
+  const [modalGroupPicker, setModalGroupPicker] = useState(false);
   const [modalInvite, setModalInvite] = useState(false);
   const [modalJoin, setModalJoin] = useState(false);
   const [modalNewExpense, setModalNewExpense] = useState(false);
@@ -145,7 +149,13 @@ export default function SharedFinancesScreen({ navigation, route }) {
   const [serviceFeePercent, setServiceFeePercent] = useState(0); // 0, 10, 12, etc.
 
   const activeGroup = useMemo(() => {
-    return sharedGroups.find((g) => g.id === activeGroupId) || sharedGroups[0] || null;
+    if (!sharedGroups || sharedGroups.length === 0) return null;
+    if (!activeGroupId) return sharedGroups[0];
+    return (
+      sharedGroups.find(
+        (g) => String(g.id) === String(activeGroupId) || String(g.remoteId) === String(activeGroupId)
+      ) || sharedGroups[0]
+    );
   }, [sharedGroups, activeGroupId]);
 
   const activeGroupRef = useRef(activeGroup);
@@ -1153,38 +1163,51 @@ export default function SharedFinancesScreen({ navigation, route }) {
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <StatusBar barStyle="dark-content" backgroundColor="#F7F5FC" />
 
-      {/* CABEÇALHO COM VOLTAR, TÍTULO E AÇÃO DE CRIAR / CONVIDAR */}
+      {/* CABEÇALHO LIMPO COM SELETOR DE GRUPO, NOTIFICAÇÕES E CONVIDAR */}
       <View style={styles.topHeader}>
         <TouchableOpacity
           style={styles.backBtn}
           onPress={() => navigation?.goBack?.()}
           activeOpacity={0.7}
         >
-          <Ionicons name="arrow-back" size={24} color="#18181B" />
+          <Ionicons name="arrow-back" size={23} color="#18181B" />
         </TouchableOpacity>
 
-        <View style={styles.headerTitleWrap}>
-          <Text style={styles.headerTitle} numberOfLines={1}>
-            {activeGroup?.name || 'Finanças Compartilhadas'}
-          </Text>
+        <TouchableOpacity
+          style={styles.headerTitleWrap}
+          activeOpacity={sharedGroups.length > 0 ? 0.7 : 1}
+          onPress={() => {
+            if (sharedGroups.length > 0) setModalGroupPicker(true);
+          }}
+        >
+          <View style={styles.headerTitleRow}>
+            <Text style={styles.headerTitle} numberOfLines={1}>
+              {activeGroup?.name || 'Finanças Compartilhadas'}
+            </Text>
+            {sharedGroups.length > 0 && (
+              <Ionicons name="chevron-down" size={18} color="#18181B" style={{ marginTop: 2 }} />
+            )}
+          </View>
           <Text style={styles.headerSubtitle}>
-            {activeGroup ? `${groupMembers.length} participante${groupMembers.length > 1 ? 's' : ''} • ${activeGroup.type}` : 'Gestão conjunta'}
+            {activeGroup
+              ? `${activeGroup.type || 'Amigos'} · ${groupMembers.length} participante${groupMembers.length > 1 ? 's' : ''}`
+              : 'Gestão conjunta'}
           </Text>
-        </View>
+        </TouchableOpacity>
 
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
           <TouchableOpacity
             style={[styles.inviteHeaderBtn, { position: 'relative' }]}
             onPress={() => setModalGroupNotifs(true)}
             activeOpacity={0.8}
           >
-            <Ionicons name="notifications-outline" size={17} color="#7C3AED" />
+            <Ionicons name="notifications-outline" size={19} color="#6D28D9" />
             {unreadNotificationsCount > 0 && (
               <View
                 style={{
                   position: 'absolute',
-                  top: 6,
-                  right: 6,
+                  top: 7,
+                  right: 7,
                   width: 8,
                   height: 8,
                   borderRadius: 4,
@@ -1197,73 +1220,14 @@ export default function SharedFinancesScreen({ navigation, route }) {
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={styles.headerActionPill}
-            onPress={() => setModalNewGroup(true)}
-            activeOpacity={0.8}
-          >
-            <Ionicons name="add" size={17} color="#7C3AED" />
-            <Text style={styles.headerActionPillText}>Novo</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
             style={styles.inviteHeaderBtn}
             onPress={() => setModalInvite(true)}
             activeOpacity={0.8}
           >
-            <Ionicons name="person-add" size={16} color="#7C3AED" />
+            <Ionicons name="person-add" size={18} color="#6D28D9" />
           </TouchableOpacity>
         </View>
       </View>
-
-      {/* SELETOR HORIZONTAL DE TODOS OS GRUPOS (PERMITE TROCAR E ADICIONAR MAIS GRUPOS) */}
-      {sharedGroups.length > 0 && (
-        <View style={styles.groupsSelectorWrap}>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.groupsSelectorScroll}
-          >
-            {sharedGroups.map((grp) => {
-              const isSelected = grp.id === activeGroup?.id;
-              const count = grp.members?.length || 1;
-              return (
-                <TouchableOpacity
-                  key={grp.id}
-                  style={[styles.groupChip, isSelected && styles.groupChipActive]}
-                  onPress={() => setActiveGroupId(grp.id)}
-                  activeOpacity={0.8}
-                >
-                  <Ionicons
-                    name={grp.type === 'Casal' ? 'heart' : 'people'}
-                    size={14}
-                    color={isSelected ? '#FFFFFF' : '#7C3AED'}
-                  />
-                  <Text
-                    style={[styles.groupChipText, isSelected && styles.groupChipTextActive]}
-                    numberOfLines={1}
-                  >
-                    {grp.name}
-                  </Text>
-                  <View style={[styles.groupChipBadge, isSelected && styles.groupChipBadgeActive]}>
-                    <Text style={[styles.groupChipBadgeText, isSelected && styles.groupChipBadgeTextActive]}>
-                      {count}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
-
-            <TouchableOpacity
-              style={styles.addGroupChip}
-              onPress={() => setModalNewGroup(true)}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="add-circle-outline" size={16} color="#7C3AED" />
-              <Text style={styles.addGroupChipText}>+ Criar grupo</Text>
-            </TouchableOpacity>
-          </ScrollView>
-        </View>
-      )}
 
       {/* SE O USUÁRIO AINDA NÃO TEM GRUPO: TELA DE PRIMEIRO ACESSO */}
       {sharedGroups.length === 0 ? (
@@ -1367,40 +1331,32 @@ export default function SharedFinancesScreen({ navigation, route }) {
         </ScrollView>
       ) : (
         <>
-          {/* ABAS DO MÓDULO: DASHBOARD | DIVIDIR CONTA | ACERTO DE CONTAS | MEMBROS */}
+          {/* ABAS LIMPAS COM INDICADOR ROXO INFERIOR */}
           <View style={styles.tabsContainer}>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.tabsRow}
-            >
+            <View style={styles.tabsRow}>
               <TouchableOpacity
                 style={[styles.tabBtn, activeTab === 'dashboard' && styles.tabBtnActive]}
                 onPress={() => setActiveTab('dashboard')}
                 activeOpacity={0.8}
               >
-                <Ionicons
-                  name={activeTab === 'dashboard' ? 'grid' : 'grid-outline'}
-                  size={14}
-                  color={activeTab === 'dashboard' ? '#FFFFFF' : '#64748B'}
-                />
-                <Text style={[styles.tabBtnText, activeTab === 'dashboard' && styles.tabBtnTextActive]}>
+                <Text
+                  style={[styles.tabBtnText, activeTab === 'dashboard' && styles.tabBtnTextActive]}
+                  numberOfLines={1}
+                >
                   Painel
                 </Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[styles.tabBtn, activeTab === 'divisao' && styles.tabBtnActive]}
+                style={[styles.tabBtn, { flex: 1.2 }, activeTab === 'divisao' && styles.tabBtnActive]}
                 onPress={() => setActiveTab('divisao')}
                 activeOpacity={0.8}
               >
-                <Ionicons
-                  name={activeTab === 'divisao' ? 'pie-chart' : 'pie-chart-outline'}
-                  size={14}
-                  color={activeTab === 'divisao' ? '#FFFFFF' : '#64748B'}
-                />
-                <Text style={[styles.tabBtnText, activeTab === 'divisao' && styles.tabBtnTextActive]}>
-                  Dividir Conta
+                <Text
+                  style={[styles.tabBtnText, activeTab === 'divisao' && styles.tabBtnTextActive]}
+                  numberOfLines={1}
+                >
+                  Dividir conta
                 </Text>
               </TouchableOpacity>
 
@@ -1409,12 +1365,10 @@ export default function SharedFinancesScreen({ navigation, route }) {
                 onPress={() => setActiveTab('acertos')}
                 activeOpacity={0.8}
               >
-                <Ionicons
-                  name={activeTab === 'acertos' ? 'swap-horizontal' : 'swap-horizontal-outline'}
-                  size={15}
-                  color={activeTab === 'acertos' ? '#FFFFFF' : '#64748B'}
-                />
-                <Text style={[styles.tabBtnText, activeTab === 'acertos' && styles.tabBtnTextActive]}>
+                <Text
+                  style={[styles.tabBtnText, activeTab === 'acertos' && styles.tabBtnTextActive]}
+                  numberOfLines={1}
+                >
                   Acertos
                 </Text>
               </TouchableOpacity>
@@ -1424,16 +1378,14 @@ export default function SharedFinancesScreen({ navigation, route }) {
                 onPress={() => setActiveTab('membros')}
                 activeOpacity={0.8}
               >
-                <Ionicons
-                  name={activeTab === 'membros' ? 'people' : 'people-outline'}
-                  size={14}
-                  color={activeTab === 'membros' ? '#FFFFFF' : '#64748B'}
-                />
-                <Text style={[styles.tabBtnText, activeTab === 'membros' && styles.tabBtnTextActive]}>
-                  Membros ({groupMembers.length})
+                <Text
+                  style={[styles.tabBtnText, activeTab === 'membros' && styles.tabBtnTextActive]}
+                  numberOfLines={1}
+                >
+                  Membros
                 </Text>
               </TouchableOpacity>
-            </ScrollView>
+            </View>
           </View>
 
           <ScrollView
@@ -1492,118 +1444,120 @@ export default function SharedFinancesScreen({ navigation, route }) {
             {/* ============================================================== */}
             {activeTab === 'dashboard' && (
               <>
-                {/* CARD RESUMO PRINCIPAL DO GRUPO (SALDO EM ABERTO CONFIRMADO) */}
+                {/* HERO CARD PRINCIPAL DO GRUPO */}
                 <LinearGradient
-                  colors={['#7C3AED', '#9333EA']}
+                  colors={['#3B0764', '#5B21B6', '#7C3AED']}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
                   style={styles.summaryCard}
                 >
-                  <View style={styles.summaryTopRow}>
-                    <Text style={styles.summaryLabel}>Saldo em aberto no grupo</Text>
-                    <View style={styles.badgeGroupType}>
-                      <Text style={styles.badgeGroupTypeText}>{activeGroup?.type || 'Casal'}</Text>
-                    </View>
-                  </View>
+                  {/* Elementos visuais decorativos sutis no canto direito */}
+                  <View style={styles.heroDecorArcOuter} pointerEvents="none" />
+                  <View style={styles.heroDecorArcInner} pointerEvents="none" />
+
+                  <Text style={styles.summaryLabel}>Saldo em aberto</Text>
                   <Text style={styles.summaryValue}>{formatMoney(openGroupBalance)}</Text>
 
-                  <View style={[styles.splitsSummaryRow, { marginTop: 8, marginBottom: 4 }]}>
-                    <View style={styles.memberSharePill}>
-                      <Ionicons name="receipt-outline" size={13} color="#FFFFFF" />
-                      <Text style={styles.memberShareText}>
-                        Gastos: {formatMoney(totalSharedGrossSpent)}
-                      </Text>
-                    </View>
-                    <View style={styles.memberSharePill}>
-                      <Ionicons name="checkmark-done-outline" size={13} color="#FFFFFF" />
-                      <Text style={styles.memberShareText}>
-                        Abatimentos: {formatMoney(totalSharedSettled)}
-                      </Text>
-                    </View>
-                  </View>
-
-                  {/* Divisão Rápida entre Participantes */}
-                  <View style={styles.splitsSummaryRow}>
-                    {groupMembers.map((m, idx) => (
-                      <View key={m.id || idx} style={styles.memberSharePill}>
-                        <Ionicons name="person" size={13} color="#FFFFFF" />
-                        <Text style={styles.memberShareText}>
-                          {m.name}: {formatMoney(openGroupBalance / (groupMembers.length || 1))}
-                        </Text>
+                  <View style={styles.heroStatsRow}>
+                    <View style={styles.heroStatItem}>
+                      <Ionicons name="receipt-outline" size={20} color="rgba(255,255,255,0.85)" />
+                      <View>
+                        <Text style={styles.heroStatLabel}>Gastos</Text>
+                        <Text style={styles.heroStatValue}>{formatMoney(totalSharedGrossSpent)}</Text>
                       </View>
-                    ))}
+                    </View>
+
+                    <View style={styles.heroStatDivider} />
+
+                    <View style={styles.heroStatItem}>
+                      <Ionicons name="checkmark-circle-outline" size={20} color="rgba(255,255,255,0.85)" />
+                      <View>
+                        <Text style={styles.heroStatLabel}>Abatimentos</Text>
+                        <Text style={styles.heroStatValue}>{formatMoney(totalSharedSettled)}</Text>
+                      </View>
+                    </View>
                   </View>
                 </LinearGradient>
 
-                {/* CARD DE DESTAQUE: ACERTO RÁPIDO */}
-                <View style={styles.quickDebtsCard}>
-                  <View style={styles.quickDebtsIconCircle}>
-                    <Ionicons name="swap-horizontal" size={20} color="#7C3AED" />
+                {/* CARD: DIVISÃO POR PARTICIPANTE */}
+                <View style={styles.divisionCard}>
+                  <Text style={styles.divisionCardTitle}>Divisão por participante</Text>
+                  <View style={{ gap: 12 }}>
+                    {groupMembers.map((m, idx) => {
+                      const rawName = String(m.name || 'Participante').trim();
+                      const parts = rawName.split(/\s+/).filter(Boolean);
+                      const initials =
+                        parts.length >= 2
+                          ? `${parts[0][0]}${parts[1][0]}`.toUpperCase()
+                          : rawName.slice(0, 2).toUpperCase();
+                      const perMemberShare = openGroupBalance / (groupMembers.length || 1);
+                      return (
+                        <View key={m.id || idx} style={styles.divisionMemberRow}>
+                          <View style={styles.divisionAvatar}>
+                            <Text style={styles.divisionAvatarText}>{initials}</Text>
+                          </View>
+                          <Text style={styles.divisionMemberName} numberOfLines={1}>
+                            {rawName}
+                          </Text>
+                          <Text style={styles.divisionMemberAmount}>
+                            {formatMoney(perMemberShare)}
+                          </Text>
+                        </View>
+                      );
+                    })}
                   </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.quickDebtsTitle}>
-                      Saldo em Aberto: {formatMoney(openGroupBalance)}
-                    </Text>
-                    <Text style={styles.quickDebtsDesc}>
+                </View>
+
+                {/* CARD: ACERTO PENDENTE */}
+                <View style={styles.quickDebtsCard}>
+                  <Text style={styles.quickDebtsTitle}>
+                    {openGroupBalance > 0 ? 'Acerto pendente' : 'Tudo acertado! 🎉'}
+                  </Text>
+                  <View style={styles.quickDebtsRow}>
+                    <Text style={styles.quickDebtsDesc} numberOfLines={2}>
                       {openGroupBalance > 0
                         ? debtsCalculation.netOwed > 0
-                          ? `${debtsCalculation.member2} deve para ${debtsCalculation.member1} • Restam ${formatMoney(openGroupBalance)} em aberto`
+                          ? `${debtsCalculation.member2.split(' ')[0]} deve a ${debtsCalculation.member1.split(' ')[0]}`
                           : debtsCalculation.netOwed < 0
-                            ? `${debtsCalculation.member1} deve para ${debtsCalculation.member2} • Restam ${formatMoney(openGroupBalance)} em aberto`
-                            : `Restam ${formatMoney(openGroupBalance)} em aberto no grupo`
-                        : 'Tudo acertado! Saldo em aberto zerado no momento. 🎉'}
+                            ? `${debtsCalculation.member1.split(' ')[0]} deve a ${debtsCalculation.member2.split(' ')[0]}`
+                            : 'Saldo em aberto no grupo'
+                        : 'Saldo em aberto zerado no momento.'}
                     </Text>
+                    {openGroupBalance > 0 && (
+                      <Text style={styles.quickDebtsAmount}>{formatMoney(openGroupBalance)}</Text>
+                    )}
                   </View>
                   {openGroupBalance > 0 && (
                     <TouchableOpacity
-                      style={styles.btnPagarPill}
+                      style={styles.btnPagarOutline}
+                      activeOpacity={0.8}
                       onPress={() => {
                         setSettleAmount(String(openGroupBalance));
                         setModalSettlement(true);
                       }}
                     >
-                      <Text style={styles.btnPagarPillText}>Abater</Text>
+                      <Text style={styles.btnPagarOutlineText}>Abater valor</Text>
                     </TouchableOpacity>
                   )}
                 </View>
 
-                {/* BANNER DIVIDIR CONTA OU DESPESA COM ITENS */}
-                <TouchableOpacity
-                  style={styles.billSplitBanner}
-                  onPress={() => setActiveTab('divisao')}
-                  activeOpacity={0.88}
-                >
-                  <LinearGradient
-                    colors={['#7C3AED', '#6D28D9']}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                    style={styles.billSplitBannerGradient}
-                  >
-                    <View style={styles.billSplitBannerIcon}>
-                      <Ionicons name="pie-chart" size={22} color="#FFFFFF" />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.billSplitBannerTitle}>Dividir Conta do Grupo</Text>
-                      <Text style={styles.billSplitBannerSub}>
-                        Rache valores igualmente ou selecione o consumo individual de cada membro
-                      </Text>
-                    </View>
-                    <Ionicons name="arrow-forward-circle" size={24} color="#FFFFFF" />
-                  </LinearGradient>
-                </TouchableOpacity>
-
-                {/* BOTÃO ADICIONAR DESPESA COMPARTILHADA */}
+                {/* BOTÃO PRINCIPAL: LANÇAR DESPESA COMPARTILHADA */}
                 <TouchableOpacity
                   style={styles.btnNovaDespesa}
                   onPress={() => setModalNewExpense(true)}
                   activeOpacity={0.85}
                 >
-                  <Ionicons name="add-circle" size={20} color="#FFFFFF" />
+                  <Ionicons name="add" size={22} color="#FFFFFF" />
                   <Text style={styles.btnNovaDespesaText}>Lançar despesa compartilhada</Text>
                 </TouchableOpacity>
 
                 {/* HISTÓRICO DE DESPESAS COMPARTILHADAS */}
-                <Text style={styles.sectionTitle}>Despesas do grupo ({sharedTxs.length})</Text>
+                <View style={styles.sectionHeaderRow}>
+                  <Text style={styles.sectionTitle}>
+                    Despesas do grupo{' '}
+                    <Text style={styles.sectionCount}>({sharedTxs.length})</Text>
+                  </Text>
+                </View>
 
                 {sharedTxs.length === 0 ? (
                   <View style={styles.emptyBox}>
@@ -1623,21 +1577,18 @@ export default function SharedFinancesScreen({ navigation, route }) {
                     >
                       <View style={styles.txSharedLeft}>
                         <View style={styles.txCategoryIcon}>
-                          <Ionicons name="cart-outline" size={18} color="#7C3AED" />
+                          <Ionicons name="cart-outline" size={19} color="#6D28D9" />
                         </View>
-                        <View>
-                          <Text style={styles.txSharedDesc}>{t.description || t.title}</Text>
-                          <Text style={styles.txSharedMeta}>
-                            Pago por {t.paidBy || 'Você'} • Toque para editar
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.txSharedDesc} numberOfLines={1}>
+                            {t.description || t.title}
+                          </Text>
+                          <Text style={styles.txSharedMeta} numberOfLines={1}>
+                            Pago por {t.paidBy || 'Você'}
                           </Text>
                         </View>
                       </View>
-                      <View style={{ alignItems: 'flex-end' }}>
-                        <Text style={styles.txSharedAmount}>{formatMoney(t.amount)}</Text>
-                        <Text style={styles.txSharedEach}>
-                          {formatMoney((t.amount || 0) / (groupMembers.length || 2))} cada
-                        </Text>
-                      </View>
+                      <Text style={styles.txSharedAmount}>{formatMoney(t.amount)}</Text>
                     </TouchableOpacity>
                   ))
                 )}
@@ -3695,6 +3646,89 @@ export default function SharedFinancesScreen({ navigation, route }) {
         </View>
       </Modal>
 
+      {/* MODAL SELETOR DE GRUPOS (AO TOCAR NO NOME DO GRUPO NO TOPO) */}
+      <Modal
+        visible={modalGroupPicker}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setModalGroupPicker(false)}
+      >
+        <TouchableOpacity
+          style={styles.groupPickerOverlay}
+          activeOpacity={1}
+          onPress={() => setModalGroupPicker(false)}
+        >
+          <TouchableOpacity activeOpacity={1} style={styles.groupPickerSheet}>
+            <View style={styles.groupPickerHeader}>
+              <Text style={styles.groupPickerTitle}>Selecionar Grupo</Text>
+              <TouchableOpacity onPress={() => setModalGroupPicker(false)}>
+                <Ionicons name="close" size={22} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={{ maxHeight: 320 }} showsVerticalScrollIndicator={false}>
+              {sharedGroups.map((grp) => {
+                const isSelected =
+                  String(grp.id) === String(activeGroup?.id) ||
+                  (grp.remoteId && String(grp.remoteId) === String(activeGroup?.id));
+                const count = grp.members?.length || 1;
+                return (
+                  <TouchableOpacity
+                    key={grp.id}
+                    style={[styles.groupPickerItem, isSelected && styles.groupPickerItemActive]}
+                    activeOpacity={0.8}
+                    onPress={() => {
+                      setActiveGroupId(grp.id);
+                      setModalGroupPicker(false);
+                    }}
+                  >
+                    <View style={[styles.groupPickerIcon, isSelected && styles.groupPickerIconActive]}>
+                      <Ionicons
+                        name={grp.type === 'Casal' ? 'heart' : 'people'}
+                        size={18}
+                        color={isSelected ? '#FFFFFF' : '#6D28D9'}
+                      />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.groupPickerName, isSelected && styles.groupPickerNameActive]}>
+                        {grp.name}
+                      </Text>
+                      <Text style={styles.groupPickerSub}>
+                        {grp.type || 'Amigos'} · {count} participante{count > 1 ? 's' : ''}
+                      </Text>
+                    </View>
+                    {isSelected && <Ionicons name="checkmark-circle" size={22} color="#6D28D9" />}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+
+            <View style={styles.groupPickerFooter}>
+              <TouchableOpacity
+                style={styles.groupPickerCreateBtn}
+                onPress={() => {
+                  setModalGroupPicker(false);
+                  setModalNewGroup(true);
+                }}
+              >
+                <Ionicons name="add-circle-outline" size={18} color="#FFFFFF" />
+                <Text style={styles.groupPickerCreateText}>Novo grupo</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.groupPickerJoinBtn}
+                onPress={() => {
+                  setModalGroupPicker(false);
+                  setModalJoin(true);
+                }}
+              >
+                <Ionicons name="key-outline" size={18} color="#6D28D9" />
+                <Text style={styles.groupPickerJoinText}>Usar código</Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
+
       <EditTransactionModal
         visible={!!editingSharedTx}
         transaction={editingSharedTx}
@@ -3731,20 +3765,26 @@ const styles = StyleSheet.create({
     flex: 1,
     marginLeft: 8,
   },
+  headerTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
   headerTitle: {
-    fontSize: 18,
+    fontSize: 19,
     fontWeight: '800',
     color: '#18181B',
+    maxWidth: '85%',
   },
   headerSubtitle: {
-    fontSize: 12,
+    fontSize: 12.5,
     color: '#71717A',
     marginTop: 1,
   },
   inviteHeaderBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: '#EDE9FE',
     alignItems: 'center',
     justifyContent: 'center',
@@ -3837,142 +3877,206 @@ const styles = StyleSheet.create({
     color: '#7C3AED',
   },
   tabsContainer: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#F7F5FC',
     borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
-    paddingVertical: 8,
+    borderBottomColor: '#E9E5F5',
+    paddingHorizontal: 16,
   },
   tabsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    gap: 8,
   },
   tabBtn: {
-    height: 38,
-    paddingHorizontal: 16,
-    borderRadius: 19,
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    flexDirection: 'row',
+    flex: 1,
+    paddingVertical: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
+    borderBottomWidth: 2.5,
+    borderBottomColor: 'transparent',
   },
   tabBtnActive: {
-    backgroundColor: '#7C3AED',
-    borderColor: '#7C3AED',
-    shadowColor: '#7C3AED',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 3,
+    borderBottomColor: '#6D28D9',
   },
   tabBtnText: {
-    fontSize: 13,
+    fontSize: 13.5,
     fontWeight: '600',
-    color: '#64748B',
+    color: '#71717A',
   },
   tabBtnTextActive: {
-    color: '#FFFFFF',
+    color: '#6D28D9',
     fontWeight: '700',
   },
   contentScroll: {
     padding: 16,
   },
   summaryCard: {
-    borderRadius: 22,
+    borderRadius: 20,
     padding: 20,
-    marginBottom: 16,
+    marginBottom: 14,
+    overflow: 'hidden',
+    position: 'relative',
+    shadowColor: '#5B21B6',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2,
+    shadowRadius: 14,
+    elevation: 6,
   },
-  summaryTopRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+  heroDecorArcOuter: {
+    position: 'absolute',
+    right: -36,
+    top: -32,
+    width: 155,
+    height: 155,
+    borderRadius: 78,
+    backgroundColor: 'rgba(192, 132, 252, 0.22)',
+  },
+  heroDecorArcInner: {
+    position: 'absolute',
+    right: -12,
+    top: -10,
+    width: 112,
+    height: 112,
+    borderRadius: 56,
+    backgroundColor: 'rgba(216, 180, 254, 0.16)',
   },
   summaryLabel: {
-    fontSize: 13,
-    color: 'rgba(255, 255, 255, 0.85)',
-    fontWeight: '600',
-  },
-  badgeGroupType: {
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 10,
-  },
-  badgeGroupTypeText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#FFFFFF',
+    fontSize: 13.5,
+    color: 'rgba(255, 255, 255, 0.88)',
+    fontWeight: '500',
   },
   summaryValue: {
-    fontSize: 30,
-    fontWeight: '900',
+    fontSize: 34,
+    fontWeight: '800',
     color: '#FFFFFF',
-    marginVertical: 10,
+    marginTop: 4,
+    marginBottom: 18,
+    letterSpacing: -0.5,
   },
-  splitsSummaryRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginTop: 6,
-  },
-  memberSharePill: {
+  heroStatsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-    backgroundColor: 'rgba(255, 255, 255, 0.18)',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 12,
+    paddingTop: 2,
   },
-  memberShareText: {
-    fontSize: 11.5,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  quickDebtsCard: {
+  heroStatItem: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 10,
+  },
+  heroStatDivider: {
+    width: 1,
+    height: 32,
+    backgroundColor: 'rgba(255, 255, 255, 0.24)',
+    marginHorizontal: 14,
+  },
+  heroStatLabel: {
+    fontSize: 12,
+    color: 'rgba(255, 255, 255, 0.78)',
+    fontWeight: '500',
+  },
+  heroStatValue: {
+    fontSize: 15.5,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    marginTop: 1,
+  },
+  divisionCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 18,
-    padding: 16,
-    marginBottom: 16,
+    padding: 18,
+    marginBottom: 12,
     borderWidth: 1,
     borderColor: '#EFEAF8',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  divisionCardTitle: {
+    fontSize: 15.5,
+    fontWeight: '700',
+    color: '#18181B',
+    marginBottom: 14,
+  },
+  divisionMemberRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 12,
   },
-  quickDebtsIconCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#EDE9FE',
+  divisionAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#F3E8FF',
     alignItems: 'center',
     justifyContent: 'center',
   },
+  divisionAvatarText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#6D28D9',
+  },
+  divisionMemberName: {
+    flex: 1,
+    fontSize: 14.5,
+    fontWeight: '500',
+    color: '#18181B',
+  },
+  divisionMemberAmount: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#18181B',
+  },
+  quickDebtsCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    padding: 18,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: '#EFEAF8',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
+  },
   quickDebtsTitle: {
+    fontSize: 15.5,
+    fontWeight: '700',
+    color: '#18181B',
+    marginBottom: 6,
+  },
+  quickDebtsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  quickDebtsDesc: {
+    flex: 1,
     fontSize: 14,
+    color: '#52525B',
+  },
+  quickDebtsAmount: {
+    fontSize: 16,
     fontWeight: '800',
     color: '#18181B',
   },
-  quickDebtsDesc: {
-    fontSize: 12,
-    color: '#71717A',
-    marginTop: 2,
-    lineHeight: 16,
+  btnPagarOutline: {
+    alignSelf: 'flex-start',
+    marginTop: 12,
+    borderWidth: 1.5,
+    borderColor: '#7C3AED',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    backgroundColor: '#FFFFFF',
   },
-  btnPagarPill: {
-    backgroundColor: '#7C3AED',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
-  },
-  btnPagarPillText: {
-    fontSize: 12,
+  btnPagarOutlineText: {
+    fontSize: 13,
     fontWeight: '700',
-    color: '#FFFFFF',
+    color: '#6D28D9',
   },
   btnNovaDespesa: {
     flexDirection: 'row',
@@ -3980,20 +4084,35 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: '#7C3AED',
     paddingVertical: 14,
-    borderRadius: 18,
+    borderRadius: 14,
     gap: 8,
-    marginBottom: 22,
+    marginBottom: 20,
+    shadowColor: '#7C3AED',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.22,
+    shadowRadius: 8,
+    elevation: 3,
   },
   btnNovaDespesaText: {
     fontSize: 15,
     fontWeight: '700',
     color: '#FFFFFF',
   },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
   sectionTitle: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: '800',
     color: '#18181B',
-    marginBottom: 12,
+  },
+  sectionCount: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#71717A',
   },
   emptyBox: {
     backgroundColor: '#FFFFFF',
@@ -4023,43 +4142,145 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
     padding: 14,
-    marginBottom: 8,
+    marginBottom: 10,
     borderWidth: 1,
     borderColor: '#EFEAF8',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 6,
+    elevation: 1,
   },
   txSharedLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
     flex: 1,
+    paddingRight: 10,
   },
   txCategoryIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#EDE9FE',
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: '#F3E8FF',
     alignItems: 'center',
     justifyContent: 'center',
   },
   txSharedDesc: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '700',
     color: '#18181B',
   },
   txSharedMeta: {
-    fontSize: 11,
+    fontSize: 12.5,
     color: '#71717A',
     marginTop: 2,
   },
   txSharedAmount: {
-    fontSize: 15,
-    fontWeight: '800',
+    fontSize: 15.5,
+    fontWeight: '700',
     color: '#EF4444',
   },
-  txSharedEach: {
-    fontSize: 11,
-    color: '#71717A',
-    marginTop: 2,
+  groupPickerOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.45)',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+  },
+  groupPickerSheet: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 22,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.18,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  groupPickerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 14,
+  },
+  groupPickerTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#18181B',
+  },
+  groupPickerItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 12,
+    borderRadius: 14,
+    marginBottom: 8,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  groupPickerItemActive: {
+    backgroundColor: '#F5F3FF',
+    borderColor: '#7C3AED',
+  },
+  groupPickerIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#EDE9FE',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  groupPickerIconActive: {
+    backgroundColor: '#7C3AED',
+  },
+  groupPickerName: {
+    fontSize: 14.5,
+    fontWeight: '700',
+    color: '#18181B',
+  },
+  groupPickerNameActive: {
+    color: '#5B21B6',
+  },
+  groupPickerSub: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 1,
+  },
+  groupPickerFooter: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 10,
+  },
+  groupPickerCreateBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#7C3AED',
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  groupPickerCreateText: {
+    fontSize: 13.5,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  groupPickerJoinBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#F3E8FF',
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  groupPickerJoinText: {
+    fontSize: 13.5,
+    fontWeight: '700',
+    color: '#6D28D9',
   },
   acertoHeroBox: {
     backgroundColor: '#FFFFFF',
