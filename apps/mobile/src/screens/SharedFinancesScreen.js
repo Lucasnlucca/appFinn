@@ -26,7 +26,6 @@ import * as Clipboard from 'expo-clipboard';
 import { COLORS } from '../theme/colors';
 import { useFinance, CATEGORIES } from '../context/FinanceContext';
 import { playExpenseSound } from '../services/soundService';
-import { getHouseholdInvitationInfoApi } from '../services/apiService';
 import EditTransactionModal from '../components/EditTransactionModal';
 
 export default function SharedFinancesScreen({ navigation, route }) {
@@ -200,7 +199,7 @@ export default function SharedFinancesScreen({ navigation, route }) {
             setRefreshBannerMsg(null);
           }
         })
-        .catch(() => {});
+        .catch(() => { });
     }, [loggedInUser?.id, refreshGroupData])
   );
 
@@ -225,7 +224,7 @@ export default function SharedFinancesScreen({ navigation, route }) {
               setRefreshBannerMsg(null);
             }
           })
-          .catch(() => {});
+          .catch(() => { });
       }
     });
     return () => sub?.remove?.();
@@ -249,7 +248,7 @@ export default function SharedFinancesScreen({ navigation, route }) {
               setRefreshBannerMsg(null);
             }
           })
-          .catch(() => {});
+          .catch(() => { });
       }
     }
   }, [activeGroup?.id, loggedInUser?.id, refreshGroupData]);
@@ -842,45 +841,7 @@ export default function SharedFinancesScreen({ navigation, route }) {
     };
   }, [activeGroup?.inviteCode, activeGroup?.inviteCodeExpiresAt]);
 
-  // Auto-sincronização: garante que todo grupo e código exibido na tela existam de verdade no PostgreSQL
-  useEffect(() => {
-    let cancelled = false;
-    async function ensureGroupAndCodeSynced() {
-      if (!activeGroup?.id || regeneratingCode) return;
-      const isLocalOnly = !activeGroup.remoteId || String(activeGroup.id).startsWith('grp-');
-      if (isLocalOnly) {
-        try {
-          setRegeneratingCode(true);
-          await generateNewGroupInviteCode(activeGroup.id);
-        } catch (err) {
-          console.log('Auto-sync de grupo pendente:', err?.message);
-        } finally {
-          if (!cancelled) setRegeneratingCode(false);
-        }
-        return;
-      }
-
-      if (activeGroup.inviteCode) {
-        try {
-          await getHouseholdInvitationInfoApi(activeGroup.inviteCode);
-        } catch {
-          if (cancelled) return;
-          try {
-            setRegeneratingCode(true);
-            await generateNewGroupInviteCode(activeGroup.id);
-          } catch (err2) {
-            console.log('Auto-renovação de código no PostgreSQL:', err2?.message);
-          } finally {
-            if (!cancelled) setRegeneratingCode(false);
-          }
-        }
-      }
-    }
-    ensureGroupAndCodeSynced();
-    return () => {
-      cancelled = true;
-    };
-  }, [activeGroup?.id, activeGroup?.remoteId]);
+  // Código de convite só é gerado novamente quando o dono do grupo solicitar manualmente.
 
   const formatMoney = (val) => {
     return (
@@ -892,7 +853,7 @@ export default function SharedFinancesScreen({ navigation, route }) {
     );
   };
 
-  // 1. Criar Grupo (Gera código único válido por 30 minutos)
+  // 1. Criar Grupo (Código só é gerado quando o usuário clicar em gerar)
   const handleCreateGroup = async () => {
     if (!newGroupName.trim()) {
       Alert.alert('Atenção', 'Informe o nome do grupo.');
@@ -910,27 +871,23 @@ export default function SharedFinancesScreen({ navigation, route }) {
 
       Alert.alert(
         'Grupo Criado com Sucesso! 🎉',
-        `Nome: ${created.name}\nCódigo de Convite: ${created.inviteCode}\n\nEste código é único e válido por 30 minutos para você enviar aos outros participantes.`,
-        [
-          { text: 'Concluir' },
-          {
-            text: 'Compartilhar Código',
-            onPress: () => {
-              Share.share({
-                message: `Olá! Estou te convidando para o grupo '${created.name}' no FINN. Baixe o app e entre com o código de convite: ${created.inviteCode} (válido por 30 minutos).`,
-              });
-            },
-          },
-        ]
+        `O grupo "${created.name}" foi criado! Quando quiser convidar participantes, toque em "Gerar código de convite" na aba Membros.`
       );
     } catch (e) {
       Alert.alert('Erro', e.message);
     }
   };
 
-  // Gerar Novo Código de Convite Oficial (Válido por 30 min)
+  // Gerar Novo Código de Convite Oficial (Válido por 30 min — somente quando o dono solicitar)
   const handleRegenerateInviteCode = async () => {
     if (!activeGroup?.id || regeneratingCode) return;
+    if (!isOwner) {
+      Alert.alert(
+        'Acesso restrito',
+        'Apenas o dono do grupo pode gerar um novo código de convite.'
+      );
+      return;
+    }
     setRegeneratingCode(true);
     try {
       const res = await generateNewGroupInviteCode(activeGroup.id);
@@ -2289,130 +2246,94 @@ export default function SharedFinancesScreen({ navigation, route }) {
                   </View>
                 </View>
 
-                {/* CARD DE CÓDIGO ÚNICO DE CONVITE (VÁLIDO POR 30 MINUTOS) */}
+                {/* CARD DE CÓDIGO ÚNICO DE CONVITE (EXIBIDO SOMENTE QUANDO CLICAR EM GERAR) */}
                 <View style={styles.inviteCodeCard}>
                   <View style={styles.inviteCodeCardHeader}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                       <Ionicons name="key" size={16} color="#7C3AED" />
-                      <Text style={styles.inviteCodeCardTitle}>Código de Convite Único</Text>
+                      <Text style={styles.inviteCodeCardTitle}>Código de Convite do Grupo</Text>
                     </View>
-                    <View
-                      style={[
-                        styles.inviteCodeBadge,
-                        inviteCodeStatus.isExpired
-                          ? styles.inviteCodeBadgeExpired
-                          : styles.inviteCodeBadgeActive,
-                      ]}
-                    >
-                      <View
-                        style={[
-                          styles.statusDot,
-                          { backgroundColor: inviteCodeStatus.isExpired ? '#EF4444' : '#10B981' },
-                        ]}
-                      />
-                      <Text
-                        style={[
-                          styles.inviteCodeBadgeText,
-                          { color: inviteCodeStatus.isExpired ? '#EF4444' : '#059669' },
-                        ]}
-                      >
-                        {inviteCodeStatus.text}
-                      </Text>
-                    </View>
+                    {inviteCodeStatus.hasCode && !inviteCodeStatus.isExpired && (
+                      <View style={[styles.inviteCodeBadge, styles.inviteCodeBadgeActive]}>
+                        <View style={[styles.statusDot, { backgroundColor: '#10B981' }]} />
+                        <Text style={[styles.inviteCodeBadgeText, { color: '#059669' }]}>
+                          {inviteCodeStatus.text}
+                        </Text>
+                      </View>
+                    )}
                   </View>
 
                   <Text style={styles.inviteCodeCardSub}>
-                    Envie este código único para quem você deseja convidar. O código expira em 30 minutos por segurança.
+                    {inviteCodeStatus.hasCode && !inviteCodeStatus.isExpired
+                      ? 'Envie este código único para quem você deseja convidar. O código expira em 30 minutos por segurança.'
+                      : 'Toque no botão abaixo quando quiser gerar um código de convite válido por 30 minutos.'}
                   </Text>
 
-                  {/* Código em destaque com ações de Copiar e Compartilhar */}
-                  <View style={styles.inviteCodeBox}>
-                    <TouchableOpacity
-                      onPress={async () => {
-                        if (inviteCodeStatus.isExpired) {
-                          Alert.alert(
-                            'Código Expirado ⏳',
-                            'Este código de convite já expirou. Deseja gerar um novo código válido pelos próximos 30 minutos agora?',
-                            [
-                              { text: 'Cancelar', style: 'cancel' },
-                              { text: 'Gerar Novo Código', onPress: handleRegenerateInviteCode },
-                            ]
-                          );
-                          return;
-                        }
-                        if (activeGroup?.inviteCode) {
-                          await Clipboard.setStringAsync(activeGroup.inviteCode);
-                          Alert.alert(
-                            'Código Copiado! 📋',
-                            `Código de Convite: ${activeGroup.inviteCode}\n\nO código foi copiado para a área de transferência. Envie para quem deseja convidar (válido por 30 minutos).`
-                          );
-                        }
-                      }}
-                      activeOpacity={0.7}
-                      style={{ flex: 1, paddingVertical: 4 }}
-                    >
-                      <Text style={styles.inviteCodeText}>
-                        {activeGroup?.inviteCode || '------'}
-                      </Text>
-                      <Text style={{ fontSize: 11, color: '#7C3AED', fontWeight: '600', marginTop: 2 }}>
-                        Toque para copiar
-                      </Text>
-                    </TouchableOpacity>
+                  {/* Código em destaque: aparece SOMENTE após clicar em gerar e enquanto estiver válido */}
+                  {inviteCodeStatus.hasCode && !inviteCodeStatus.isExpired && (
+                    <View style={styles.inviteCodeBox}>
+                      <TouchableOpacity
+                        onPress={async () => {
+                          if (activeGroup?.inviteCode) {
+                            await Clipboard.setStringAsync(activeGroup.inviteCode);
+                            Alert.alert(
+                              'Código Copiado! 📋',
+                              `Código de Convite: ${activeGroup.inviteCode}\n\nO código foi copiado para a área de transferência.`
+                            );
+                          }
+                        }}
+                        activeOpacity={0.7}
+                        style={{ flex: 1, paddingVertical: 4 }}
+                      >
+                        <Text style={styles.inviteCodeText}>
+                          {activeGroup?.inviteCode}
+                        </Text>
+                        <Text style={{ fontSize: 11, color: '#7C3AED', fontWeight: '600', marginTop: 2 }}>
+                          Toque para copiar
+                        </Text>
+                      </TouchableOpacity>
 
-                    <TouchableOpacity
-                      style={styles.shareCodeBtn}
-                      onPress={() => {
-                        if (inviteCodeStatus.isExpired) {
-                          Alert.alert(
-                            'Código Expirado ⏳',
-                            'Este código de convite já expirou. Gere um novo código antes de compartilhar.',
-                            [
-                              { text: 'Cancelar', style: 'cancel' },
-                              { text: 'Gerar Novo Código', onPress: handleRegenerateInviteCode },
-                            ]
-                          );
-                          return;
-                        }
-                        Share.share({
-                          message: `Olá! Estou te convidando para participar do grupo '${activeGroup?.name}' no app FINN. Baixe o app e entre com o código de convite: ${activeGroup?.inviteCode} (válido por 30 minutos).`,
-                        });
-                      }}
-                      activeOpacity={0.8}
-                    >
-                      <Ionicons name="share-social" size={15} color="#FFFFFF" />
-                      <Text style={styles.shareCodeBtnText}>Compartilhar</Text>
-                    </TouchableOpacity>
-                  </View>
-
-                  {!activeGroup?.remoteId && (
-                    <View style={{ backgroundColor: '#FEF3C7', padding: 10, borderRadius: 10, marginTop: 10, borderWidth: 1, borderColor: '#FDE68A' }}>
-                      <Text style={{ fontSize: 12, color: '#B45309', fontWeight: '700' }}>
-                        ⚠️ Grupo pendente de sincronização
-                      </Text>
-                      <Text style={{ fontSize: 11, color: '#92400E', marginTop: 2 }}>
-                        Toque no botão abaixo para registrar o grupo no servidor oficial e gerar um código válido para outros aparelhos entrarem.
-                      </Text>
+                      <TouchableOpacity
+                        style={styles.shareCodeBtn}
+                        onPress={() => {
+                          Share.share({
+                            message: `Olá! Estou te convidando para participar do grupo '${activeGroup?.name}' no app FINN. Baixe o app e entre com o código de convite: ${activeGroup?.inviteCode} (válido por 30 minutos).`,
+                          });
+                        }}
+                        activeOpacity={0.8}
+                      >
+                        <Ionicons name="share-social" size={15} color="#FFFFFF" />
+                        <Text style={styles.shareCodeBtnText}>Compartilhar</Text>
+                      </TouchableOpacity>
                     </View>
                   )}
 
-                  {/* Botão de Gerar Novo Código de Convite */}
-                  <TouchableOpacity
-                    style={[styles.btnRegenerateCode, regeneratingCode && { opacity: 0.7 }]}
-                    onPress={handleRegenerateInviteCode}
-                    disabled={regeneratingCode}
-                    activeOpacity={0.8}
-                  >
-                    {regeneratingCode ? (
-                      <ActivityIndicator size="small" color="#7C3AED" />
-                    ) : (
-                      <>
-                        <Ionicons name="refresh" size={15} color="#7C3AED" />
-                        <Text style={styles.btnRegenerateCodeText}>
-                          {!activeGroup?.remoteId ? 'Conectar à nuvem e gerar código oficial' : 'Gerar novo código de convite'}
-                        </Text>
-                      </>
-                    )}
-                  </TouchableOpacity>
+                  {/* Botão de Gerar Código de Convite (somente para o dono do grupo) */}
+                  {isOwner ? (
+                    <TouchableOpacity
+                      style={[styles.btnRegenerateCode, regeneratingCode && { opacity: 0.7 }]}
+                      onPress={handleRegenerateInviteCode}
+                      disabled={regeneratingCode}
+                      activeOpacity={0.8}
+                    >
+                      {regeneratingCode ? (
+                        <ActivityIndicator size="small" color="#7C3AED" />
+                      ) : (
+                        <>
+                          <Ionicons name="key-outline" size={15} color="#7C3AED" />
+                          <Text style={styles.btnRegenerateCodeText}>
+                            {inviteCodeStatus.hasCode && !inviteCodeStatus.isExpired
+                              ? 'Gerar novo código de convite'
+                              : 'Gerar código de convite'}
+                          </Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  ) : (
+                    <Text style={{ fontSize: 12, color: '#71717A', textAlign: 'center', marginTop: 4 }}>
+                      Apenas o dono do grupo pode gerar um código de convite.
+                    </Text>
+                  )}
                 </View>
 
                 <Text style={styles.sectionTitle}>Membros ativos ({groupMembers.length})</Text>
@@ -2720,42 +2641,37 @@ export default function SharedFinancesScreen({ navigation, route }) {
                   showsVerticalScrollIndicator={false}
                   bounces={false}
                 >
-                  {/* CÓDIGO DIRETO DE 30 MINUTOS */}
+                  {/* CÓDIGO DIRETO DE 30 MINUTOS (EXIBIDO SOMENTE QUANDO CLICAR EM GERAR) */}
                   <View style={{ backgroundColor: '#F5EEFD', borderRadius: 14, padding: 14, marginBottom: 14, borderWidth: 1, borderColor: '#DDD6FE' }}>
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <Text style={{ fontSize: 11, fontWeight: '800', color: '#6D28D9' }}>CÓDIGO RÁPIDO (30 MIN)</Text>
-                      <Text style={{ fontSize: 11, fontWeight: '700', color: inviteCodeStatus.isExpired ? '#EF4444' : '#059669' }}>
-                        {inviteCodeStatus.text}
-                      </Text>
+                      <Text style={{ fontSize: 11, fontWeight: '800', color: '#6D28D9' }}>CÓDIGO DE CONVITE (30 MIN)</Text>
+                      {inviteCodeStatus.hasCode && !inviteCodeStatus.isExpired && (
+                        <Text style={{ fontSize: 11, fontWeight: '700', color: '#059669' }}>
+                          {inviteCodeStatus.text}
+                        </Text>
+                      )}
                     </View>
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
-                      <Text style={{ fontSize: 22, fontWeight: '900', color: '#7C3AED', letterSpacing: 3, fontFamily: 'monospace' }}>
-                        {activeGroup?.inviteCode || '------'}
-                      </Text>
-                      <TouchableOpacity
-                        style={{ backgroundColor: '#7C3AED', paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10, flexDirection: 'row', alignItems: 'center', gap: 4 }}
-                        onPress={() => {
-                          if (inviteCodeStatus.isExpired) {
-                            Alert.alert(
-                              'Código Expirado ⏳',
-                              'Este código de convite já expirou. Gere um novo código antes de compartilhar.',
-                              [
-                                { text: 'Cancelar', style: 'cancel' },
-                                { text: 'Gerar Novo Código', onPress: handleRegenerateInviteCode },
-                              ]
-                            );
-                            return;
-                          }
-                          Share.share({
-                            message: `Olá! Estou te convidando para o grupo '${activeGroup?.name}' no FINN. Baixe o app e entre com o código: ${activeGroup?.inviteCode} (válido por 30 minutos).`,
-                          });
-                        }}
-                        activeOpacity={0.8}
-                      >
-                        <Ionicons name="share-social" size={13} color="#FFFFFF" />
-                        <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '700' }}>Compartilhar</Text>
-                      </TouchableOpacity>
-                    </View>
+
+                    {inviteCodeStatus.hasCode && !inviteCodeStatus.isExpired && (
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
+                        <Text style={{ fontSize: 22, fontWeight: '900', color: '#7C3AED', letterSpacing: 3, fontFamily: 'monospace' }}>
+                          {activeGroup?.inviteCode}
+                        </Text>
+                        <TouchableOpacity
+                          style={{ backgroundColor: '#7C3AED', paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10, flexDirection: 'row', alignItems: 'center', gap: 4 }}
+                          onPress={() => {
+                            Share.share({
+                              message: `Olá! Estou te convidando para o grupo '${activeGroup?.name}' no FINN. Baixe o app e entre com o código: ${activeGroup?.inviteCode} (válido por 30 minutos).`,
+                            });
+                          }}
+                          activeOpacity={0.8}
+                        >
+                          <Ionicons name="share-social" size={13} color="#FFFFFF" />
+                          <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '700' }}>Compartilhar</Text>
+                        </TouchableOpacity>
+                      </View>
+                    )}
+
                     <TouchableOpacity
                       style={[{ marginTop: 10, alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 4 }, regeneratingCode && { opacity: 0.7 }]}
                       onPress={handleRegenerateInviteCode}
@@ -2765,9 +2681,11 @@ export default function SharedFinancesScreen({ navigation, route }) {
                         <ActivityIndicator size="small" color="#7C3AED" />
                       ) : (
                         <>
-                          <Ionicons name="refresh" size={14} color="#7C3AED" />
+                          <Ionicons name="key-outline" size={14} color="#7C3AED" />
                           <Text style={{ color: '#7C3AED', fontSize: 11.5, fontWeight: '700' }}>
-                            {!activeGroup?.remoteId ? 'Sincronizar e gerar código oficial' : 'Gerar outro código oficial'}
+                            {inviteCodeStatus.hasCode && !inviteCodeStatus.isExpired
+                              ? 'Gerar novo código de convite'
+                              : 'Gerar código de convite'}
                           </Text>
                         </>
                       )}

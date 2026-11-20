@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Wallet,
   Plus,
@@ -11,9 +11,14 @@ import {
   Users,
   AlertCircle,
   CheckCircle2,
+  Pencil,
+  Trash2,
+  X,
 } from 'lucide-react';
-import { apiFetch } from '@/lib/api';
+import { apiFetch, notifyDataChanged, useLiveSync } from '@/lib/api';
 import { formatCurrencyBRL } from '@finn-ai/ui';
+import BankLogo, { ALL_BANKS, getBankInfo, BankInfo } from '@/components/BankLogo';
+import BankListSelector from '@/components/BankListSelector';
 
 interface FinancialAccount {
   id: string;
@@ -31,20 +36,30 @@ interface FinancialAccount {
 }
 
 export default function AccountsPage() {
+  const modalRef = useRef<HTMLDialogElement>(null);
+
   const [accounts, setAccounts] = useState<FinancialAccount[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showModal, setShowModal] = useState(false);
+  const [editingAcc, setEditingAcc] = useState<FinancialAccount | null>(null);
+  const [selectedBankId, setSelectedBankId] = useState('nubank');
   const [name, setName] = useState('');
   const [type, setType] = useState('CHECKING');
-  const [initialBalance, setInitialBalance] = useState('0.00');
-  const [colorHex, setColorHex] = useState('#10b981');
+  const [balanceInput, setBalanceInput] = useState('0.00');
+  const [colorHex, setColorHex] = useState('#8A05BE');
   const [isShared, setIsShared] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  const loadAccounts = async () => {
+  useEffect(() => {
+    const dlg = modalRef.current;
+    if (!dlg) return;
+    if (showModal && !dlg.open) dlg.showModal();
+    else if (!showModal && dlg.open) dlg.close();
+  }, [showModal]);
+
+  const loadAccounts = useCallback(async () => {
     try {
-      setLoading(true);
       const data = await apiFetch<FinancialAccount[]>('/accounts?scope=HOUSEHOLD');
       setAccounts(data || []);
     } catch (err: any) {
@@ -52,33 +67,73 @@ export default function AccountsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     loadAccounts();
-  }, []);
+  }, [loadAccounts]);
 
-  const handleCreate = async (e: React.FormEvent) => {
+  useLiveSync(loadAccounts);
+
+  const openCreateModal = () => {
+    setEditingAcc(null);
+    setSelectedBankId('nubank');
+    setName('Nubank');
+    setType('CHECKING');
+    setBalanceInput('0.00');
+    setColorHex('#8A05BE');
+    setIsShared(false);
+    setShowModal(true);
+  };
+
+  const openEditModal = (acc: FinancialAccount) => {
+    setEditingAcc(acc);
+    const bank = getBankInfo(acc.name);
+    setSelectedBankId(bank.id);
+    setName(acc.name || '');
+    setType(acc.type || 'CHECKING');
+    setBalanceInput(String(parseFloat(String(acc.currentBalance ?? 0)) || 0));
+    setColorHex(acc.colorHex || bank.gradient[0]);
+    setIsShared(Boolean(acc.isShared));
+    setShowModal(true);
+  };
+
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
     setStatusMessage(null);
+    const numBal = parseFloat(balanceInput.replace(',', '.')) || 0;
+    const finalName = name.trim() || 'Conta';
 
     try {
-      await apiFetch('/accounts', {
-        method: 'POST',
-        body: JSON.stringify({
-          name,
-          type,
-          initialBalance: parseFloat(initialBalance) || 0,
-          colorHex,
-          isShared,
-        }),
-      });
+      if (editingAcc) {
+        await apiFetch(`/accounts/${encodeURIComponent(editingAcc.id)}`, {
+          method: 'PUT',
+          body: JSON.stringify({
+            name: finalName,
+            currentBalance: numBal,
+            colorHex,
+            isShared,
+          }),
+        });
+        setStatusMessage({ type: 'success', text: 'Conta atualizada com sucesso!' });
+      } else {
+        await apiFetch('/accounts', {
+          method: 'POST',
+          body: JSON.stringify({
+            name: finalName,
+            type,
+            initialBalance: numBal,
+            colorHex,
+            isShared,
+          }),
+        });
+        setStatusMessage({ type: 'success', text: 'Conta cadastrada com sucesso!' });
+      }
 
-      setStatusMessage({ type: 'success', text: 'Conta financeira cadastrada com sucesso!' });
-      setShowCreateModal(false);
-      setName('');
-      setInitialBalance('0.00');
+      setShowModal(false);
+      setEditingAcc(null);
+      notifyDataChanged();
       loadAccounts();
     } catch (err: any) {
       setStatusMessage({ type: 'error', text: err.message });
@@ -87,82 +142,123 @@ export default function AccountsPage() {
     }
   };
 
-  const getAccountIcon = (accType: string) => {
-    switch (accType) {
-      case 'CHECKING':
-        return <Building2 className="w-5 h-5" />;
-      case 'INVESTMENT':
-        return <TrendingUp className="w-5 h-5" />;
-      case 'CASH':
-        return <Coins className="w-5 h-5" />;
-      default:
-        return <Wallet className="w-5 h-5" />;
+  const handleDelete = async (acc: FinancialAccount) => {
+    setStatusMessage(null);
+    try {
+      await apiFetch(`/accounts/${encodeURIComponent(acc.id)}`, { method: 'DELETE' });
+      setStatusMessage({ type: 'success', text: `Conta "${acc.name}" removida com sucesso!` });
+      notifyDataChanged();
+      loadAccounts();
+    } catch (err: any) {
+      setStatusMessage({ type: 'error', text: err.message });
     }
   };
 
+  const renderAccountLogo = (acc: FinancialAccount) => {
+    const bank = getBankInfo(acc.name);
+    if (bank.id !== 'other') {
+      return <BankLogo bank={bank.id} size={42} />;
+    }
+
+    let Icon = Wallet;
+    if (acc.type === 'INVESTMENT') Icon = TrendingUp;
+    else if (acc.type === 'CASH') Icon = Coins;
+    else if (acc.type === 'CHECKING') Icon = Building2;
+
+    return (
+      <div
+        className="w-10 h-10 rounded-2xl flex items-center justify-center text-white shrink-0 shadow-sm"
+        style={{ backgroundColor: acc.colorHex || '#7C3AED' }}
+      >
+        <Icon className="w-5 h-5" aria-hidden="true" />
+      </div>
+    );
+  };
+
+  const totalBalance = accounts.reduce(
+    (sum, a) => sum + (parseFloat(String(a.currentBalance ?? 0)) || 0),
+    0
+  );
+
   return (
-    <main className="max-w-6xl mx-auto p-4 sm:p-6 lg:p-10 flex flex-col gap-8">
-      {/* Top Header */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-6 border-b border-slate-200 dark:border-slate-800">
+    <main className="min-h-[100dvh] bg-white max-w-6xl mx-auto p-4 sm:p-6 lg:p-10 flex flex-col gap-6">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-5 border-b border-[#EFEAF8]">
         <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
-              Contas & Carteiras
-            </h1>
-            <span className="px-2.5 py-0.5 text-xs font-semibold rounded-full bg-brand-100 text-brand-800 dark:bg-brand-950 dark:text-brand-300 border border-brand-200 dark:border-brand-800">
-              Precisão Decimal
-            </span>
-          </div>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-            Gestão de contas correntes, investimentos, poupanças e carteiras de dinheiro físico.
+          <h1 className="finn-page-title font-extrabold tracking-tight text-zinc-900 flex items-center gap-2.5">
+            <Wallet className="w-6 h-6 text-violet-600" aria-hidden="true" />
+            Contas e Carteira
+          </h1>
+          <p className="text-sm text-zinc-500 mt-1">
+            Mesmas contas e saldos bancários compartilhados do app FINN.
           </p>
         </div>
 
         <button
-          onClick={() => setShowCreateModal(true)}
-          className="flex items-center gap-2 px-4 py-2.5 bg-brand-600 hover:bg-brand-700 text-white font-semibold rounded-xl text-sm transition-all shadow-md shadow-brand-500/20"
+          type="button"
+          onClick={openCreateModal}
+          className="flex items-center gap-2 px-4 py-2.5 bg-violet-600 hover:bg-violet-700 text-white font-bold rounded-xl text-xs transition-colors shadow-sm"
         >
-          <Plus className="w-4 h-4" />
+          <Plus className="w-4 h-4" aria-hidden="true" />
           <span>Nova Conta</span>
         </button>
       </div>
 
       {statusMessage && (
         <div
-          className={`p-4 rounded-2xl border text-xs flex items-center gap-2 ${
+          role="status"
+          className={`p-3.5 rounded-2xl border text-xs flex items-center gap-2 ${
             statusMessage.type === 'success'
-              ? 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'
-              : 'bg-rose-50 text-rose-800 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800'
+              ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+              : 'bg-rose-50 text-rose-800 border-rose-200'
           }`}
         >
           {statusMessage.type === 'success' ? (
-            <CheckCircle2 className="w-4 h-4 shrink-0" />
+            <CheckCircle2 className="w-4 h-4 shrink-0" aria-hidden="true" />
           ) : (
-            <AlertCircle className="w-4 h-4 shrink-0" />
+            <AlertCircle className="w-4 h-4 shrink-0" aria-hidden="true" />
           )}
           <span>{statusMessage.text}</span>
         </div>
       )}
 
-      {/* Grid de Contas */}
+      {/* Card de Patrimônio Total */}
+      <div className="p-6 rounded-3xl bg-gradient-to-r from-violet-600 to-indigo-700 text-white shadow-lg flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div>
+          <span className="text-xs font-semibold tracking-wider uppercase text-violet-200">
+            Saldo Total em Contas
+          </span>
+          <p className="text-3xl font-black mt-1 tracking-tight">
+            {formatCurrencyBRL(totalBalance)}
+          </p>
+          <p className="text-xs text-violet-200 mt-1 flex items-center gap-1.5">
+            <ShieldCheck className="w-4 h-4" />
+            Controle centralizado de todas as suas contas financeiras
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2 bg-white/10 px-4 py-2 rounded-2xl backdrop-blur-sm border border-white/15">
+          <span className="text-xs font-medium text-violet-100">Contas Ativas:</span>
+          <span className="text-sm font-extrabold text-white">{accounts.length}</span>
+        </div>
+      </div>
+
       {loading ? (
-        <div className="p-10 text-center text-sm text-slate-500">
+        <div className="p-10 text-center text-sm text-zinc-500">
           Carregando contas cadastradas...
         </div>
       ) : accounts.length === 0 ? (
-        <div className="p-12 text-center rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
-          <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-400 flex items-center justify-center mx-auto mb-3">
-            <Wallet className="w-6 h-6" />
+        <div className="p-12 text-center rounded-3xl bg-white border border-[#EFEAF8] shadow-sm">
+          <div className="w-12 h-12 rounded-2xl bg-violet-50 text-violet-600 flex items-center justify-center mx-auto mb-3">
+            <Wallet className="w-6 h-6" aria-hidden="true" />
           </div>
-          <h3 className="text-base font-bold text-slate-900 dark:text-white">
-            Nenhuma conta cadastrada ainda
-          </h3>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-sm mx-auto mb-5">
-            Cadastre sua conta bancária corrente, investimentos ou carteira física para acompanhar seus saldos e extratos.
+          <h3 className="text-base font-bold text-zinc-900">Nenhuma conta cadastrada ainda</h3>
+          <p className="text-xs text-zinc-500 mt-1 max-w-sm mx-auto mb-5">
+            Cadastre sua conta corrente (Nubank, Itaú, Inter, etc.), investimentos ou carteira física para acompanhar seus saldos em tempo real.
           </p>
           <button
-            onClick={() => setShowCreateModal(true)}
-            className="px-4 py-2 bg-brand-600 text-white rounded-xl text-xs font-semibold"
+            type="button"
+            onClick={openCreateModal}
+            className="px-4 py-2 bg-violet-600 text-white rounded-xl text-xs font-semibold"
           >
             Cadastrar Primeira Conta
           </button>
@@ -172,158 +268,192 @@ export default function AccountsPage() {
           {accounts.map((acc) => (
             <div
               key={acc.id}
-              className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col justify-between relative overflow-hidden"
+              className="p-6 rounded-3xl bg-white border border-[#EFEAF8] shadow-sm flex flex-col justify-between relative overflow-hidden"
             >
               <div
                 className="absolute top-0 left-0 right-0 h-1.5"
-                style={{ backgroundColor: acc.colorHex || '#10b981' }}
+                style={{ backgroundColor: acc.colorHex || '#7C3AED' }}
               />
               <div>
                 <div className="flex items-center justify-between mb-3">
-                  <div
-                    className="w-10 h-10 rounded-2xl flex items-center justify-center text-white"
-                    style={{ backgroundColor: acc.colorHex || '#10b981' }}
-                  >
-                    {getAccountIcon(acc.type)}
+                  {renderAccountLogo(acc)}
+
+                  <div className="flex items-center gap-1">
+                    {acc.isShared && (
+                      <span className="flex items-center gap-1 text-[11px] font-semibold text-violet-700 bg-violet-50 border border-violet-200 px-2 py-0.5 rounded-full mr-1">
+                        <Users className="w-3 h-3" aria-hidden="true" />
+                        Grupo
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => openEditModal(acc)}
+                      aria-label={`Editar conta ${acc.name}`}
+                      className="p-1.5 rounded-lg text-zinc-400 hover:text-violet-600 hover:bg-violet-50 transition-colors"
+                    >
+                      <Pencil className="w-4 h-4" aria-hidden="true" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(acc)}
+                      aria-label={`Excluir conta ${acc.name}`}
+                      className="p-1.5 rounded-lg text-zinc-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                    >
+                      <Trash2 className="w-4 h-4" aria-hidden="true" />
+                    </button>
                   </div>
-                  {acc.user && (
-                    <span className="flex items-center gap-1 text-[11px] font-medium text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md">
-                      <Users className="w-3 h-3" />
-                      {acc.user.fullName}
-                    </span>
-                  )}
                 </div>
-                <h3 className="font-bold text-base text-slate-900 dark:text-white">
-                  {acc.name}
-                </h3>
-                <span className="text-[11px] uppercase tracking-wider text-slate-400">
-                  {acc.type}
+                <h3 className="font-bold text-base text-zinc-900">{acc.name}</h3>
+                <span className="text-[11px] uppercase tracking-wider text-zinc-400">
+                  {acc.type === 'CHECKING'
+                    ? 'Conta Corrente'
+                    : acc.type === 'SAVINGS'
+                    ? 'Poupança'
+                    : acc.type === 'INVESTMENT'
+                    ? 'Investimentos'
+                    : 'Dinheiro / Carteira'}
                 </span>
               </div>
 
-              <div className="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-baseline justify-between">
+              <div className="mt-6 pt-4 border-t border-[#F3F0FA] flex items-baseline justify-between">
                 <div>
-                  <span className="text-[10px] uppercase font-semibold text-slate-400">
+                  <span className="text-[10px] uppercase font-semibold text-zinc-400">
                     Saldo Disponível
                   </span>
-                  <p className="text-xl font-bold text-slate-900 dark:text-white">
-                    {formatCurrencyBRL(acc.currentBalance)}
+                  <p className="text-xl font-extrabold text-zinc-900">
+                    {formatCurrencyBRL(parseFloat(String(acc.currentBalance ?? 0)) || 0)}
                   </p>
                 </div>
-                <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-0.5">
-                  <ShieldCheck className="w-3.5 h-3.5" />
-                  Conciliado
-                </span>
+                {acc.user?.fullName && (
+                  <span className="text-[11px] text-zinc-400">
+                    Titular: {acc.user.fullName.split(' ')[0]}
+                  </span>
+                )}
               </div>
             </div>
           ))}
         </div>
       )}
 
-      {/* Modal de Criação de Conta */}
-      {showCreateModal && (
-        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl">
-            <h2 className="text-lg font-bold text-slate-900 dark:text-white mb-1">
-              Nova Conta Financeira
+      {/* Modal / Diálogo de Criação e Edição de Conta */}
+      <dialog
+        ref={modalRef}
+        aria-labelledby="acc-modal-title"
+        closedby="any"
+        onClose={() => setShowModal(false)}
+        onClick={(e) => {
+          if (e.target === modalRef.current) setShowModal(false);
+        }}
+        className="finn-dialog"
+      >
+        <form
+          onSubmit={handleSave}
+          className="bg-white border border-[#EFEAF8] rounded-3xl p-6 shadow-2xl flex flex-col gap-4 max-w-lg w-full max-h-[92vh] overflow-y-auto"
+        >
+          <div className="flex items-center justify-between pb-2 border-b border-[#F3F0FA]">
+            <h2 id="acc-modal-title" className="text-base font-bold text-zinc-900 flex items-center gap-2">
+              <Wallet className="w-5 h-5 text-violet-600" />
+              {editingAcc ? 'Editar Conta / Carteira' : 'Nova Conta Financeira'}
             </h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mb-6">
-              Adicione uma conta manual ou carteira com saldo inicial
-            </p>
-
-            <form onSubmit={handleCreate} className="flex flex-col gap-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Nome da Conta / Banco
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="Ex: Nubank Principal, Carteira Dinheiro, Itaú"
-                  className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/30"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Tipo de Conta
-                  </label>
-                  <select
-                    value={type}
-                    onChange={(e) => setType(e.target.value)}
-                    className="w-full px-3 py-2.5 bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/30"
-                  >
-                    <option value="CHECKING">Conta Corrente</option>
-                    <option value="SAVINGS">Poupança</option>
-                    <option value="INVESTMENT">Investimento</option>
-                    <option value="CASH">Dinheiro / Carteira</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Saldo Inicial (R$)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={initialBalance}
-                    onChange={(e) => setInitialBalance(e.target.value)}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/30"
-                  />
-                </div>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Cor de Destaque
-                  </label>
-                  <input
-                    type="color"
-                    value={colorHex}
-                    onChange={(e) => setColorHex(e.target.value)}
-                    className="w-12 h-10 rounded-xl cursor-pointer bg-transparent border-0"
-                  />
-                </div>
-                <div className="flex-1 flex items-center gap-2 pt-4">
-                  <input
-                    type="checkbox"
-                    id="isShared"
-                    checked={isShared}
-                    onChange={(e) => setIsShared(e.target.checked)}
-                    className="w-4 h-4 text-brand-600 rounded border-slate-300"
-                  />
-                  <label htmlFor="isShared" className="text-xs text-slate-700 dark:text-slate-300">
-                    Visível no painel da família
-                  </label>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-end gap-3 mt-4 pt-4 border-t border-slate-100 dark:border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setShowCreateModal(false)}
-                  className="px-4 py-2 text-xs font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="px-5 py-2 bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white rounded-xl text-xs font-semibold shadow-md shadow-brand-500/20"
-                >
-                  {submitting ? 'Salvando...' : 'Salvar Conta'}
-                </button>
-              </div>
-            </form>
+            <button
+              type="button"
+              onClick={() => setShowModal(false)}
+              className="p-1 text-zinc-400 hover:text-zinc-600 rounded-lg"
+            >
+              <X className="w-4 h-4" />
+            </button>
           </div>
-        </div>
-      )}
+
+          {/* Seleção do Banco Oficial em Lista igual ao App */}
+          <BankListSelector
+            selectedBankId={selectedBankId}
+            customName={name}
+            onSelectBank={(bank, displayName) => {
+              setSelectedBankId(bank.id);
+              setName(displayName || bank.name);
+              setColorHex(bank.gradient[0]);
+            }}
+            onChangeCustomName={(newName) => {
+              setName(newName);
+              const info = getBankInfo(newName);
+              if (info.id !== 'other') {
+                setSelectedBankId(info.id);
+                setColorHex(info.gradient[0]);
+              }
+            }}
+          />
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-zinc-700 mb-1">
+                Tipo de Conta
+              </label>
+              <select
+                value={type}
+                disabled={Boolean(editingAcc)}
+                onChange={(e) => setType(e.target.value)}
+                className="w-full px-3 py-2.5 bg-[#FAF8FF] border border-[#E2DAF5] rounded-xl text-xs text-zinc-800 disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-600"
+              >
+                <option value="CHECKING">Conta Corrente</option>
+                <option value="SAVINGS">Poupança</option>
+                <option value="INVESTMENT">Investimento</option>
+                <option value="CASH">Dinheiro / Carteira</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-zinc-700 mb-1">
+                {editingAcc ? 'Saldo Atual (R$)' : 'Saldo Inicial (R$)'}
+              </label>
+              <input
+                type="text"
+                required
+                value={balanceInput}
+                onChange={(e) => setBalanceInput(e.target.value)}
+                className="w-full px-3.5 py-2.5 bg-[#FAF8FF] border border-[#E2DAF5] rounded-xl text-xs text-zinc-800 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-600"
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-zinc-700 mb-1">Cor</label>
+              <input
+                type="color"
+                value={colorHex}
+                onChange={(e) => setColorHex(e.target.value)}
+                className="w-12 h-9 rounded-xl cursor-pointer border-0 bg-transparent"
+              />
+            </div>
+            <label className="flex items-center gap-2 pt-4 text-xs font-semibold text-zinc-700 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={isShared}
+                onChange={(e) => setIsShared(e.target.checked)}
+                className="w-4 h-4 accent-violet-600"
+              />
+              Visível em Grupo Compartilhado
+            </label>
+          </div>
+
+          <div className="flex items-center justify-end gap-2 mt-2 pt-3 border-t border-[#F3F0FA]">
+            <button
+              type="button"
+              onClick={() => setShowModal(false)}
+              className="px-4 py-2 text-xs font-semibold text-zinc-500 hover:text-zinc-700 rounded-xl"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              disabled={submitting}
+              className="px-5 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-xl text-xs font-bold shadow-sm transition-colors"
+            >
+              {submitting ? 'Salvando...' : editingAcc ? 'Atualizar Conta' : 'Salvar Conta'}
+            </button>
+          </div>
+        </form>
+      </dialog>
     </main>
   );
 }
-

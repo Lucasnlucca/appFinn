@@ -493,6 +493,15 @@ export async function sendInstantPhoneNotification({
         targetScreen: data?.screen || 'Home',
       });
 
+    const combinedNotifText = `${model.title || ''} ${model.body || ''} ${model.message || ''}`.toLowerCase();
+    if (
+      model.type === 'shared_group_invite' ||
+      String(model.dedupeKey || '').startsWith('shared_group_invite') ||
+      /c[óo]digo de convite|novo c[óo]digo|c[óo]digo de acesso|convite ativo no grupo/i.test(combinedNotifText)
+    ) {
+      return null;
+    }
+
     if (data?.category) {
       model.category = normalizeNotificationCategory(data.category);
     }

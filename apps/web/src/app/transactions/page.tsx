@@ -1,19 +1,30 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   ArrowLeftRight,
   Plus,
-  ArrowUpRight,
-  ArrowDownLeft,
-  Filter,
   CheckCircle2,
   AlertCircle,
-  Tag,
   Building2,
-  Calendar,
+  Pencil,
+  Trash2,
+  Users,
 } from 'lucide-react';
-import { apiFetch } from '@/lib/api';
+import {
+  OFFICIAL_CATEGORIES,
+  apiFetch,
+  doesTxBelongToGroup,
+  encodeSharedNotes,
+  extractCategoryFromTx,
+  fetchSharedGroupTransactions,
+  fetchUserGroups,
+  getAuthUser,
+  notifyDataChanged,
+  parseSharedNotes,
+  reconcileGroupsWithTransactions,
+  useLiveSync,
+} from '@/lib/api';
 import { formatCurrencyBRL, formatDateBR } from '@finn-ai/ui';
 
 interface TransactionItem {
@@ -23,15 +34,11 @@ interface TransactionItem {
   type: 'INCOME' | 'EXPENSE' | 'TRANSFER';
   status: string;
   date: string;
+  notes?: string;
   isHouseholdShared: boolean;
   category?: { name: string; colorHex?: string };
   account?: { name: string; colorHex?: string };
   user?: { fullName: string };
-}
-
-interface CategoryItem {
-  id: string;
-  name: string;
 }
 
 interface AccountItem {
@@ -39,74 +46,210 @@ interface AccountItem {
   name: string;
 }
 
-export default function TransactionsPage() {
-  const [transactions, setTransactions] = useState<TransactionItem[]>([]);
-  const [categories, setCategories] = useState<CategoryItem[]>([]);
-  const [accounts, setAccounts] = useState<AccountItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [scope, setScope] = useState<'PERSONAL' | 'HOUSEHOLD'>('HOUSEHOLD');
+interface GroupItem {
+  id: string;
+  name: string;
+}
 
-  // Modal de lançamento
+export default function TransactionsPage() {
+  const modalRef = useRef<HTMLDialogElement>(null);
+
+  const [transactions, setTransactions] = useState<TransactionItem[]>([]);
+  const [accounts, setAccounts] = useState<AccountItem[]>([]);
+  const [groups, setGroups] = useState<GroupItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [scope, setScope] = useState<'PERSONAL' | 'GROUP'>('PERSONAL');
+  const [filterGroupId, setFilterGroupId] = useState<string>('ALL');
+  const [filterCategoryId, setFilterCategoryId] = useState<string>('ALL');
+
   const [showModal, setShowModal] = useState(false);
+  const [editingTxId, setEditingTxId] = useState<string | null>(null);
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
   const [type, setType] = useState<'EXPENSE' | 'INCOME'>('EXPENSE');
   const [accountId, setAccountId] = useState('');
-  const [categoryId, setCategoryId] = useState('');
+  const [selectedCategoryId, setSelectedCategoryId] = useState('alimentacao');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-  const [isHouseholdShared, setIsHouseholdShared] = useState(true);
+  const [isGroupShared, setIsGroupShared] = useState(false);
+  const [targetGroupId, setTargetGroupId] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  const loadData = async () => {
+  useEffect(() => {
+    const dlg = modalRef.current;
+    if (!dlg) return;
+    if (showModal && !dlg.open) dlg.showModal();
+    else if (!showModal && dlg.open) dlg.close();
+  }, [showModal]);
+
+  const loadData = useCallback(async () => {
     try {
-      setLoading(true);
-      const [txData, catData, accData] = await Promise.all([
-        apiFetch<TransactionItem[]>(`/transactions?scope=${scope}`),
-        apiFetch<CategoryItem[]>('/categories'),
-        apiFetch<AccountItem[]>('/accounts?scope=HOUSEHOLD'),
+      const [grpList, accData, personalTxs] = await Promise.all([
+        fetchUserGroups(),
+        apiFetch<AccountItem[]>('/accounts?scope=HOUSEHOLD').catch(() => null),
+        apiFetch<TransactionItem[]>('/transactions?scope=PERSONAL').catch(() => null),
       ]);
 
-      setTransactions(txData || []);
-      setCategories(catData || []);
-      setAccounts(accData || []);
-      if (accData && accData.length > 0 && !accountId) {
-        setAccountId(accData[0].id);
+      const sharedTxs = await fetchSharedGroupTransactions(grpList, null).catch(() => null);
+
+      if (Array.isArray(accData)) {
+        setAccounts(accData);
+        setAccountId((prev) => prev || accData[0]?.id || '');
       }
+
+      setTransactions((prevTxs) => {
+        if (!Array.isArray(personalTxs) && !Array.isArray(sharedTxs)) return prevTxs;
+        const mergedMap = new Map<string, TransactionItem>();
+        const pList = Array.isArray(personalTxs) ? personalTxs : prevTxs.filter((t) => !t.isHouseholdShared && !parseSharedNotes(t.notes));
+        const sList = Array.isArray(sharedTxs) ? sharedTxs : prevTxs.filter((t) => t.isHouseholdShared || parseSharedNotes(t.notes));
+
+        for (const tx of [...pList, ...sList]) {
+          if (tx?.id) mergedMap.set(tx.id, tx);
+        }
+        const sorted = Array.from(mergedMap.values()).sort(
+          (a: any, b: any) => new Date(b.createdAt || b.date || 0).getTime() - new Date(a.createdAt || a.date || 0).getTime(),
+        );
+
+        const reconciled = reconcileGroupsWithTransactions(grpList, sorted);
+        if (reconciled.length > 0) {
+          setGroups(reconciled);
+          setTargetGroupId((prev) => prev || reconciled[0]?.id || '');
+        }
+        return sorted;
+      });
     } catch (err: any) {
       console.warn('Erro ao carregar transações:', err.message);
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     loadData();
-  }, [scope]);
+  }, [loadData]);
 
-  const handleCreate = async (e: React.FormEvent) => {
+  useLiveSync(loadData);
+
+  const filteredTransactions = useMemo(() => {
+    const activeGroupObj =
+      filterGroupId !== 'ALL'
+        ? groups.find((g) => String(g.id) === String(filterGroupId)) || { id: filterGroupId }
+        : null;
+
+    return transactions.filter((tx) => {
+      const meta = parseSharedNotes(tx.notes);
+      if (meta?.kind === 'settlement') return false;
+      const isShared = Boolean(tx.isHouseholdShared || meta);
+
+      if (scope === 'PERSONAL' && isShared) return false;
+      if (scope === 'GROUP' && !isShared) return false;
+
+      const cat = extractCategoryFromTx(tx);
+      if (filterCategoryId !== 'ALL' && cat.id !== filterCategoryId) return false;
+
+      if (scope === 'GROUP' && activeGroupObj) {
+        return doesTxBelongToGroup(tx, activeGroupObj, groups);
+      }
+      return true;
+    });
+  }, [transactions, filterCategoryId, filterGroupId, scope, groups]);
+
+  const openCreateModal = () => {
+    setEditingTxId(null);
+    setDescription('');
+    setAmount('');
+    setType('EXPENSE');
+    setSelectedCategoryId('alimentacao');
+    setDate(new Date().toISOString().split('T')[0]);
+    const inGroup = scope === 'GROUP' && groups.length > 0;
+    setIsGroupShared(inGroup);
+    setTargetGroupId(filterGroupId !== 'ALL' ? filterGroupId : groups[0]?.id || '');
+    setShowModal(true);
+  };
+
+  const openEditModal = (tx: TransactionItem) => {
+    const meta = parseSharedNotes(tx.notes);
+    const cat = extractCategoryFromTx(tx);
+    setEditingTxId(tx.id);
+    setDescription(tx.description || '');
+    setAmount(String(tx.amount || ''));
+    setType(tx.type === 'INCOME' ? 'INCOME' : 'EXPENSE');
+    setSelectedCategoryId(cat.id);
+    setDate(String(tx.date || new Date().toISOString()).split('T')[0]);
+    const inGroup = Boolean(tx.isHouseholdShared || meta);
+    setIsGroupShared(inGroup);
+    setTargetGroupId(meta?.groupId || groups[0]?.id || '');
+    setShowModal(true);
+  };
+
+  const handleDelete = async (txId: string) => {
+    setStatusMessage(null);
+    try {
+      await apiFetch(`/transactions/${encodeURIComponent(txId)}`, { method: 'DELETE' });
+      setStatusMessage({ type: 'success', text: 'Movimentação excluída com sucesso!' });
+      notifyDataChanged();
+      loadData();
+    } catch (err: any) {
+      setStatusMessage({ type: 'error', text: err.message });
+    }
+  };
+
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    const numeric = parseFloat(amount.replace(',', '.'));
+    if (!description.trim() || !numeric || numeric <= 0) return;
+
     setSubmitting(true);
     setStatusMessage(null);
 
     try {
-      await apiFetch('/transactions', {
-        method: 'POST',
-        body: JSON.stringify({
-          description,
-          amount: parseFloat(amount),
-          type,
-          date: new Date(date).toISOString(),
-          accountId: accountId || undefined,
-          categoryId: categoryId || undefined,
-          isHouseholdShared,
-        }),
-      });
+      const user = getAuthUser();
+      const chosenGroup = isGroupShared
+        ? groups.find((g) => String(g.id) === String(targetGroupId)) || groups[0]
+        : null;
 
-      setStatusMessage({ type: 'success', text: 'Movimentação registrada com sucesso!' });
+      const notes = chosenGroup
+        ? encodeSharedNotes({
+            kind: 'expense',
+            groupId: chosenGroup.id,
+            groupName: chosenGroup.name,
+            category: selectedCategoryId,
+            paidBy: user?.fullName || user?.name || 'Você',
+            author: user?.fullName || user?.name || 'Você',
+            authorId: user?.id,
+            authorEmail: user?.email,
+          })
+        : `[CAT:${selectedCategoryId}]`;
+
+      const payload = {
+        description: description.trim(),
+        amount: numeric,
+        type,
+        date: new Date(date).toISOString(),
+        accountId: !chosenGroup && accountId ? accountId : undefined,
+        isHouseholdShared: Boolean(chosenGroup),
+        notes,
+      };
+
+      if (editingTxId) {
+        await apiFetch(`/transactions/${encodeURIComponent(editingTxId)}`, {
+          method: 'PUT',
+          body: JSON.stringify(payload),
+        });
+        setStatusMessage({ type: 'success', text: 'Movimentação atualizada com sucesso!' });
+      } else {
+        await apiFetch('/transactions', {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        });
+        setStatusMessage({ type: 'success', text: 'Movimentação registrada com sucesso!' });
+      }
+
       setShowModal(false);
+      setEditingTxId(null);
       setDescription('');
       setAmount('');
+      notifyDataChanged();
       loadData();
     } catch (err: any) {
       setStatusMessage({ type: 'error', text: err.message });
@@ -116,171 +259,197 @@ export default function TransactionsPage() {
   };
 
   return (
-    <main className="max-w-6xl mx-auto p-4 sm:p-6 lg:p-10 flex flex-col gap-8">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-6 border-b border-slate-200 dark:border-slate-800">
+    <main className="min-h-[100dvh] bg-white max-w-6xl mx-auto p-4 sm:p-6 lg:p-10 flex flex-col gap-6">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-5 border-b border-[#EFEAF8]">
         <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
-              Extrato & Movimentações
-            </h1>
-            <span className="px-2.5 py-0.5 text-xs font-semibold rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-              Conciliação Ativa
-            </span>
-          </div>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-            Histórico completo de receitas, despesas e transferências com precisão contábil.
+          <h1 className="finn-page-title font-extrabold tracking-tight text-zinc-900 flex items-center gap-2.5">
+            <ArrowLeftRight className="w-6 h-6 text-violet-600" aria-hidden="true" />
+            Extrato &amp; Transações
+          </h1>
+          <p className="text-sm text-zinc-500 mt-1">
+            Categorias com ícones fiéis ao app, filtro por grupo e edição em tempo real.
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
-          {/* Toggle Escopo */}
-          <div className="flex items-center p-1 bg-slate-100 dark:bg-slate-850 rounded-xl border border-slate-200 dark:border-slate-700">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center p-1 bg-[#EDE7F8] rounded-xl">
             <button
+              type="button"
               onClick={() => setScope('PERSONAL')}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
-                scope === 'PERSONAL'
-                  ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-sm'
-                  : 'text-slate-500'
+              className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition-colors ${
+                scope === 'PERSONAL' ? 'bg-violet-600 text-white shadow-sm' : 'text-zinc-600'
               }`}
             >
               Individual
             </button>
             <button
-              onClick={() => setScope('HOUSEHOLD')}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
-                scope === 'HOUSEHOLD'
-                  ? 'bg-brand-600 text-white shadow-sm'
-                  : 'text-slate-500'
+              type="button"
+              onClick={() => setScope('GROUP')}
+              className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition-colors ${
+                scope === 'GROUP' ? 'bg-violet-600 text-white shadow-sm' : 'text-zinc-600'
               }`}
             >
-              Familiar
+              Grupo
             </button>
           </div>
 
           <button
-            onClick={() => setShowModal(true)}
-            className="flex items-center gap-2 px-4 py-2.5 bg-brand-600 hover:bg-brand-700 text-white font-semibold rounded-xl text-sm transition-all shadow-md shadow-brand-500/20"
+            type="button"
+            onClick={openCreateModal}
+            className="flex items-center gap-2 px-4 py-2.5 bg-violet-600 hover:bg-violet-700 text-white font-bold rounded-xl text-xs transition-colors shadow-sm"
           >
-            <Plus className="w-4 h-4" />
+            <Plus className="w-4 h-4" aria-hidden="true" />
             <span>Novo Lançamento</span>
           </button>
         </div>
       </div>
 
+      {/* Filtros de Grupo e Categoria */}
+      <div className="flex flex-wrap items-center gap-3">
+        {scope === 'GROUP' && groups.length > 0 && (
+          <div className="flex items-center gap-2">
+            <Users className="w-4 h-4 text-violet-600" aria-hidden="true" />
+            <select
+              aria-label="Filtrar por grupo"
+              value={filterGroupId}
+              onChange={(e) => setFilterGroupId(e.target.value)}
+              className="px-3.5 py-2 rounded-xl border border-violet-200 bg-white text-xs font-bold text-zinc-800"
+            >
+              <option value="ALL">Todos os grupos ({groups.length})</option>
+              {groups.map((g) => (
+                <option key={g.id} value={g.id}>
+                  {g.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        <select
+          aria-label="Filtrar por categoria"
+          value={filterCategoryId}
+          onChange={(e) => setFilterCategoryId(e.target.value)}
+          className="px-3.5 py-2 rounded-xl border border-[#E2DAF5] bg-white text-xs font-semibold text-zinc-700"
+        >
+          <option value="ALL">Todas as categorias</option>
+          {OFFICIAL_CATEGORIES.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.emoji} {c.label}
+            </option>
+          ))}
+        </select>
+      </div>
+
       {statusMessage && (
         <div
-          className={`p-4 rounded-2xl border text-xs flex items-center gap-2 ${
+          role="status"
+          className={`p-3.5 rounded-2xl border text-xs flex items-center gap-2 ${
             statusMessage.type === 'success'
-              ? 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'
-              : 'bg-rose-50 text-rose-800 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800'
+              ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+              : 'bg-rose-50 text-rose-800 border-rose-200'
           }`}
         >
           {statusMessage.type === 'success' ? (
-            <CheckCircle2 className="w-4 h-4 shrink-0" />
+            <CheckCircle2 className="w-4 h-4 shrink-0" aria-hidden="true" />
           ) : (
-            <AlertCircle className="w-4 h-4 shrink-0" />
+            <AlertCircle className="w-4 h-4 shrink-0" aria-hidden="true" />
           )}
           <span>{statusMessage.text}</span>
         </div>
       )}
 
       {/* Lista de Movimentações */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl overflow-hidden shadow-sm">
+      <div className="bg-white border border-[#EFEAF8] rounded-3xl overflow-hidden shadow-sm">
         {loading ? (
-          <div className="p-10 text-center text-sm text-slate-500">
+          <div className="p-10 text-center text-sm text-zinc-500">
             Carregando movimentações financeiras...
           </div>
-        ) : transactions.length === 0 ? (
+        ) : filteredTransactions.length === 0 ? (
           <div className="p-12 text-center">
-            <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-400 flex items-center justify-center mx-auto mb-3">
-              <ArrowLeftRight className="w-6 h-6" />
+            <div className="w-12 h-12 rounded-2xl bg-violet-50 text-violet-600 flex items-center justify-center mx-auto mb-3">
+              <ArrowLeftRight className="w-6 h-6" aria-hidden="true" />
             </div>
-            <h3 className="text-base font-bold text-slate-900 dark:text-white">
-              Nenhuma movimentação encontrada
-            </h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-sm mx-auto mb-5">
-              Lance sua primeira receita ou despesa manual para ver o extrato atualizado em tempo real.
+            <h3 className="text-base font-bold text-zinc-900">Nenhuma movimentação encontrada</h3>
+            <p className="text-xs text-zinc-500 mt-1 max-w-sm mx-auto mb-5">
+              Lance uma receita ou despesa ou ajuste os filtros selecionados.
             </p>
             <button
-              onClick={() => setShowModal(true)}
-              className="px-4 py-2 bg-brand-600 text-white rounded-xl text-xs font-semibold"
+              type="button"
+              onClick={openCreateModal}
+              className="px-4 py-2 bg-violet-600 text-white rounded-xl text-xs font-semibold"
             >
-              Criar Lançamento Agora
+              Criar Lançamento
             </button>
           </div>
         ) : (
-          <div className="divide-y divide-slate-100 dark:divide-slate-800">
-            {transactions.map((tx) => {
+          <div className="divide-y divide-[#F3F0FA]">
+            {filteredTransactions.map((tx) => {
               const isIncome = tx.type === 'INCOME';
-              const isTransfer = tx.type === 'TRANSFER';
+              const cat = extractCategoryFromTx(tx);
+              const meta = parseSharedNotes(tx.notes);
 
               return (
                 <div
                   key={tx.id}
-                  className="p-4 sm:p-5 flex items-center justify-between hover:bg-slate-50/50 dark:hover:bg-slate-850/50 transition-colors"
+                  className="p-4 sm:p-5 flex items-center justify-between gap-3 hover:bg-[#FAF8FF] transition-colors"
                 >
-                  <div className="flex items-center gap-3.5">
+                  <div className="flex items-center gap-3.5 min-w-0">
                     <div
-                      className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${
-                        isIncome
-                          ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600'
-                          : isTransfer
-                          ? 'bg-blue-100 dark:bg-blue-950/60 text-blue-600'
-                          : 'bg-rose-100 dark:bg-rose-950/60 text-rose-600'
-                      }`}
+                      className="w-11 h-11 rounded-2xl flex items-center justify-center text-xl shrink-0 border"
+                      style={{
+                        backgroundColor: `${cat.color}18`,
+                        borderColor: `${cat.color}35`,
+                      }}
                     >
-                      {isIncome ? (
-                        <ArrowDownLeft className="w-5 h-5" />
-                      ) : isTransfer ? (
-                        <ArrowLeftRight className="w-5 h-5" />
-                      ) : (
-                        <ArrowUpRight className="w-5 h-5" />
-                      )}
+                      {cat.emoji}
                     </div>
-                    <div>
-                      <h4 className="text-sm font-semibold text-slate-900 dark:text-white">
+                    <div className="min-w-0">
+                      <h4 className="text-sm font-bold text-zinc-900 truncate">
                         {tx.description}
                       </h4>
-                      <div className="flex flex-wrap items-center gap-2 mt-1 text-xs text-slate-400">
+                      <div className="flex flex-wrap items-center gap-2 mt-1 text-xs text-zinc-500">
                         <span>{formatDateBR(tx.date)}</span>
+                        <span>• {cat.label}</span>
                         {tx.account && (
                           <span className="flex items-center gap-1">
-                            • <Building2 className="w-3 h-3" />
+                            • <Building2 className="w-3 h-3" aria-hidden="true" />
                             {tx.account.name}
                           </span>
                         )}
-                        {tx.category && (
-                          <span className="flex items-center gap-1">
-                            • <Tag className="w-3 h-3" />
-                            {tx.category.name}
-                          </span>
-                        )}
-                        {tx.isHouseholdShared && (
-                          <span className="px-1.5 py-0.2 bg-brand-50 text-brand-700 dark:bg-brand-950 dark:text-brand-300 text-[10px] rounded font-medium">
-                            Familiar
+                        {(tx.isHouseholdShared || meta?.groupName) && (
+                          <span className="px-2 py-0.5 bg-violet-50 text-violet-700 border border-violet-200 text-[11px] rounded-full font-semibold">
+                            Grupo{meta?.groupName ? `: ${meta.groupName}` : ''}
                           </span>
                         )}
                       </div>
                     </div>
                   </div>
 
-                  <div className="text-right">
+                  <div className="flex items-center gap-2 shrink-0">
                     <p
                       className={`text-base font-bold ${
-                        isIncome
-                          ? 'text-emerald-600 dark:text-emerald-400'
-                          : isTransfer
-                          ? 'text-blue-600 dark:text-blue-400'
-                          : 'text-slate-900 dark:text-white'
+                        isIncome ? 'text-emerald-600' : 'text-rose-600'
                       }`}
                     >
-                      {isIncome ? '+' : isTransfer ? '' : '-'}
+                      {isIncome ? '+' : '-'}
                       {formatCurrencyBRL(Math.abs(Number(tx.amount)))}
                     </p>
-                    <span className="text-[11px] text-slate-400 uppercase font-medium">
-                      {tx.status}
-                    </span>
+                    <button
+                      type="button"
+                      onClick={() => openEditModal(tx)}
+                      aria-label={`Editar ${tx.description}`}
+                      className="p-2 rounded-lg text-zinc-400 hover:text-violet-600 hover:bg-violet-50 transition-colors"
+                    >
+                      <Pencil className="w-4 h-4" aria-hidden="true" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(tx.id)}
+                      aria-label={`Excluir ${tx.description}`}
+                      className="p-2 rounded-lg text-zinc-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                    >
+                      <Trash2 className="w-4 h-4" aria-hidden="true" />
+                    </button>
                   </div>
                 </div>
               );
@@ -289,161 +458,154 @@ export default function TransactionsPage() {
         )}
       </div>
 
-      {/* Modal Novo Lançamento */}
-      {showModal && (
-        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl">
-            <h2 className="text-lg font-bold text-slate-900 dark:text-white mb-1">
-              Novo Lançamento Financeiro
-            </h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mb-6">
-              Registre uma receita ou despesa manual
-            </p>
+      {/* Modal Nativo Novo / Editar Lançamento */}
+      <dialog
+        ref={modalRef}
+        aria-labelledby="tx-modal-title"
+        closedby="any"
+        onClose={() => setShowModal(false)}
+        onClick={(e) => {
+          if (e.target === modalRef.current) setShowModal(false);
+        }}
+        className="finn-dialog"
+      >
+        <form onSubmit={handleSave} className="bg-white border border-[#EFEAF8] rounded-3xl p-6 shadow-2xl flex flex-col gap-4">
+          <h2 id="tx-modal-title" className="text-lg font-bold text-zinc-900">
+            {editingTxId ? 'Editar Lançamento Financeiro' : 'Novo Lançamento Financeiro'}
+          </h2>
 
-            <form onSubmit={handleCreate} className="flex flex-col gap-4">
-              {/* Seletor Tipo: Despesa vs Receita */}
-              <div className="grid grid-cols-2 p-1 bg-slate-100 dark:bg-slate-850 rounded-xl">
-                <button
-                  type="button"
-                  onClick={() => setType('EXPENSE')}
-                  className={`py-2 text-xs font-semibold rounded-lg transition-all ${
-                    type === 'EXPENSE'
-                      ? 'bg-rose-600 text-white shadow-sm'
-                      : 'text-slate-600 dark:text-slate-400'
-                  }`}
-                >
-                  Despesa
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setType('INCOME')}
-                  className={`py-2 text-xs font-semibold rounded-lg transition-all ${
-                    type === 'INCOME'
-                      ? 'bg-emerald-600 text-white shadow-sm'
-                      : 'text-slate-600 dark:text-slate-400'
-                  }`}
-                >
-                  Receita
-                </button>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Descrição
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  placeholder="Ex: Mercado Pão de Açúcar, Salário, Internet"
-                  className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/30"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Valor (R$)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0.01"
-                    required
-                    value={amount}
-                    onChange={(e) => setAmount(e.target.value)}
-                    placeholder="0,00"
-                    className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/30"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Data
-                  </label>
-                  <input
-                    type="date"
-                    required
-                    value={date}
-                    onChange={(e) => setDate(e.target.value)}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/30"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Conta
-                  </label>
-                  <select
-                    value={accountId}
-                    onChange={(e) => setAccountId(e.target.value)}
-                    className="w-full px-3 py-2.5 bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/30"
-                  >
-                    <option value="">Nenhuma / Avulso</option>
-                    {accounts.map((acc) => (
-                      <option key={acc.id} value={acc.id}>
-                        {acc.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Categoria
-                  </label>
-                  <select
-                    value={categoryId}
-                    onChange={(e) => setCategoryId(e.target.value)}
-                    className="w-full px-3 py-2.5 bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/30"
-                  >
-                    <option value="">Selecione categoria</option>
-                    {categories.map((cat) => (
-                      <option key={cat.id} value={cat.id}>
-                        {cat.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2 pt-2">
-                <input
-                  type="checkbox"
-                  id="shared"
-                  checked={isHouseholdShared}
-                  onChange={(e) => setIsHouseholdShared(e.target.checked)}
-                  className="w-4 h-4 text-brand-600 rounded border-slate-300"
-                />
-                <label htmlFor="shared" className="text-xs text-slate-700 dark:text-slate-300">
-                  Compartilhar no demonstrativo da família
-                </label>
-              </div>
-
-              <div className="flex items-center justify-end gap-3 mt-4 pt-4 border-t border-slate-100 dark:border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setShowModal(false)}
-                  className="px-4 py-2 text-xs font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="px-5 py-2 bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white rounded-xl text-xs font-semibold shadow-md shadow-brand-500/20"
-                >
-                  {submitting ? 'Salvando...' : 'Confirmar Lançamento'}
-                </button>
-              </div>
-            </form>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => setType('EXPENSE')}
+              className={`py-2 rounded-xl text-xs font-bold border ${
+                type === 'EXPENSE'
+                  ? 'bg-rose-50 text-rose-700 border-rose-300'
+                  : 'bg-zinc-50 text-zinc-500 border-zinc-200'
+              }`}
+            >
+              Despesa
+            </button>
+            <button
+              type="button"
+              onClick={() => setType('INCOME')}
+              className={`py-2 rounded-xl text-xs font-bold border ${
+                type === 'INCOME'
+                  ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                  : 'bg-zinc-50 text-zinc-500 border-zinc-200'
+              }`}
+            >
+              Receita
+            </button>
           </div>
-        </div>
-      )}
+
+          <input
+            type="text"
+            required
+            autoFocus
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="Descrição"
+            className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 text-sm"
+          />
+
+          <div className="grid grid-cols-2 gap-3">
+            <input
+              type="text"
+              required
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              placeholder="Valor (ex: 50.00)"
+              className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 text-sm"
+            />
+            <input
+              type="date"
+              required
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              className="w-full px-3.5 py-2.5 rounded-xl border border-zinc-200 text-sm"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-zinc-700 mb-1">Categoria</label>
+            <select
+              value={selectedCategoryId}
+              onChange={(e) => setSelectedCategoryId(e.target.value)}
+              className="w-full px-3.5 py-2.5 rounded-xl border border-zinc-200 text-sm bg-white"
+            >
+              {OFFICIAL_CATEGORIES.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.emoji} {c.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {groups.length > 0 && (
+            <label className="flex items-center gap-2 text-xs font-semibold text-zinc-700 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={isGroupShared}
+                onChange={(e) => setIsGroupShared(e.target.checked)}
+                className="accent-violet-600 w-4 h-4"
+              />
+              Compartilhar em Grupo
+            </label>
+          )}
+
+          {isGroupShared && groups.length > 0 ? (
+            <div>
+              <label className="block text-xs font-semibold text-zinc-700 mb-1">Selecionar Grupo</label>
+              <select
+                value={targetGroupId}
+                onChange={(e) => setTargetGroupId(e.target.value)}
+                className="w-full px-3.5 py-2.5 rounded-xl border border-zinc-200 text-sm bg-white"
+              >
+                {groups.map((g) => (
+                  <option key={g.id} value={g.id}>
+                    {g.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : (
+            accounts.length > 0 && (
+              <div>
+                <label className="block text-xs font-semibold text-zinc-700 mb-1">Conta / Carteira</label>
+                <select
+                  value={accountId}
+                  onChange={(e) => setAccountId(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-zinc-200 text-sm bg-white"
+                >
+                  {accounts.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )
+          )}
+
+          <div className="flex justify-end gap-2 mt-1">
+            <button
+              type="button"
+              onClick={() => setShowModal(false)}
+              className="px-4 py-2 rounded-xl text-xs font-semibold text-zinc-500"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              disabled={submitting}
+              className="px-5 py-2 rounded-xl bg-violet-600 text-white text-xs font-bold"
+            >
+              {submitting ? 'Salvando...' : editingTxId ? 'Atualizar' : 'Salvar'}
+            </button>
+          </div>
+        </form>
+      </dialog>
     </main>
   );
 }
-

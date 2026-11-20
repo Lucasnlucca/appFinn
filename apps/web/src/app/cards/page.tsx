@@ -1,16 +1,21 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   CreditCard as CardIcon,
   Plus,
-  Calendar,
   AlertCircle,
   CheckCircle2,
-  Users,
+  Pencil,
+  Trash2,
+  Wifi,
+  Sparkles,
+  X,
 } from 'lucide-react';
-import { apiFetch } from '@/lib/api';
+import { apiFetch, notifyDataChanged, useLiveSync } from '@/lib/api';
 import { formatCurrencyBRL } from '@finn-ai/ui';
+import BankLogo, { ALL_BANKS, getBankInfo, BankInfo } from '@/components/BankLogo';
+import BankListSelector from '@/components/BankListSelector';
 
 interface CreditCardItem {
   id: string;
@@ -20,32 +25,39 @@ interface CreditCardItem {
   closingDay: number;
   dueDay: number;
   colorHex?: string;
+  lastFourDigits?: string;
   currentBill?: {
     id: string;
     totalAmount: string | number;
     status: string;
   } | null;
-  user?: {
-    id: string;
-    fullName: string;
-  };
 }
 
 export default function CardsPage() {
+  const modalRef = useRef<HTMLDialogElement>(null);
+
   const [cards, setCards] = useState<CreditCardItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showModal, setShowModal] = useState(false);
+  const [editingCard, setEditingCard] = useState<CreditCardItem | null>(null);
+  const [selectedBankId, setSelectedBankId] = useState('nubank');
   const [name, setName] = useState('');
   const [creditLimit, setCreditLimit] = useState('5000');
   const [closingDay, setClosingDay] = useState(20);
   const [dueDay, setDueDay] = useState(28);
-  const [colorHex, setColorHex] = useState('#6366f1');
+  const [colorHex, setColorHex] = useState('#8A05BE');
   const [submitting, setSubmitting] = useState(false);
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  const loadCards = async () => {
+  useEffect(() => {
+    const dlg = modalRef.current;
+    if (!dlg) return;
+    if (showModal && !dlg.open) dlg.showModal();
+    else if (!showModal && dlg.open) dlg.close();
+  }, [showModal]);
+
+  const loadCards = useCallback(async () => {
     try {
-      setLoading(true);
       const data = await apiFetch<CreditCardItem[]>('/credit-cards?scope=HOUSEHOLD');
       setCards(data || []);
     } catch (err: any) {
@@ -53,32 +65,78 @@ export default function CardsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     loadCards();
-  }, []);
+  }, [loadCards]);
 
-  const handleCreate = async (e: React.FormEvent) => {
+  useLiveSync(loadCards);
+
+  const openCreateModal = () => {
+    setEditingCard(null);
+    setSelectedBankId('nubank');
+    setName('Nubank');
+    setCreditLimit('5000');
+    setClosingDay(20);
+    setDueDay(28);
+    setColorHex('#8A05BE');
+    setShowModal(true);
+  };
+
+  const openEditModal = (card: CreditCardItem) => {
+    setEditingCard(card);
+    const bank = getBankInfo(card.name);
+    setSelectedBankId(bank.id);
+    setName(card.name || '');
+    setCreditLimit(String(parseFloat(String(card.creditLimit ?? 5000)) || 0));
+    setClosingDay(Number(card.closingDay) || 20);
+    setDueDay(Number(card.dueDay) || 28);
+    setColorHex(card.colorHex || bank.gradient[0]);
+    setShowModal(true);
+  };
+
+  const activeTheme = useMemo(() => {
+    return getBankInfo(selectedBankId || name);
+  }, [selectedBankId, name]);
+
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
     setStatusMessage(null);
+    const numLimit = parseFloat(String(creditLimit).replace(',', '.')) || 0;
+    const finalName = name.trim() || activeTheme.name;
 
     try {
-      await apiFetch('/credit-cards', {
-        method: 'POST',
-        body: JSON.stringify({
-          name,
-          creditLimit: parseFloat(creditLimit),
-          closingDay: Number(closingDay),
-          dueDay: Number(dueDay),
-          colorHex,
-        }),
-      });
+      if (editingCard) {
+        await apiFetch(`/credit-cards/${encodeURIComponent(editingCard.id)}`, {
+          method: 'PUT',
+          body: JSON.stringify({
+            name: finalName,
+            creditLimit: numLimit,
+            closingDay: Number(closingDay),
+            dueDay: Number(dueDay),
+            colorHex,
+          }),
+        });
+        setStatusMessage({ type: 'success', text: 'Cartão atualizado com sucesso!' });
+      } else {
+        await apiFetch('/credit-cards', {
+          method: 'POST',
+          body: JSON.stringify({
+            name: finalName,
+            creditLimit: numLimit,
+            closingDay: Number(closingDay),
+            dueDay: Number(dueDay),
+            colorHex,
+          }),
+        });
+        setStatusMessage({ type: 'success', text: 'Cartão cadastrado com sucesso!' });
+      }
 
-      setStatusMessage({ type: 'success', text: 'Cartão de crédito cadastrado com sucesso!' });
-      setShowCreateModal(false);
-      setName('');
+      setShowModal(false);
+      setEditingCard(null);
+      notifyDataChanged();
       loadCards();
     } catch (err: any) {
       setStatusMessage({ type: 'error', text: err.message });
@@ -87,138 +145,178 @@ export default function CardsPage() {
     }
   };
 
+  const handleDelete = async (card: CreditCardItem) => {
+    setStatusMessage(null);
+    try {
+      await apiFetch(`/credit-cards/${encodeURIComponent(card.id)}`, { method: 'DELETE' });
+      setStatusMessage({ type: 'success', text: `Cartão "${card.name}" removido!` });
+      notifyDataChanged();
+      loadCards();
+    } catch (err: any) {
+      setStatusMessage({ type: 'error', text: err.message });
+    }
+  };
+
   return (
-    <main className="max-w-6xl mx-auto p-4 sm:p-6 lg:p-10 flex flex-col gap-8">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-6 border-b border-slate-200 dark:border-slate-800">
+    <main className="min-h-[100dvh] bg-white max-w-6xl mx-auto p-4 sm:p-6 lg:p-10 flex flex-col gap-6">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-5 border-b border-[#EFEAF8]">
         <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
-              Cartões de Crédito & Faturas
-            </h1>
-            <span className="px-2.5 py-0.5 text-xs font-semibold rounded-full bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
-              Controle de Fatura
-            </span>
-          </div>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-            Acompanhe o limite disponível, dias de fechamento e vencimento de faturas do casal.
+          <h1 className="finn-page-title font-extrabold tracking-tight text-zinc-900 flex items-center gap-2.5">
+            <CardIcon className="w-6 h-6 text-violet-600" aria-hidden="true" />
+            Meus Cartões
+          </h1>
+          <p className="text-sm text-zinc-500 mt-1">
+            Controle de limites, faturas e temas oficiais dos seus cartões de crédito.
           </p>
         </div>
 
         <button
-          onClick={() => setShowCreateModal(true)}
-          className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl text-sm transition-all shadow-md shadow-indigo-500/20"
+          type="button"
+          onClick={openCreateModal}
+          className="flex items-center gap-2 px-4 py-2.5 bg-violet-600 hover:bg-violet-700 text-white font-bold rounded-xl text-xs transition-colors shadow-sm"
         >
-          <Plus className="w-4 h-4" />
+          <Plus className="w-4 h-4" aria-hidden="true" />
           <span>Novo Cartão</span>
         </button>
       </div>
 
       {statusMessage && (
         <div
-          className={`p-4 rounded-2xl border text-xs flex items-center gap-2 ${
+          role="status"
+          className={`p-3.5 rounded-2xl border text-xs flex items-center gap-2 ${
             statusMessage.type === 'success'
-              ? 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'
-              : 'bg-rose-50 text-rose-800 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800'
+              ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+              : 'bg-rose-50 text-rose-800 border-rose-200'
           }`}
         >
           {statusMessage.type === 'success' ? (
-            <CheckCircle2 className="w-4 h-4 shrink-0" />
+            <CheckCircle2 className="w-4 h-4 shrink-0" aria-hidden="true" />
           ) : (
-            <AlertCircle className="w-4 h-4 shrink-0" />
+            <AlertCircle className="w-4 h-4 shrink-0" aria-hidden="true" />
           )}
           <span>{statusMessage.text}</span>
         </div>
       )}
 
-      {/* Grid de Cartões */}
       {loading ? (
-        <div className="p-10 text-center text-sm text-slate-500">
+        <div className="p-10 text-center text-sm text-zinc-500">
           Carregando cartões de crédito...
         </div>
       ) : cards.length === 0 ? (
-        <div className="p-12 text-center rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
-          <div className="w-12 h-12 rounded-2xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-500 flex items-center justify-center mx-auto mb-3">
-            <CardIcon className="w-6 h-6" />
+        <div className="p-12 text-center rounded-3xl bg-white border border-[#EFEAF8] shadow-sm">
+          <div className="w-12 h-12 rounded-2xl bg-violet-50 text-violet-600 flex items-center justify-center mx-auto mb-3">
+            <CardIcon className="w-6 h-6" aria-hidden="true" />
           </div>
-          <h3 className="text-base font-bold text-slate-900 dark:text-white">
-            Nenhum cartão cadastrado ainda
-          </h3>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-sm mx-auto mb-5">
-            Cadastre seus cartões de crédito para controlar compras parceladas e vencimento de faturas sem surpresas.
+          <h3 className="text-base font-bold text-zinc-900">Nenhum cartão cadastrado ainda</h3>
+          <p className="text-xs text-zinc-500 mt-1 max-w-sm mx-auto mb-5">
+            Cadastre seus cartões (Nubank, Itaú, Inter, C6, Santander, Bradesco, BB, etc.) para controlar faturas e limites.
           </p>
           <button
-            onClick={() => setShowCreateModal(true)}
-            className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-xs font-semibold"
+            type="button"
+            onClick={openCreateModal}
+            className="px-4 py-2 bg-violet-600 text-white rounded-xl text-xs font-semibold"
           >
-            Cadastrar Primeiro Cartão
+            Adicionar Cartão
           </button>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {cards.map((card) => {
-            const billAmount = Number(card.currentBill?.totalAmount || 0);
-            const totalLimit = Number(card.creditLimit || 1);
-            const usedPercentage = Math.min(100, Math.round((billAmount / totalLimit) * 100));
+            const theme = getBankInfo(card.name);
+            const limitNum = parseFloat(String(card.creditLimit ?? 0)) || 0;
+            const invoiceNum = parseFloat(String(card.currentBill?.totalAmount ?? 0)) || 0;
+            const availNum = Math.max(0, limitNum - invoiceNum);
+            const usedPct = limitNum > 0 ? Math.min(100, Math.round((invoiceNum / limitNum) * 100)) : 0;
+            const gradientColors = card.colorHex
+              ? [card.colorHex, theme.gradient[1], theme.gradient[2]]
+              : theme.gradient;
 
             return (
               <div
                 key={card.id}
-                className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col justify-between relative overflow-hidden"
+                className="bg-white border border-[#EFEAF8] rounded-3xl overflow-hidden shadow-sm flex flex-col"
               >
+                {/* Cartão Físico Estilizado igual ao App com BankLogo Oficial */}
                 <div
-                  className="absolute top-0 left-0 right-0 h-1.5"
-                  style={{ backgroundColor: card.colorHex || '#6366f1' }}
-                />
-                <div>
-                  <div className="flex items-center justify-between mb-4">
-                    <div
-                      className="w-10 h-10 rounded-2xl flex items-center justify-center text-white"
-                      style={{ backgroundColor: card.colorHex || '#6366f1' }}
-                    >
-                      <CardIcon className="w-5 h-5" />
+                  className="relative p-5 text-white flex flex-col justify-between min-h-[185px] overflow-hidden"
+                  style={{
+                    background: `linear-gradient(135deg, ${gradientColors[0]} 0%, ${gradientColors[1]} 55%, ${gradientColors[2]} 100%)`,
+                  }}
+                >
+                  <div
+                    aria-hidden="true"
+                    className="absolute -right-10 -bottom-10 w-44 h-44 rounded-full bg-white/10 pointer-events-none"
+                  />
+                  <div className="relative flex items-center justify-between">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <BankLogo bank={theme.id} size={32} />
+                      <span className="font-bold text-base tracking-tight truncate">{card.name}</span>
                     </div>
-                    {card.user && (
-                      <span className="flex items-center gap-1 text-[11px] font-medium text-slate-500 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md">
-                        <Users className="w-3 h-3" />
-                        {card.user.fullName}
-                      </span>
-                    )}
+                    <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-white/15 shrink-0">
+                      {theme.cardLabel}
+                    </span>
                   </div>
 
-                  <h3 className="font-bold text-lg text-slate-900 dark:text-white">
-                    {card.name}
-                  </h3>
-                  <div className="flex items-center gap-4 mt-2 text-xs text-slate-500">
-                    <span className="flex items-center gap-1">
-                      <Calendar className="w-3.5 h-3.5" />
-                      Fecha dia {card.closingDay}
-                    </span>
-                    <span>Vence dia {card.dueDay}</span>
+                  {/* Chip EMV + Contactless */}
+                  <div className="relative flex items-center justify-between my-3">
+                    <div className="w-10 h-7 rounded-md bg-gradient-to-br from-amber-200 via-yellow-400 to-amber-500 border border-amber-100/60 shadow-inner" />
+                    <Wifi className="w-5 h-5 rotate-90 text-white/80" aria-hidden="true" />
+                  </div>
+
+                  <div className="relative flex items-end justify-between">
+                    <div>
+                      <p className="text-[10px] uppercase tracking-wider text-white/70">Fatura Atual</p>
+                      <p className="text-lg font-extrabold">{formatCurrencyBRL(invoiceNum)}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-mono text-xs tracking-widest text-white/80">
+                        •••• {card.lastFourDigits || '••••'}
+                      </p>
+                      <p className="text-[11px] font-bold text-white/90 mt-0.5">{theme.brand}</p>
+                    </div>
                   </div>
                 </div>
 
-                <div className="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800">
-                  <div className="flex justify-between items-baseline mb-1">
-                    <span className="text-[10px] uppercase font-semibold text-slate-400">
-                      Fatura Atual Aberta
-                    </span>
-                    <span className="text-sm font-bold text-rose-600 dark:text-rose-400">
-                      {formatCurrencyBRL(billAmount)}
-                    </span>
+                {/* Detalhes, Barra de Limite e Botões Editar / Excluir */}
+                <div className="p-5 flex flex-col gap-3">
+                  <div>
+                    <div className="flex justify-between text-xs mb-1.5">
+                      <span className="text-zinc-500 font-medium">Limite utilizado ({usedPct}%)</span>
+                      <span className="font-bold text-zinc-900">{formatCurrencyBRL(limitNum)}</span>
+                    </div>
+                    <div className="h-2 w-full bg-violet-50 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-violet-600 rounded-full"
+                        style={{ width: `${usedPct}%` }}
+                      />
+                    </div>
+                    <p className="text-xs text-emerald-600 font-semibold mt-1.5">
+                      Disponível: {formatCurrencyBRL(availNum)}
+                    </p>
                   </div>
 
-                  {/* Barra de Limite */}
-                  <div className="w-full bg-slate-100 dark:bg-slate-800 h-2 rounded-full overflow-hidden my-2">
-                    <div
-                      className="bg-indigo-600 h-full rounded-full transition-all"
-                      style={{ width: `${usedPercentage}%` }}
-                    />
-                  </div>
-
-                  <div className="flex justify-between text-[11px] text-slate-400">
-                    <span>Disponível: {formatCurrencyBRL(card.availableLimit)}</span>
-                    <span>Limite: {formatCurrencyBRL(card.creditLimit)}</span>
+                  <div className="pt-3 border-t border-[#F3F0FA] flex items-center justify-between">
+                    <span className="text-xs text-zinc-500">
+                      Fecha dia {card.closingDay} • Vence dia {card.dueDay}
+                    </span>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => openEditModal(card)}
+                        aria-label={`Editar cartão ${card.name}`}
+                        className="p-1.5 rounded-lg text-zinc-400 hover:text-violet-600 hover:bg-violet-50 transition-colors"
+                      >
+                        <Pencil className="w-4 h-4" aria-hidden="true" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDelete(card)}
+                        aria-label={`Excluir cartão ${card.name}`}
+                        className="p-1.5 rounded-lg text-zinc-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                      >
+                        <Trash2 className="w-4 h-4" aria-hidden="true" />
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -227,99 +325,166 @@ export default function CardsPage() {
         </div>
       )}
 
-      {/* Modal Novo Cartão */}
-      {showCreateModal && (
-        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl">
-            <h2 className="text-lg font-bold text-slate-900 dark:text-white mb-1">
-              Novo Cartão de Crédito
+      {/* Modal / Diálogo de Criação / Edição de Cartão com Seleção de Banco Fiel ao App */}
+      <dialog
+        ref={modalRef}
+        aria-labelledby="card-modal-title"
+        closedby="any"
+        onClose={() => setShowModal(false)}
+        onClick={(e) => {
+          if (e.target === modalRef.current) setShowModal(false);
+        }}
+        className="finn-dialog"
+      >
+        <form
+          onSubmit={handleSave}
+          className="bg-white border border-[#EFEAF8] rounded-3xl p-6 shadow-2xl flex flex-col gap-4 max-w-lg w-full max-h-[92vh] overflow-y-auto"
+        >
+          <div className="flex items-center justify-between pb-2 border-b border-[#F3F0FA]">
+            <h2 id="card-modal-title" className="text-base font-bold text-zinc-900 flex items-center gap-2">
+              <CardIcon className="w-5 h-5 text-violet-600" />
+              {editingCard ? 'Editar Cartão de Crédito' : 'Novo Cartão de Crédito'}
             </h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mb-6">
-              Configure limite e datas de fechamento
-            </p>
-
-            <form onSubmit={handleCreate} className="flex flex-col gap-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Nome do Cartão
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="Ex: Nubank Ultravioleta, XP Visa Infinite"
-                  className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Limite de Crédito Total (R$)
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  required
-                  value={creditLimit}
-                  onChange={(e) => setCreditLimit(e.target.value)}
-                  className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Dia de Fechamento
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="31"
-                    required
-                    value={closingDay}
-                    onChange={(e) => setClosingDay(Number(e.target.value))}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Dia de Vencimento
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="31"
-                    required
-                    value={dueDay}
-                    onChange={(e) => setDueDay(Number(e.target.value))}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
-                  />
-                </div>
-              </div>
-
-              <div className="flex items-center justify-end gap-3 mt-4 pt-4 border-t border-slate-100 dark:border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setShowCreateModal(false)}
-                  className="px-4 py-2 text-xs font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl text-xs font-semibold shadow-md shadow-indigo-500/20"
-                >
-                  {submitting ? 'Salvando...' : 'Salvar Cartão'}
-                </button>
-              </div>
-            </form>
+            <button
+              type="button"
+              onClick={() => setShowModal(false)}
+              className="p-1 text-zinc-400 hover:text-zinc-600 rounded-lg"
+            >
+              <X className="w-4 h-4" />
+            </button>
           </div>
-        </div>
-      )}
+
+          {/* Seleção de Banco idêntica ao APP em Lista com Logos e Filtro */}
+          <BankListSelector
+            selectedBankId={selectedBankId}
+            customName={name}
+            onSelectBank={(bank, displayName) => {
+              setSelectedBankId(bank.id);
+              setName(displayName || bank.name);
+              setColorHex(bank.gradient[0]);
+            }}
+            onChangeCustomName={(newName) => {
+              setName(newName);
+              const info = getBankInfo(newName);
+              if (info.id !== 'other') {
+                setSelectedBankId(info.id);
+                setColorHex(info.gradient[0]);
+              }
+            }}
+          />
+
+          {/* Prévia Instantânea do Cartão */}
+          <div
+            className="p-4 rounded-2xl text-white flex flex-col justify-between shadow-sm relative overflow-hidden transition-all duration-300"
+            style={{
+              background: `linear-gradient(135deg, ${activeTheme.gradient[0]} 0%, ${activeTheme.gradient[1]} 55%, ${activeTheme.gradient[2]} 100%)`,
+            }}
+          >
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <BankLogo bank={activeTheme.id} size={28} />
+                <span className="font-bold text-sm tracking-tight">{name || activeTheme.name}</span>
+              </div>
+              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-white/20">
+                {activeTheme.cardLabel}
+              </span>
+            </div>
+            <div className="flex items-end justify-between">
+              <div>
+                <span className="text-[10px] uppercase text-white/70 block">Limite Total</span>
+                <span className="text-sm font-extrabold">{formatCurrencyBRL(parseFloat(creditLimit) || 0)}</span>
+              </div>
+              <div className="text-right">
+                <span className="text-[11px] font-bold text-white/90">{activeTheme.brand}</span>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-zinc-700 mb-1">
+              Limite Total (R$)
+            </label>
+            <input
+              type="text"
+              required
+              value={creditLimit}
+              onChange={(e) => setCreditLimit(e.target.value)}
+              className="w-full px-3.5 py-2.5 bg-[#FAF8FF] border border-[#E2DAF5] rounded-xl text-sm text-zinc-900 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-600"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-zinc-700 mb-1">Dia Fechamento</label>
+              <input
+                type="number"
+                min={1}
+                max={31}
+                required
+                value={closingDay}
+                onChange={(e) => setClosingDay(Number(e.target.value))}
+                className="w-full px-3.5 py-2.5 bg-[#FAF8FF] border border-[#E2DAF5] rounded-xl text-sm text-zinc-900 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-600"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-zinc-700 mb-1">Dia Vencimento</label>
+              <input
+                type="number"
+                min={1}
+                max={31}
+                required
+                value={dueDay}
+                onChange={(e) => setDueDay(Number(e.target.value))}
+                className="w-full px-3.5 py-2.5 bg-[#FAF8FF] border border-[#E2DAF5] rounded-xl text-sm text-zinc-900 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-600"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-zinc-700 mb-1.5 flex items-center justify-between">
+              <span>Paleta de Cores dos Bancos</span>
+              <span className="text-[10px] text-zinc-400">Personalize o tom</span>
+            </label>
+            <div className="flex flex-wrap gap-2">
+              {ALL_BANKS.map((b) => (
+                <button
+                  key={b.id}
+                  type="button"
+                  onClick={() => {
+                    setSelectedBankId(b.id);
+                    if (!name.trim()) setName(b.name);
+                    setColorHex(b.gradient[0]);
+                  }}
+                  title={b.name}
+                  className={`w-7 h-7 rounded-full border-2 transition-transform ${
+                    colorHex === b.gradient[0] || selectedBankId === b.id
+                      ? 'border-zinc-900 scale-110 shadow-md ring-2 ring-violet-500/30'
+                      : 'border-white hover:scale-105'
+                  }`}
+                  style={{ backgroundColor: b.gradient[0] }}
+                />
+              ))}
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2 mt-2 pt-3 border-t border-[#F3F0FA]">
+            <button
+              type="button"
+              onClick={() => setShowModal(false)}
+              className="px-4 py-2 text-xs font-semibold text-zinc-500 hover:text-zinc-700 rounded-xl"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              disabled={submitting}
+              className="px-5 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-xl text-xs font-bold shadow-sm transition-colors"
+            >
+              {submitting ? 'Salvando...' : editingCard ? 'Atualizar Cartão' : 'Salvar Cartão'}
+            </button>
+          </div>
+        </form>
+      </dialog>
     </main>
   );
 }
-

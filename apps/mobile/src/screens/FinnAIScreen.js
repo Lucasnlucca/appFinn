@@ -30,6 +30,7 @@ import {
   setAudioModeAsync,
 } from 'expo-audio';
 import * as Speech from 'expo-speech';
+import { speakWithFinnNeuralVoice, stopFinnVoice } from '../services/ttsService';
 
 import { COLORS } from '../theme/colors';
 import { useFinance } from '../context/FinanceContext';
@@ -245,7 +246,7 @@ export default function FinnAIScreen({ navigation }) {
     return () => {
       if (recordTimerRef.current) clearInterval(recordTimerRef.current);
       if (liveTimerRef.current) clearInterval(liveTimerRef.current);
-      Speech.stop();
+      stopFinnVoice();
       if (audioRecorder && audioRecorder.isRecording) {
         audioRecorder.stop().catch(() => {});
       }
@@ -310,24 +311,22 @@ export default function FinnAIScreen({ navigation }) {
     return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   };
 
-  // 1. REPRODUZIR VOZ (TEXT-TO-SPEECH)
+  // 1. REPRODUZIR VOZ NEURAL MASCULINA (PUCK - GEMINI 2.5 FLASH TTS)
   const handleSpeak = (msgId, text) => {
     if (speakingMsgId === msgId) {
-      Speech.stop();
+      stopFinnVoice();
       setSpeakingMsgId(null);
       return;
     }
-    Speech.stop();
+    stopFinnVoice();
     const clean = cleanTextForSpeech(text);
     if (!clean) return;
 
     setSpeakingMsgId(msgId);
-    Speech.speak(clean, {
-      language: 'pt-BR',
-      rate: 1.05,
-      pitch: 1.0,
+    speakWithFinnNeuralVoice({
+      id: msgId,
+      text: clean,
       onDone: () => setSpeakingMsgId(null),
-      onStopped: () => setSpeakingMsgId(null),
       onError: () => setSpeakingMsgId(null),
     });
   };
@@ -632,12 +631,10 @@ export default function FinnAIScreen({ navigation }) {
 
             setLiveState('speaking');
             const clean = cleanTextForSpeech(res.text);
-            Speech.speak(clean, {
-              language: 'pt-BR',
-              rate: 1.05,
-              pitch: 1.0,
+            speakWithFinnNeuralVoice({
+              id: `live-${Date.now()}`,
+              text: clean,
               onDone: () => setLiveState('idle'),
-              onStopped: () => setLiveState('idle'),
               onError: () => setLiveState('idle'),
             });
           } else {

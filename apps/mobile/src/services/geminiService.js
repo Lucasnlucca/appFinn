@@ -4,6 +4,8 @@ import { AI_SKINS } from '../theme/aiSkins';
 const STORAGE_KEYS = {
   GEMINI_KEY: '@finn_gemini_api_key',
   GEMINI_MODEL: '@finn_gemini_model',
+  AI_PROVIDER_KEYS: '@finn_ai_provider_keys_v1',
+  AI_ACTIVE_PROVIDER: '@finn_ai_active_provider_v1',
 };
 
 // Modelos ativos e velozes do Google AI Studio
@@ -79,6 +81,179 @@ export async function setGeminiModel(model) {
   }
 }
 
+export async function getAiProviderKeys() {
+  try {
+    const raw = await AsyncStorage.getItem(STORAGE_KEYS.AI_PROVIDER_KEYS);
+    const parsed = raw ? JSON.parse(raw) : {};
+    const legacyGemini = (await AsyncStorage.getItem(STORAGE_KEYS.GEMINI_KEY)) || '';
+    return {
+      gemini: parsed.gemini ?? legacyGemini,
+      openai: parsed.openai || '',
+      grok: parsed.grok || '',
+      claude: parsed.claude || '',
+    };
+  } catch {
+    return { gemini: '', openai: '', grok: '', claude: '' };
+  }
+}
+
+export async function setAiProviderKeys(keys = {}) {
+  try {
+    const clean = {
+      gemini: (keys.gemini || '').trim(),
+      openai: (keys.openai || '').trim(),
+      grok: (keys.grok || '').trim(),
+      claude: (keys.claude || '').trim(),
+    };
+    await AsyncStorage.setItem(STORAGE_KEYS.AI_PROVIDER_KEYS, JSON.stringify(clean));
+    if (clean.gemini) {
+      await AsyncStorage.setItem(STORAGE_KEYS.GEMINI_KEY, clean.gemini);
+    } else {
+      await AsyncStorage.removeItem(STORAGE_KEYS.GEMINI_KEY);
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function getActiveAiProvider() {
+  try {
+    const saved = (await AsyncStorage.getItem(STORAGE_KEYS.AI_ACTIVE_PROVIDER)) || 'gemini';
+    const keys = await getAiProviderKeys();
+    if (saved === 'gemini' || (keys[saved] && keys[saved].trim())) {
+      return saved;
+    }
+    return 'gemini';
+  } catch {
+    return 'gemini';
+  }
+}
+
+export async function setActiveAiProvider(provider = 'gemini') {
+  try {
+    await AsyncStorage.setItem(STORAGE_KEYS.AI_ACTIVE_PROVIDER, provider);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function callAdditionalAiProviderMobile({
+  provider,
+  apiKey,
+  contents,
+  parts,
+  systemInstruction,
+}) {
+  const cleanKey = (apiKey || '').trim();
+  if (!cleanKey) throw new Error(`Chave da API ${provider} não configurada.`);
+
+  const turns = contents || [{ role: 'user', parts: parts || [] }];
+  // Se houver áudio inlineData, delega para o Gemini que possui suporte nativo de áudio
+  const hasAudio = turns.some((t) =>
+    (t.parts || []).some((p) => p?.inlineData?.mimeType?.startsWith('audio/'))
+  );
+  if (hasAudio) {
+    throw new Error('AUDIO_FALLBACK_TO_GEMINI');
+  }
+
+  if (provider === 'openai' || provider === 'grok') {
+    const endpoint =
+      provider === 'grok'
+        ? 'https://api.x.ai/v1/chat/completions'
+        : 'https://api.openai.com/v1/chat/completions';
+    const models =
+      provider === 'grok'
+        ? ['grok-3-mini', 'grok-2-latest', 'grok-beta']
+        : ['gpt-4o-mini', 'gpt-4o'];
+
+    const messages = [];
+    if (systemInstruction) {
+      messages.push({ role: 'system', content: systemInstruction });
+    }
+    for (const turn of turns) {
+      const role = turn.role === 'user' ? 'user' : 'assistant';
+      const textParts = (turn.parts || [])
+        .filter((p) => p?.text)
+        .map((p) => p.text)
+        .join('\n');
+      const imgPart = (turn.parts || []).find((p) => p?.inlineData?.mimeType?.startsWith('image/'));
+      if (imgPart && role === 'user') {
+        messages.push({
+          role: 'user',
+          content: [
+            { type: 'text', text: textParts || 'Analise esta imagem.' },
+            {
+              type: 'image_url',
+              image_url: {
+                url: `data:${imgPart.inlineData.mimeType};base64,${imgPart.inlineData.data}`,
+              },
+            },
+          ],
+        });
+      } else {
+        messages.push({ role, content: textParts || 'Olá' });
+      }
+    }
+
+    for (const model of models) {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${cleanKey}`,
+        },
+        body: JSON.stringify({ model, messages, temperature: 0.4, max_tokens: 1200 }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const text = data?.choices?.[0]?.message?.content || '';
+        if (text) return text;
+      }
+    }
+    throw new Error(`Falha ao consultar ${provider.toUpperCase()}`);
+  }
+
+  if (provider === 'claude') {
+    const endpoint = 'https://api.anthropic.com/v1/messages';
+    const models = ['claude-3-5-sonnet-latest', 'claude-3-5-haiku-latest', 'claude-3-haiku-20240307'];
+    const messages = turns.map((turn) => {
+      const role = turn.role === 'user' ? 'user' : 'assistant';
+      const textParts = (turn.parts || [])
+        .filter((p) => p?.text)
+        .map((p) => p.text)
+        .join('\n');
+      return { role, content: textParts || 'Olá' };
+    });
+
+    for (const model of models) {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': cleanKey,
+          'anthropic-version': '2023-06-01',
+        },
+        body: JSON.stringify({
+          model,
+          max_tokens: 1200,
+          system: systemInstruction || undefined,
+          messages,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const text = data?.content?.[0]?.text || '';
+        if (text) return text;
+      }
+    }
+    throw new Error('Falha ao consultar Claude API');
+  }
+
+  throw new Error('Provedor desconhecido');
+}
+
 /**
  * Chamada principal para a API do Google Gemini com suporte a multi-turn chat e retry
  */
@@ -90,6 +265,27 @@ export async function callGeminiApi({
   systemInstruction,
   retryCount = 0,
 }) {
+  // Se o cliente selecionou uma API adicional (ChatGPT, Grok ou Claude), usa ela mantendo a Gemini ativa como fallback
+  if (retryCount === 0 && !apiKey) {
+    try {
+      const activeProv = await getActiveAiProvider();
+      if (activeProv && activeProv !== 'gemini') {
+        const allKeys = await getAiProviderKeys();
+        if (allKeys[activeProv]?.trim()) {
+          return await callAdditionalAiProviderMobile({
+            provider: activeProv,
+            apiKey: allKeys[activeProv],
+            contents,
+            parts,
+            systemInstruction,
+          });
+        }
+      }
+    } catch (extErr) {
+      // Continua automaticamente para a API Gemini padrão ativa
+    }
+  }
+
   const currentKey = apiKey || (await getGeminiApiKey());
   if (!currentKey || currentKey === 'AIzaSyDOzZL7AxJJ-tL9LGo6nX5MhHJsQCcehbw') {
     throw new Error(

@@ -125,11 +125,11 @@ export default function LoginScreen({ onLoginSuccess }) {
   useEffect(() => {
     let timerId = null;
     async function initAuth() {
-      // 1. Carrega credenciais salvas de "Lembrar de mim"
+      // 1. Carrega credenciais salvas de "Manter-me conectado"
       const remembered = await getRememberedCredentials();
+      setRememberMe(remembered?.rememberMe !== false);
       if (remembered?.email) {
         setLoginEmail(remembered.email);
-        setRememberMe(remembered.rememberMe !== false);
       } else {
         setLoginEmail('');
       }
@@ -455,6 +455,9 @@ export default function LoginScreen({ onLoginSuccess }) {
             'Login realizado com sucesso.'
           );
         }
+        if (result.user?.email) {
+          await setRememberedCredentials(result.user.email, rememberMe);
+        }
         await completeLoginWithDigitalPrompt(result.user, result.token);
       }
     } catch (err) {
@@ -506,11 +509,11 @@ export default function LoginScreen({ onLoginSuccess }) {
       )}
 
       <View style={styles.logoRow}>
-        <View style={styles.logoStripe}>
-          <View style={[styles.stripeBar, { backgroundColor: '#38BDF8' }]} />
-          <View style={[styles.stripeBar, { backgroundColor: '#6366F1' }]} />
-          <View style={[styles.stripeBar, { backgroundColor: '#A855F7' }]} />
-        </View>
+        <Image
+          source={finnLogoSource}
+          style={styles.logoIcon}
+          resizeMode="contain"
+        />
         <Text style={styles.logoText}>FINN</Text>
       </View>
 
@@ -642,7 +645,7 @@ export default function LoginScreen({ onLoginSuccess }) {
               </TouchableOpacity>
             </View>
 
-            {/* Linha: Lembrar de mim & Esqueci minha senha */}
+            {/* Linha: Manter-me conectado & Esqueci minha senha */}
             <View style={styles.optionsRow}>
               <TouchableOpacity
                 style={styles.checkboxRow}
@@ -652,7 +655,7 @@ export default function LoginScreen({ onLoginSuccess }) {
                 <View style={[styles.checkbox, rememberMe && styles.checkboxActive]}>
                   {rememberMe && <Ionicons name="checkmark" size={14} color="#FFFFFF" />}
                 </View>
-                <Text style={styles.checkboxLabel}>Lembrar de mim</Text>
+                <Text style={styles.checkboxLabel}>Manter-me conectado</Text>
               </TouchableOpacity>
 
               <TouchableOpacity onPress={handleForgotPassword} activeOpacity={0.7}>
@@ -1240,20 +1243,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
   },
-  logoStripe: {
-    flexDirection: 'column',
-    gap: 3,
-  },
-  stripeBar: {
-    width: 22,
-    height: 3.5,
-    borderRadius: 2,
+  logoIcon: {
+    width: 28,
+    height: 28,
   },
   logoText: {
+    fontFamily: 'Audiowide',
     fontSize: 22,
-    fontWeight: '900',
     color: '#18181B',
-    letterSpacing: 1.5,
+    letterSpacing: 1.4,
   },
 
   // MASCOTE ROBÔ 3D

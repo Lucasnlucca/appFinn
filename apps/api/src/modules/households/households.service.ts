@@ -34,40 +34,10 @@ export class HouseholdsService {
         },
       });
 
-      // Gera código de convite rápido inicial de 6 caracteres válido por 30 minutos
-      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-      let code = '';
-      for (let i = 0; i < 6; i++) {
-        code += chars.charAt(Math.floor(Math.random() * chars.length));
-      }
-      const tokenHash = crypto.createHash('sha256').update(code).digest('hex');
-      const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
-
-      // Limpa qualquer colisão anterior no banco
-      await tx.householdInvitation.deleteMany({
-        where: {
-          OR: [
-            { tokenHash },
-            { email: `code-${code}@finn.local` },
-          ],
-        },
-      });
-
-      await tx.householdInvitation.create({
-        data: {
-          householdId: household.id,
-          invitedById: userId,
-          email: `code-${code}@finn.local`,
-          role: 'MEMBER',
-          tokenHash,
-          expiresAt,
-        },
-      });
-
       return {
         ...household,
-        inviteCode: code,
-        inviteCodeExpiresAt: expiresAt.toISOString(),
+        inviteCode: null,
+        inviteCodeExpiresAt: null,
       };
     });
   }

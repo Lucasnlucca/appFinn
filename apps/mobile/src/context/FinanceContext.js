@@ -58,8 +58,15 @@ import {
   publishCloudInvite,
   resolveCloudInvite,
 } from '../services/inviteRelayService';
+import { subscribePostgresRealtime } from '../services/realtimeService';
 import { signOutGoogle } from '../services/googleAuthService';
-import { clearAllBiometricData } from '../services/biometricService';
+import {
+  clearAllBiometricData,
+  getRememberedCredentials,
+  setRememberedCredentials,
+  recordMobileUserActivity,
+  checkMobileInactivityExpired,
+} from '../services/biometricService';
 import {
   initPhoneNotifications,
   sendInstantPhoneNotification,
@@ -275,23 +282,34 @@ export function FinanceProvider({ children }) {
   useEffect(() => {
     async function initSession() {
       try {
-        const [storedUser, storedToken, bioEnabled] = await Promise.all([
+        const [storedUser, storedToken, bioEnabled, remembered, expiredByInactivity] = await Promise.all([
           getStoredUser(),
           getStoredToken(),
           AsyncStorage.getItem('@finn_biometric_enabled_v2'),
+          getRememberedCredentials(),
+          checkMobileInactivityExpired(),
         ]);
 
         if (storedUser && storedToken) {
           const uName = storedUser.fullName || storedUser.name || '';
           const normalized = { ...storedUser, name: uName };
+          const keepConnected = remembered?.rememberMe !== false;
 
-          // Se a biometria (digital) estiver habilitada pelo cliente, ao entrar no app
-          // exibe a tela de login solicitando a digital de cara!
-          if (bioEnabled === 'true') {
+          // Se não marcou "Manter-me conectado" ou ficou mais de 3 horas inativo no app, desconecta
+          // mantendo o botão "Manter-me conectado" selecionado e o e-mail preenchido!
+          if (!keepConnected || expiredByInactivity) {
+            if (keepConnected && normalized.email) {
+              await setRememberedCredentials(normalized.email, true);
+            }
+            await clearAuthSession().catch(() => {});
+            setLoggedInUser(null);
+          } else if (bioEnabled === 'true') {
             await AsyncStorage.setItem('@finn_biometric_user_v2', JSON.stringify(normalized));
             await AsyncStorage.setItem('@finn_biometric_token_v2', storedToken);
+            await recordMobileUserActivity();
             setLoggedInUser(null);
           } else {
+            await recordMobileUserActivity();
             setLoggedInUser(normalized);
             if (uName) {
               setMembers((prev) => ({ ...prev, user1: uName }));
@@ -440,22 +458,27 @@ export function FinanceProvider({ children }) {
         let parsedGroups = savedGroups ? JSON.parse(savedGroups) : [];
         if (Array.isArray(parsedGroups)) {
           // Remove qualquer grupo pré-montado padrão que possa ter sido salvo em versões anteriores
-          const cleanedGroups = parsedGroups.filter(
-            (g) =>
-              g &&
-              g.id !== 'grp-casal-default' &&
-              g.id !== 'default-casal' &&
-              g.description !== 'Espaço compartilhado do casal' &&
-              g.description !== 'Grupo conectado ao PostgreSQL' &&
-              !(
-                Array.isArray(g.members) &&
-                g.members.some((m) => m.id === 'partner' || m.name === 'Parceiro(a)')
-              )
-          );
-          if (cleanedGroups.length !== parsedGroups.length) {
-            parsedGroups = cleanedGroups;
-            await saveUserItem('shared_groups', parsedGroups);
-          }
+          // e limpa códigos de convite salvos para que só apareçam quando o usuário clicar em gerar
+          const cleanedGroups = parsedGroups
+            .filter(
+              (g) =>
+                g &&
+                g.id !== 'grp-casal-default' &&
+                g.id !== 'default-casal' &&
+                g.description !== 'Espaço compartilhado do casal' &&
+                g.description !== 'Grupo conectado ao PostgreSQL' &&
+                !(
+                  Array.isArray(g.members) &&
+                  g.members.some((m) => m.id === 'partner' || m.name === 'Parceiro(a)')
+                )
+            )
+            .map((g) => ({
+              ...g,
+              inviteCode: null,
+              inviteCodeExpiresAt: null,
+            }));
+          parsedGroups = cleanedGroups;
+          await saveUserItem('shared_groups', parsedGroups);
         } else {
           parsedGroups = [];
         }
@@ -476,14 +499,33 @@ export function FinanceProvider({ children }) {
         const parsedSettles = savedSettles ? JSON.parse(savedSettles) : [];
         if (savedSettles) setSettlements(parsedSettles);
         if (savedMode) setViewModeState(savedMode);
+        const isInviteCodeNotif = (n) => {
+          if (!n) return false;
+          if (
+            n.type === 'shared_group_invite' ||
+            n.type === 'BUG_REPORT' ||
+            n.meta?.kind === 'bug_report' ||
+            String(n.dedupeKey || '').startsWith('shared_group_invite') ||
+            String(n.dedupeKey || '').startsWith('bug_report_')
+          ) {
+            return true;
+          }
+          const txt = `${n.title || ''} ${n.body || ''} ${n.message || ''}`.toLowerCase();
+          return /c[óo]digo de convite|novo c[óo]digo|c[óo]digo de acesso|convite ativo no grupo/i.test(txt);
+        };
+
         const parsedClearedNotifs = savedClearedNotifs ? JSON.parse(savedClearedNotifs) : [];
         const clearedSetOnLoad = new Set(Array.isArray(parsedClearedNotifs) ? parsedClearedNotifs : []);
         setClearedNotificationIds(Array.isArray(parsedClearedNotifs) ? parsedClearedNotifs : []);
-        setActivityNotifications(
-          (savedActNotifs ? JSON.parse(savedActNotifs) : []).filter(
-            (n) => n && !clearedSetOnLoad.has(n.id) && !clearedSetOnLoad.has(n.dedupeKey)
-          )
+        const filteredInitialActNotifs = (savedActNotifs ? JSON.parse(savedActNotifs) : []).filter(
+          (n) =>
+            n &&
+            !isInviteCodeNotif(n) &&
+            !clearedSetOnLoad.has(n.id) &&
+            !clearedSetOnLoad.has(n.dedupeKey)
         );
+        setActivityNotifications(filteredInitialActNotifs);
+        await saveUserItem('activity_notifications', filteredInitialActNotifs);
         setReadNotificationIds(savedReadNotifs ? JSON.parse(savedReadNotifs) : []);
         const loadedPrefs = await loadUserNotificationPreferences(uid);
         setNotificationPreferences(loadedPrefs);
@@ -512,7 +554,7 @@ export function FinanceProvider({ children }) {
               setActivityNotifications((prev) => {
                 const byKey = new Map();
                 for (const item of [...remoteNotifs, ...(prev || [])]) {
-                  if (!item) continue;
+                  if (!item || isInviteCodeNotif(item)) continue;
                   if (clearedSetOnLoad.has(item.id) || clearedSetOnLoad.has(item.dedupeKey)) {
                     continue;
                   }
@@ -714,10 +756,14 @@ export function FinanceProvider({ children }) {
               };
             });
 
-          // Mantém transações locais (ex: de grupos ou recém-criadas) que não estão na lista remota pessoal
+          // Mantém apenas transações locais ainda não enviadas ao servidor ou compartilhadas de grupos
+          // (se uma transação pessoal já tinha remoteId e não veio mais do servidor, ela foi excluída na web/outro aparelho)
           const localOnlyTxs = latestLocalTxs.filter(
-            (lt) =>
-              !mappedRemoteTxs.some(
+            (lt) => {
+              if (!lt.isShared && lt.remoteId) {
+                return false;
+              }
+              return !mappedRemoteTxs.some(
                 (mt) =>
                   mt.id === lt.id ||
                   mt.id === lt.remoteId ||
@@ -725,7 +771,8 @@ export function FinanceProvider({ children }) {
                     norm(mt.title || mt.description) === norm(lt.title || lt.description) &&
                     Math.abs((parseFloat(mt.amount) || 0) - (parseFloat(lt.amount) || 0)) < 0.01 &&
                     String(mt.date || '').split('T')[0] === String(lt.date || '').split('T')[0])
-              )
+              );
+            }
           );
 
           const finalTxs = [...mappedRemoteTxs, ...localOnlyTxs];
@@ -821,6 +868,11 @@ export function FinanceProvider({ children }) {
     groupName = 'Compartilhado',
     bypassRules = true,
   }) => {
+    const combinedText = `${title || ''} ${message || ''}`.toLowerCase();
+    if (/c[óo]digo de convite|novo c[óo]digo|c[óo]digo de acesso|convite ativo no grupo/i.test(combinedText)) {
+      return;
+    }
+
     const newNotif = NotificationTemplates.sharedGroupActivity({
       groupId,
       groupName,
@@ -1575,11 +1627,20 @@ export function FinanceProvider({ children }) {
     return promise;
   }, [refreshGroupData]);
 
-  // Carrega dados de grupos uma única vez ao iniciar sessão (sem polling periódico)
+  // Carrega dados de grupos ao iniciar sessão e conecta ao stream SSE (PostgreSQL LISTEN db_changes)
   useEffect(() => {
     if (!loaded || !loggedInUser?.id) return;
     refreshGroupData(null, { source: 'init', silent: true }).catch(() => {});
-  }, [loaded, loggedInUser?.id, refreshGroupData]);
+
+    const unsubscribe = subscribePostgresRealtime((evt) => {
+      if (!loggedInUserRef.current?.id) return;
+      refreshHomeData({ source: `sse:${evt?.table || 'db'}`, silent: true }).catch(() => {});
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [loaded, loggedInUser?.id, refreshGroupData, refreshHomeData]);
 
   const toggleHideBalances = async () => {
     const nextVal = !hideBalances;
@@ -2354,6 +2415,9 @@ export function FinanceProvider({ children }) {
   };
 
   const logout = async () => {
+    const prevEmail = loggedInUser?.email || loggedInUserRef.current?.email || '';
+    const remembered = await getRememberedCredentials().catch(() => ({ rememberMe: true, email: '' }));
+
     setTransactions([]);
     setAccounts([]);
     setCards([]);
@@ -2369,7 +2433,41 @@ export function FinanceProvider({ children }) {
     await clearAuthSession();
     await signOutGoogle().catch(() => {});
     await logoutUser().catch(() => {});
+
+    if (remembered?.rememberMe !== false && (prevEmail || remembered?.email)) {
+      await setRememberedCredentials(prevEmail || remembered.email, true).catch(() => {});
+    }
   };
+
+  // Monitora inatividade de 3 horas no App Mobile: se passar de 3h inativo, desconecta mantendo "Manter-me conectado" e e-mail preenchido
+  useEffect(() => {
+    if (!loggedInUser?.id) return;
+
+    const checkIdle = async () => {
+      const expired = await checkMobileInactivityExpired();
+      if (expired && loggedInUserRef.current?.id) {
+        const emailToKeep = loggedInUserRef.current.email || '';
+        const remembered = await getRememberedCredentials();
+        if (remembered?.rememberMe !== false && emailToKeep) {
+          await setRememberedCredentials(emailToKeep, true);
+        }
+        await clearAuthSession().catch(() => {});
+        setLoggedInUser(null);
+      }
+    };
+
+    const intervalId = setInterval(checkIdle, 30000);
+    const sub = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        checkIdle();
+      }
+    });
+
+    return () => {
+      clearInterval(intervalId);
+      sub?.remove?.();
+    };
+  }, [loggedInUser?.id]);
 
   /**
    * Excluir Conta e Dados do Usuário (Diretriz Obrigatória Google Play Store + LGPD)
@@ -2513,39 +2611,17 @@ export function FinanceProvider({ children }) {
     await saveUserItem('active_group_id', id);
   }, [saveUserItem]);
 
-  // Módulo Finanças Compartilhadas: Criar Grupo
+  // Módulo Finanças Compartilhadas: Criar Grupo (código de convite só é gerado quando o usuário clicar)
   const createSharedGroup = async ({ name, type = 'Casal', description = '' }) => {
     const ownerName = loggedInUser?.fullName || loggedInUser?.name || 'Você';
     const cleanName = (name || '').trim() || 'Novo Grupo';
-    let initialCode = generateGroupInviteCode();
-    let inviteCodeExpiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString(); // Válido por 30 minutos
-
     let remoteHouseholdId = null;
-    let invitationToken = null;
 
-    // 1. Cria o Household e Convite Oficial no PostgreSQL
+    // 1. Cria o Household no PostgreSQL (sem gerar código automático)
     try {
       const apiRes = await createHouseholdApi(cleanName);
       if (apiRes?.id) {
         remoteHouseholdId = apiRes.id;
-        // Prioriza 100% o código gerado e persistido diretamente no PostgreSQL
-        if (apiRes.inviteCode) {
-          initialCode = apiRes.inviteCode;
-          if (apiRes.inviteCodeExpiresAt) inviteCodeExpiresAt = apiRes.inviteCodeExpiresAt;
-          invitationToken = apiRes.inviteCode;
-        } else {
-          try {
-            // Registra código oficial de 30 minutos diretamente no PostgreSQL
-            const codeRes = await generateHouseholdInviteCodeApi(remoteHouseholdId, initialCode);
-            if (codeRes?.code) {
-              initialCode = codeRes.code;
-              if (codeRes.expiresAt) inviteCodeExpiresAt = codeRes.expiresAt;
-              invitationToken = codeRes.code;
-            }
-          } catch (invErr) {
-            console.log('Código inicial PostgreSQL:', invErr.message);
-          }
-        }
       } else {
         throw new Error('Servidor não retornou o identificador do grupo.');
       }
@@ -2558,25 +2634,6 @@ export function FinanceProvider({ children }) {
       );
     }
 
-    // 2. Registra convite na nuvem e no registro local do dispositivo (sem sobrescrever o código!)
-    let finalCode = initialCode;
-    try {
-      const cloudRes = await publishCloudInvite({
-        invitationToken,
-        householdId: remoteHouseholdId,
-        name: cleanName,
-        type: type || 'Casal',
-        creator: { id: loggedInUser?.id || 'admin', name: ownerName, email: loggedInUser?.email || '' },
-        expiresAt: inviteCodeExpiresAt,
-        fallbackCode: initialCode,
-      });
-      if (cloudRes?.code) {
-        finalCode = cloudRes.code;
-      }
-    } catch (cloudErr) {
-      console.warn('Aviso: falha ao publicar código na nuvem:', cloudErr.message);
-    }
-
     const newGroup = {
       id: remoteHouseholdId || 'grp-' + Date.now(),
       remoteId: remoteHouseholdId,
@@ -2587,8 +2644,8 @@ export function FinanceProvider({ children }) {
       creatorId: loggedInUser?.id || 'admin',
       creatorEmail: (loggedInUser?.email || '').toLowerCase().trim(),
       creatorName: ownerName,
-      inviteCode: finalCode,
-      inviteCodeExpiresAt,
+      inviteCode: null,
+      inviteCodeExpiresAt: null,
       members: [
         {
           id: loggedInUser?.id || 'admin',
@@ -2610,14 +2667,6 @@ export function FinanceProvider({ children }) {
     await saveUserItem('shared_groups', nextGroups);
     await saveUserItem('active_group_id', newGroup.id);
     await saveUserItem('view_mode', 'shared');
-
-    pushGroupNotification({
-      title: `👥 Novo grupo criado: ${newGroup.name}`,
-      message: `O grupo '${newGroup.name}' (${newGroup.type}) está ativo! Envie o código de convite ${newGroup.inviteCode} (válido por 30 min) para quem vai dividir as finanças com você.`,
-      icon: 'people',
-      color: '#7C3AED',
-      groupId: newGroup.id,
-    });
 
     return newGroup;
   };
@@ -2656,6 +2705,9 @@ export function FinanceProvider({ children }) {
 
     const targetGroup = sharedGroups.find((g) => g.id === targetGroupId);
     if (!targetGroup) throw new Error('Grupo não encontrado.');
+    if (!isGroupCreator(targetGroup)) {
+      throw new Error('Apenas o dono do grupo pode gerar um novo código de convite.');
+    }
 
     let targetHhId = targetGroup.remoteId || (targetGroup.id && !targetGroup.id.startsWith('grp-') ? targetGroup.id : null);
     let baseCode = null;
@@ -2760,14 +2812,6 @@ export function FinanceProvider({ children }) {
       await saveUserItem('active_group_id', targetHhId);
     }
     await saveUserItem('shared_groups', updatedGroups);
-
-    pushGroupNotification({
-      title: `🔑 Novo código de convite: ${finalCode}`,
-      message: `Um novo código de convite (${finalCode}) válido por 30 minutos foi gerado para o grupo '${targetGroup.name}'.`,
-      icon: 'key-outline',
-      color: '#0EA5E9',
-      groupId: targetHhId || targetGroup.id,
-    });
 
     return {
       inviteCode: finalCode,
@@ -3011,14 +3055,6 @@ export function FinanceProvider({ children }) {
     const nextInvitations = [inv, ...groupInvitations];
     setGroupInvitations(nextInvitations);
     await saveUserItem('group_invitations', nextInvitations);
-
-    pushGroupNotification({
-      title: `📩 Convite enviado para ${email.trim()}`,
-      message: `Convite gerado para o grupo '${targetGroup?.name || 'Compartilhado'}'. Código de acesso: ${inv.token} (válido por 30 min).`,
-      icon: 'mail-unread-outline',
-      color: '#7C3AED',
-      groupId: targetGroupId,
-    });
 
     return inv;
   };
@@ -4155,19 +4191,6 @@ Responda de forma clara, motivadora e estruturada em tópicos!`;
     }
   }
 
-  // 6. Convites ativos nas Finanças Compartilhadas
-  const pendingInvites = (groupInvitations || []).filter((inv) => inv.status === 'PENDING');
-  if (pendingInvites.length > 0) {
-    smartSystemNotifications.push(
-      NotificationTemplates.sharedGroupInvite({
-        id: `smart-group-invites-${pendingInvites.length}`,
-        invitedEmail: pendingInvites[0].email,
-        inviteCode: pendingInvites[0].token,
-        pendingCount: pendingInvites.length,
-      })
-    );
-  }
-
   // 7. Lembrete diário para registrar despesas (só se não registrou nada hoje)
   if (!hasRecordedToday) {
     smartSystemNotifications.push(NotificationTemplates.dailyRegisterReminder());
@@ -4192,9 +4215,24 @@ Responda de forma clara, motivadora e estruturada em tópicos!`;
   // 9. Sistema: App atualizado
   smartSystemNotifications.push(NotificationTemplates.systemAppUpdated());
 
-  const normalizedActivityNotifs = (activityNotifications || []).map((n) =>
-    normalizeLegacyNotification(n)
-  );
+  const isInviteCodeNotificationItem = (n) => {
+    if (!n) return false;
+    if (
+      n.type === 'shared_group_invite' ||
+      n.type === 'BUG_REPORT' ||
+      n.meta?.kind === 'bug_report' ||
+      String(n.dedupeKey || '').startsWith('shared_group_invite') ||
+      String(n.dedupeKey || '').startsWith('bug_report_')
+    ) {
+      return true;
+    }
+    const txt = `${n.title || ''} ${n.body || ''} ${n.message || ''}`.toLowerCase();
+    return /c[óo]digo de convite|novo c[óo]digo|c[óo]digo de acesso|convite ativo no grupo/i.test(txt);
+  };
+
+  const normalizedActivityNotifs = (activityNotifications || [])
+    .filter((n) => !isInviteCodeNotificationItem(n))
+    .map((n) => normalizeLegacyNotification(n));
 
   const heroAiNotifs = smartSystemNotifications.filter((n) => n.isHeroAi);
   const otherSmartNotifs = smartSystemNotifications.filter((n) => !n.isHeroAi);
@@ -4206,7 +4244,7 @@ Responda de forma clara, motivadora e estruturada em tópicos!`;
   const deduplicatedList = [];
 
   for (const item of rawCombined) {
-    if (!item) continue;
+    if (!item || isInviteCodeNotificationItem(item)) continue;
     if (clearedSet.has(item.id) || (item.dedupeKey && clearedSet.has(item.dedupeKey))) {
       continue;
     }

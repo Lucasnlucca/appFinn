@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   Target,
   Plus,
@@ -14,6 +14,7 @@ import {
   DollarSign,
   PiggyBank,
 } from 'lucide-react';
+import { apiFetch, notifyDataChanged, useLiveSync } from '@/lib/api';
 
 interface Goal {
   id: string;
@@ -28,41 +29,46 @@ interface Goal {
 }
 
 export default function GoalsPage() {
-  const [goals, setGoals] = useState<Goal[]>([
-    {
-      id: 'g-1',
-      name: 'Reserva de Emergência (6 Meses)',
-      targetAmount: 50000,
-      currentAmount: 32500,
-      progressPct: 65,
-      targetDate: '2027-12-31',
-      category: 'Segurança',
-      scope: 'HOUSEHOLD',
-      monthlyNeeded: 1250,
-    },
-    {
-      id: 'g-2',
-      name: 'Viagem de Férias em Família',
-      targetAmount: 18000,
-      currentAmount: 7200,
-      progressPct: 40,
-      targetDate: '2027-07-20',
-      category: 'Lazer & Viagem',
-      scope: 'HOUSEHOLD',
-      monthlyNeeded: 1350,
-    },
-    {
-      id: 'g-3',
-      name: 'Entrada Troca de Carro',
-      targetAmount: 30000,
-      currentAmount: 12000,
-      progressPct: 40,
-      targetDate: '2028-06-30',
-      category: 'Bens',
-      scope: 'PERSONAL',
-      monthlyNeeded: 900,
-    },
-  ]);
+  const [goals, setGoals] = useState<Goal[]>([]);
+
+  const loadGoals = useCallback(async () => {
+    try {
+      const list = await apiFetch<any[]>('/goals?scope=HOUSEHOLD');
+      if (Array.isArray(list)) {
+        setGoals(
+          list.map((g) => {
+            const target = parseFloat(String(g.targetAmount ?? 0)) || 0;
+            const current = parseFloat(String(g.currentAmount ?? 0)) || 0;
+            const pct =
+              typeof g.progressPct === 'number'
+                ? Math.round(g.progressPct)
+                : target > 0
+                  ? Math.min(100, Math.round((current / target) * 100))
+                  : 0;
+            return {
+              id: g.id,
+              name: g.name || g.title || 'Meta Financeira',
+              targetAmount: target,
+              currentAmount: current,
+              progressPct: pct,
+              targetDate: g.targetDate ? String(g.targetDate).split('T')[0] : '2027-12-31',
+              category: g.category || 'Geral',
+              scope: g.householdId || g.isHouseholdShared ? 'HOUSEHOLD' : 'PERSONAL',
+              monthlyNeeded: Math.max(0, Math.round((target - current) / 12)),
+            };
+          }),
+        );
+      }
+    } catch {
+      // keep existing goals on transient error
+    }
+  }, []);
+
+  useEffect(() => {
+    loadGoals();
+  }, [loadGoals]);
+
+  useLiveSync(loadGoals);
 
   // Modal states
   const [isNewGoalOpen, setIsNewGoalOpen] = useState(false);
@@ -92,43 +98,78 @@ export default function GoalsPage() {
   const formatBRL = (v: number) =>
     new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v);
 
-  const handleCreateGoal = (e: React.FormEvent) => {
+  const handleCreateGoal = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newGoal.name || !newGoal.targetAmount) return;
 
-    const targetVal = parseFloat(newGoal.targetAmount);
-    const created: Goal = {
-      id: `g-${Date.now()}`,
-      name: newGoal.name,
-      targetAmount: targetVal,
-      currentAmount: 0,
-      progressPct: 0,
-      targetDate: newGoal.targetDate || '2027-12-31',
-      category: newGoal.category,
-      scope: newGoal.scope,
-      monthlyNeeded: Math.round(targetVal / 18),
-    };
+    const targetVal = parseFloat(newGoal.targetAmount.replace(',', '.')) || 0;
+    const targetDateIso = newGoal.targetDate
+      ? new Date(newGoal.targetDate).toISOString()
+      : new Date(Date.now() + 365 * 86400000).toISOString();
 
-    setGoals((prev) => [created, ...prev]);
+    try {
+      await apiFetch('/goals', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: newGoal.name.trim(),
+          targetAmount: targetVal,
+          currentAmount: 0,
+          targetDate: targetDateIso,
+          isHouseholdShared: newGoal.scope === 'HOUSEHOLD',
+        }),
+      });
+      notifyDataChanged('goals', 'INSERT');
+      await loadGoals();
+    } catch {
+      const created: Goal = {
+        id: `g-${Date.now()}`,
+        name: newGoal.name,
+        targetAmount: targetVal,
+        currentAmount: 0,
+        progressPct: 0,
+        targetDate: newGoal.targetDate || '2027-12-31',
+        category: newGoal.category,
+        scope: newGoal.scope,
+        monthlyNeeded: Math.round(targetVal / 18),
+      };
+      setGoals((prev) => [created, ...prev]);
+    }
     setIsNewGoalOpen(false);
     setNewGoal({ name: '', targetAmount: '', targetDate: '', category: 'Geral', scope: 'HOUSEHOLD' });
   };
 
-  const handleAddContribution = (e: React.FormEvent) => {
+  const handleAddContribution = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedGoalForContribution || !contributionAmount) return;
-    const amountVal = parseFloat(contributionAmount);
+    const amountVal = parseFloat(contributionAmount.replace(',', '.')) || 0;
+    if (amountVal <= 0) return;
 
-    setGoals((prev) =>
-      prev.map((g) => {
-        if (g.id === selectedGoalForContribution.id) {
-          const newCurrent = g.currentAmount + amountVal;
-          const newPct = Math.min(100, Math.round((newCurrent / g.targetAmount) * 100));
-          return { ...g, currentAmount: newCurrent, progressPct: newPct };
-        }
-        return g;
-      }),
-    );
+    try {
+      if (!selectedGoalForContribution.id.startsWith('g-')) {
+        await apiFetch(`/goals/${encodeURIComponent(selectedGoalForContribution.id)}/contributions`, {
+          method: 'POST',
+          body: JSON.stringify({
+            amount: amountVal,
+            date: new Date().toISOString(),
+          }),
+        });
+        notifyDataChanged('goals', 'UPDATE');
+        await loadGoals();
+      } else {
+        throw new Error('local');
+      }
+    } catch {
+      setGoals((prev) =>
+        prev.map((g) => {
+          if (g.id === selectedGoalForContribution.id) {
+            const newCurrent = g.currentAmount + amountVal;
+            const newPct = Math.min(100, Math.round((newCurrent / g.targetAmount) * 100));
+            return { ...g, currentAmount: newCurrent, progressPct: newPct };
+          }
+          return g;
+        }),
+      );
+    }
 
     setSelectedGoalForContribution(null);
     setContributionAmount('');

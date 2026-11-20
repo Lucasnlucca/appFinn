@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   PiggyBank,
   Plus,
@@ -11,6 +11,12 @@ import {
   DollarSign,
   ShieldAlert,
 } from 'lucide-react';
+import {
+  apiFetch,
+  extractCategoryFromTx,
+  notifyDataChanged,
+  useLiveSync,
+} from '@/lib/api';
 
 interface CategoryBudget {
   categoryId: string;
@@ -23,53 +29,77 @@ interface CategoryBudget {
 }
 
 export default function BudgetsPage() {
-  const [budgets, setBudgets] = useState<CategoryBudget[]>([
-    {
-      categoryId: 'cat-1',
-      categoryName: 'Alimentação & Supermercado',
-      limitAmount: 2500,
-      spentAmount: 1950,
-      status: 'NORMAL',
-      spentPct: 78,
-      remainingAmount: 550,
-    },
-    {
-      categoryId: 'cat-2',
-      categoryName: 'Restaurantes & Delivery',
-      limitAmount: 1200,
-      spentAmount: 1100,
-      status: 'WARNING',
-      spentPct: 91,
-      remainingAmount: 100,
-    },
-    {
-      categoryId: 'cat-3',
-      categoryName: 'Transporte & Combustível',
-      limitAmount: 900,
-      spentAmount: 980,
-      status: 'EXCEEDED',
-      spentPct: 108,
-      remainingAmount: -80,
-    },
-    {
-      categoryId: 'cat-4',
-      categoryName: 'Lazer & Entretenimento',
-      limitAmount: 800,
-      spentAmount: 420,
-      status: 'NORMAL',
-      spentPct: 52,
-      remainingAmount: 380,
-    },
-    {
-      categoryId: 'cat-5',
-      categoryName: 'Farmácia & Saúde',
-      limitAmount: 600,
-      spentAmount: 230,
-      status: 'NORMAL',
-      spentPct: 38,
-      remainingAmount: 370,
-    },
-  ]);
+  const [budgets, setBudgets] = useState<CategoryBudget[]>([]);
+
+  const loadBudgets = useCallback(async () => {
+    try {
+      const [apiBudgets, txs] = await Promise.all([
+        apiFetch<any[]>('/budgets?scope=HOUSEHOLD').catch(() => []),
+        apiFetch<any[]>('/transactions?scope=HOUSEHOLD').catch(() => []),
+      ]);
+
+      if (Array.isArray(apiBudgets) && apiBudgets.length > 0) {
+        setBudgets(
+          apiBudgets.map((b) => {
+            const limit = parseFloat(String(b.limitAmount ?? b.amount ?? 1000)) || 1000;
+            const spent = parseFloat(String(b.spentAmount ?? 0)) || 0;
+            const pct = limit > 0 ? Math.round((spent / limit) * 100) : 0;
+            const status = pct >= 100 ? 'EXCEEDED' : pct >= 80 ? 'WARNING' : 'NORMAL';
+            return {
+              categoryId: b.categoryId || b.id,
+              categoryName: b.categoryName || b.category?.name || 'Categoria',
+              limitAmount: limit,
+              spentAmount: spent,
+              status,
+              spentPct: pct,
+              remainingAmount: limit - spent,
+            };
+          }),
+        );
+        return;
+      }
+
+      if (Array.isArray(txs)) {
+        const spentByCat = new Map<string, { label: string; spent: number }>();
+        for (const tx of txs) {
+          if (String(tx?.type).toUpperCase() !== 'EXPENSE') continue;
+          const cat = extractCategoryFromTx(tx);
+          const cur = spentByCat.get(cat.id) || { label: `${cat.emoji} ${cat.label}`, spent: 0 };
+          cur.spent += parseFloat(String(tx.amount ?? 0)) || 0;
+          spentByCat.set(cat.id, cur);
+        }
+
+        if (spentByCat.size > 0) {
+          setBudgets((prev) => {
+            const prevLimits = new Map(prev.map((p) => [p.categoryId, p.limitAmount]));
+            return Array.from(spentByCat.entries()).map(([catId, info]) => {
+              const limit = prevLimits.get(catId) || Math.max(1000, Math.ceil(info.spent / 500) * 500);
+              const spent = Math.round(info.spent * 100) / 100;
+              const pct = limit > 0 ? Math.round((spent / limit) * 100) : 0;
+              const status = pct >= 100 ? 'EXCEEDED' : pct >= 80 ? 'WARNING' : 'NORMAL';
+              return {
+                categoryId: catId,
+                categoryName: info.label,
+                limitAmount: limit,
+                spentAmount: spent,
+                status,
+                spentPct: pct,
+                remainingAmount: limit - spent,
+              };
+            });
+          });
+        }
+      }
+    } catch {
+      // keep existing state
+    }
+  }, []);
+
+  useEffect(() => {
+    loadBudgets();
+  }, [loadBudgets]);
+
+  useLiveSync(loadBudgets);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newBudget, setNewBudget] = useState({

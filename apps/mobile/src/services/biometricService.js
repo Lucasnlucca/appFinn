@@ -16,7 +16,34 @@ const STORAGE_KEYS = {
   REMEMBER_ME: '@finn_remember_me_v2',
   BIOMETRIC_USER: '@finn_biometric_user_v2',
   BIOMETRIC_TOKEN: '@finn_biometric_token_v2',
+  LAST_ACTIVE_AT: '@finn_mobile_last_active_at_v1',
 };
+
+// Tempo máximo de inatividade no App: 3 horas (10.800.000 ms)
+export const MOBILE_INACTIVITY_TIMEOUT_MS = 3 * 60 * 60 * 1000;
+
+export async function recordMobileUserActivity() {
+  try {
+    await AsyncStorage.setItem(STORAGE_KEYS.LAST_ACTIVE_AT, String(Date.now()));
+  } catch {}
+}
+
+export async function checkMobileInactivityExpired() {
+  try {
+    const lastRaw = await AsyncStorage.getItem(STORAGE_KEYS.LAST_ACTIVE_AT);
+    if (!lastRaw) {
+      await recordMobileUserActivity();
+      return false;
+    }
+    const elapsed = Date.now() - Number(lastRaw);
+    if (!Number.isNaN(elapsed) && elapsed > MOBILE_INACTIVITY_TIMEOUT_MS) {
+      return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Verifica se o dispositivo possui sensor de impressão digital (biometria) ativo e cadastrado
@@ -84,7 +111,7 @@ export async function setBiometricLoginEnabled(enabled, user = null, explicitTok
 }
 
 /**
- * Lembrar de mim (e-mail pré-preenchido)
+ * Manter-me conectado (e-mail pré-preenchido e persistência de sessão)
  */
 export async function getRememberedCredentials() {
   try {
@@ -94,24 +121,27 @@ export async function getRememberedCredentials() {
     ]);
     return {
       email: savedEmail || '',
-      rememberMe: rememberMe === 'true',
+      rememberMe: rememberMe === null ? true : rememberMe === 'true',
     };
   } catch {
-    return { email: '', rememberMe: false };
+    return { email: '', rememberMe: true };
   }
 }
 
 export async function setRememberedCredentials(email, rememberMe) {
   try {
+    await recordMobileUserActivity();
     if (rememberMe) {
       await AsyncStorage.setItem(STORAGE_KEYS.REMEMBER_ME, 'true');
-      await AsyncStorage.setItem(STORAGE_KEYS.SAVED_EMAIL, email || '');
+      if (email) {
+        await AsyncStorage.setItem(STORAGE_KEYS.SAVED_EMAIL, String(email).trim().toLowerCase());
+      }
     } else {
       await AsyncStorage.setItem(STORAGE_KEYS.REMEMBER_ME, 'false');
       await AsyncStorage.removeItem(STORAGE_KEYS.SAVED_EMAIL);
     }
   } catch (e) {
-    console.warn('Erro ao salvar credenciais para lembrar:', e);
+    console.warn('Erro ao salvar credenciais para manter conectado:', e);
   }
 }
 

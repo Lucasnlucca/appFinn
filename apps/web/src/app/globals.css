@@ -2,28 +2,129 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --foreground-rgb: 15, 23, 42;
-  --background-start-rgb: 248, 250, 252;
-  --background-end-rgb: 241, 245, 249;
+@font-face {
+  font-family: 'Audiowide';
+  src: url('/fonts/Audiowide-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --foreground-rgb: 248, 250, 252;
-    --background-start-rgb: 15, 23, 42;
-    --background-end-rgb: 7, 13, 24;
-  }
+:root {
+  --foreground-rgb: 24, 24, 27;
+  --background-rgb: 255, 255, 255;
+  --finn-primary: #6d28d9;
+  --finn-primary-bright: #7c3aed;
+  --finn-surface: #ffffff;
+  --finn-surface-soft: #faf8ff;
+  --finn-border: #e9e5f5;
 }
 
 body {
   color: rgb(var(--foreground-rgb));
-  background: linear-gradient(
-      to bottom,
-      transparent,
-      rgb(var(--background-end-rgb))
-    )
-    rgb(var(--background-start-rgb));
-  min-height: 100vh;
+  background-color: #ffffff;
+  min-height: 100dvh;
 }
 
+.font-finn {
+  font-family: 'Audiowide', system-ui, -apple-system, sans-serif;
+}
+
+/* Visible keyboard focus ring across interactive controls */
+:focus-visible {
+  outline: 2px solid var(--finn-primary-bright);
+  outline-offset: 2px;
+}
+
+/* Fluid heading scale respecting WCAG 1.4.4 resize text up to 200% */
+.finn-page-title {
+  font-size: clamp(1.35rem, 1.05rem + 1.1vw, 1.9rem);
+  line-height: 1.2;
+}
+
+.finn-hero-value {
+  font-size: clamp(1.75rem, 1.3rem + 1.6vw, 2.5rem);
+  line-height: 1.1;
+}
+
+/* Container-query ready grid wrapper */
+.finn-card-container {
+  container-type: inline-size;
+}
+
+/* Native <dialog> modal scroll containment & clean backdrop */
+dialog.finn-dialog {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  max-inline-size: min(92dvw, 28rem);
+  inline-size: 100%;
+  margin: auto;
+  overflow: visible;
+}
+
+dialog.finn-dialog:modal {
+  overscroll-behavior: contain;
+}
+
+dialog.finn-dialog::backdrop {
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(4px);
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
+
+/* Hide scrollbars cleanly in the sidebar while preserving vertical scroll if needed */
+.finn-no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  overflow-x: hidden;
+}
+.finn-no-scrollbar::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .finn-slide-pill {
+    transition: transform 240ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .finn-sidebar-transition {
+    transition:
+      width 320ms cubic-bezier(0.16, 1, 0.3, 1),
+      box-shadow 320ms cubic-bezier(0.16, 1, 0.3, 1);
+    will-change: width;
+  }
+  .finn-sidebar-label {
+    transition:
+      opacity 220ms cubic-bezier(0.16, 1, 0.3, 1),
+      transform 280ms cubic-bezier(0.16, 1, 0.3, 1);
+    will-change: opacity, transform;
+  }
+  dialog.finn-dialog[open] {
+    animation: finn-dialog-in 180ms ease-out;
+  }
+}
+
+@keyframes finn-dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Active navigation link indicator (visible in forced-colors mode too) */
+.finn-nav-link[aria-current='page'] {
+  border-inline-start: 3px solid var(--finn-primary);
+}
+
+@media (forced-colors: active) {
+  .finn-nav-link[aria-current='page'] {
+    border-inline-start: 3px solid Highlight;
+  }
+}

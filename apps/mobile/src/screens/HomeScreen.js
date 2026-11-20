@@ -295,18 +295,7 @@ export default function HomeScreen({ navigation }) {
 
       Alert.alert(
         'Grupo Criado com Sucesso! 🎉',
-        `Nome: ${created.name}\nCódigo de Convite: ${created.inviteCode}\n\nEste código é único e válido por 30 minutos para você enviar aos outros participantes.`,
-        [
-          { text: 'Concluir' },
-          {
-            text: 'Compartilhar Código',
-            onPress: () => {
-              Share.share({
-                message: `Olá! Estou te convidando para o grupo '${created.name}' no FINN. Baixe o app e entre com o código de convite: ${created.inviteCode} (válido por 30 minutos).`,
-              });
-            },
-          },
-        ]
+        `O grupo "${created.name}" foi criado! Quando quiser convidar participantes, acesse a aba de Grupos e toque em "Gerar código de convite".`
       );
     } catch (e) {
       Alert.alert('Erro', e.message);

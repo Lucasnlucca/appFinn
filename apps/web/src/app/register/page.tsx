@@ -4,7 +4,7 @@ import React, { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Sparkles, UserPlus, Lock, Mail, User, AlertCircle, ArrowRight, HeartHandshake } from 'lucide-react';
-import { apiFetch } from '@/lib/api';
+import { apiFetch, saveAuthSession } from '@/lib/api';
 
 function RegisterForm() {
   const router = useRouter();
@@ -34,12 +34,13 @@ function RegisterForm() {
         ? `/auth/register?invitationToken=${encodeURIComponent(invitationToken)}`
         : '/auth/register';
 
-      await apiFetch(url, {
+      const res = await apiFetch<{ accessToken?: string; token?: string; user?: any }>(url, {
         method: 'POST',
         body: JSON.stringify({ fullName, email, password }),
       });
 
-      router.push('/household');
+      saveAuthSession(res?.accessToken || res?.token || null, res?.user || null);
+      router.push('/');
     } catch (err: any) {
       setErrorMessage(err.message || 'Falha ao criar conta');
     } finally {
@@ -48,17 +49,19 @@ function RegisterForm() {
   };
 
   return (
-    <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center p-4">
-      <div className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-8 shadow-xl shadow-slate-200/50 dark:shadow-none">
+    <div className="min-h-[100dvh] bg-white flex items-center justify-center p-4">
+      <div className="w-full max-w-md bg-white border border-[#E9E5F5] rounded-3xl p-8 shadow-2xl shadow-violet-900/10">
         <div className="flex flex-col items-center text-center mb-6">
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-brand-600 to-emerald-400 flex items-center justify-center text-white shadow-lg shadow-brand-500/20 mb-3">
-            <Sparkles className="w-6 h-6" />
-          </div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
-            Criar Conta no FINN AI
+          <img
+            src="/finn-logo.png"
+            alt="Logo FINN"
+            className="w-12 h-12 rounded-2xl object-contain aspect-square mb-2"
+          />
+          <h1 className="font-finn text-xl tracking-wide text-violet-700">
+            Criar Conta no FINN
           </h1>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            Finanças inteligentes com privacidade para você e seu cônjuge
+          <p className="text-xs text-zinc-500 mt-1">
+            A mesma conta funciona no navegador e no aplicativo
           </p>
         </div>
 

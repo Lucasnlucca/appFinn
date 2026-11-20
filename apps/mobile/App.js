@@ -13,6 +13,7 @@ import * as Notifications from 'expo-notifications';
 import { COLORS } from './src/theme/colors';
 import { FinanceProvider, useFinance } from './src/context/FinanceContext';
 import { CustomAlertProvider } from './src/context/CustomAlertContext';
+import { recordMobileUserActivity, checkMobileInactivityExpired } from './src/services/biometricService';
 
 import HomeScreen from './src/screens/HomeScreen';
 import TransactionsScreen from './src/screens/TransactionsScreen';
@@ -103,6 +104,7 @@ function MainTabs({ navigation }) {
 function MainAppContent() {
   const {
     loggedInUser,
+    logout,
     liveGroupBanner,
     dismissLiveGroupBanner,
     setActiveGroupId,
@@ -110,6 +112,21 @@ function MainAppContent() {
   } = useFinance();
   const insets = useSafeAreaInsets();
   const navRef = useRef(null);
+  const lastTouchWriteRef = useRef(0);
+
+  const handleGlobalTouchActivity = () => {
+    const now = Date.now();
+    if (now - lastTouchWriteRef.current > 15000) {
+      lastTouchWriteRef.current = now;
+      checkMobileInactivityExpired().then((expired) => {
+        if (expired && loggedInUser) {
+          logout?.();
+        } else {
+          recordMobileUserActivity();
+        }
+      });
+    }
+  };
 
   useEffect(() => {
     if (!liveGroupBanner) return;
@@ -150,7 +167,7 @@ function MainAppContent() {
 
   return (
     <NavigationContainer ref={navRef}>
-      <View style={{ flex: 1 }}>
+      <View style={{ flex: 1 }} onTouchStart={handleGlobalTouchActivity}>
         <Stack.Navigator screenOptions={{ headerShown: false }}>
           <Stack.Screen name="MainTabs" component={MainTabs} />
           <Stack.Screen name="Mais" component={SettingsScreen} />

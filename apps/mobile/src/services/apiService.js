@@ -867,6 +867,25 @@ export async function apiRequest(endpoint, options = {}) {
       throw error;
     }
 
+    const upperMethod = String(method || 'GET').toUpperCase();
+    if (
+      ['POST', 'PUT', 'PATCH', 'DELETE'].includes(upperMethod) &&
+      !cleanEndpoint.startsWith('stream') &&
+      !cleanEndpoint.startsWith('auth/login') &&
+      !cleanEndpoint.startsWith('auth/check-email')
+    ) {
+      fetch(`${baseUrl}/stream/emit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          table: cleanEndpoint.split('/')[0] || 'api',
+          action: upperMethod,
+          data: data && typeof data === 'object' ? { id: data.id } : null,
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {});
+    }
+
     return data;
   } catch (err) {
     clearTimeout(timeoutId);

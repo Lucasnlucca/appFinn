@@ -20,6 +20,7 @@ import { PlanningModule } from './modules/planning/planning.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { PrivacyModule } from './modules/privacy/privacy.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
+import { RealtimeModule } from './modules/realtime/realtime.module';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
       envFilePath: ['../../.env', '.env'],
     }),
     PrismaModule,
+    RealtimeModule,
     AuditModule,
     PrivacyModule,
     NotificationsModule,

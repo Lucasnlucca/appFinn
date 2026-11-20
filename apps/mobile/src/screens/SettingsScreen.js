@@ -10,9 +10,14 @@ import {
   StatusBar,
   ActivityIndicator,
   Image,
+  Modal,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as ImagePicker from 'expo-image-picker';
 import { COLORS } from '../theme/colors';
 import { useFinance } from '../context/FinanceContext';
 import {
@@ -22,6 +27,7 @@ import {
 import {
   testPostgresConnection,
   DEFAULT_API_URL,
+  createNotificationApi,
 } from '../services/apiService';
 import { LEGAL_URLS, openLegalUrl } from '../constants/legal';
 import {
@@ -64,6 +70,130 @@ export default function SettingsScreen({ navigation }) {
   const [geminiModel, setGeminiModelState] = useState('gemini-3.5-flash');
   const [geminiSavedNotice, setGeminiSavedNotice] = useState(false);
   const [showGeminiKey, setShowGeminiKey] = useState(false);
+
+  // Modal de Reportar Bug (Prints + Texto)
+  const [bugModalVisible, setBugModalVisible] = useState(false);
+  const [bugDescription, setBugDescription] = useState('');
+  const [bugScreenshots, setBugScreenshots] = useState([]);
+  const [submittingBug, setSubmittingBug] = useState(false);
+
+  const handlePickBugScreenshots = async () => {
+    try {
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert(
+          'Permissão necessária',
+          'Permita o acesso às suas fotos para anexar prints do bug.'
+        );
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsMultipleSelection: true,
+        selectionLimit: 5,
+        quality: 0.65,
+        base64: true,
+      });
+
+      if (!result.canceled && Array.isArray(result.assets) && result.assets.length > 0) {
+        const mapped = result.assets.map((asset, idx) => ({
+          id: `print-${Date.now()}-${idx}`,
+          uri: asset.uri,
+          base64: asset.base64 || null,
+          mimeType: asset.mimeType || 'image/jpeg',
+          fileName: asset.fileName || `print-${idx + 1}.jpg`,
+        }));
+        setBugScreenshots((prev) => [...prev, ...mapped].slice(0, 5));
+      }
+    } catch (e) {
+      Alert.alert('Erro ao selecionar print', e.message || 'Tente novamente.');
+    }
+  };
+
+  const handleRemoveBugScreenshot = (id) => {
+    setBugScreenshots((prev) => prev.filter((item) => item.id !== id));
+  };
+
+  const handleSubmitBugReport = async () => {
+    const cleanText = (bugDescription || '').trim();
+    if (!cleanText && bugScreenshots.length === 0) {
+      Alert.alert(
+        'Atenção',
+        'Escreva uma breve descrição do bug ou anexe pelo menos um print para enviar o relato.'
+      );
+      return;
+    }
+
+    setSubmittingBug(true);
+    try {
+      const protocol = `BUG-${Math.floor(100000 + Math.random() * 900000)}`;
+      const reportPayload = {
+        id: protocol,
+        userId: loggedInUser?.id || 'guest',
+        userName: loggedInUser?.fullName || loggedInUser?.name || 'Usuário',
+        userEmail: loggedInUser?.email || '',
+        description: cleanText,
+        screenshotsCount: bugScreenshots.length,
+        screenshots: bugScreenshots.map((s) => ({
+          fileName: s.fileName,
+          mimeType: s.mimeType,
+          uri: s.uri,
+          dataUrl: s.base64 ? `data:${s.mimeType};base64,${s.base64.slice(0, 120000)}` : null,
+        })),
+        platform: Platform.OS,
+        createdAt: new Date().toISOString(),
+      };
+
+      // Salva localmente no registro de bugs reportados
+      try {
+        const rawSaved = await AsyncStorage.getItem('@finn_bug_reports_v1');
+        const list = rawSaved ? JSON.parse(rawSaved) : [];
+        const updated = [reportPayload, ...(Array.isArray(list) ? list : [])].slice(0, 30);
+        await AsyncStorage.setItem('@finn_bug_reports_v1', JSON.stringify(updated));
+      } catch {}
+
+      // Registra no banco PostgreSQL via API para a equipe técnica
+      try {
+        await createNotificationApi({
+          id: `bug-report-${Date.now()}`,
+          title: `🐞 Bug Reportado (${protocol})`,
+          body: cleanText || `Relato enviado com ${bugScreenshots.length} print(s).`,
+          type: 'BUG_REPORT',
+          category: 'sistema',
+          priority: 'high',
+          dedupeKey: `bug_report_${protocol}`,
+          read: true,
+          sendPush: false,
+          meta: {
+            kind: 'bug_report',
+            protocol,
+            userEmail: reportPayload.userEmail,
+            userName: reportPayload.userName,
+            screenshotsCount: bugScreenshots.length,
+            screenshots: reportPayload.screenshots,
+          },
+        });
+      } catch {}
+
+      setBugDescription('');
+      setBugScreenshots([]);
+      setBugModalVisible(false);
+
+      Alert.alert(
+        'Bug Reportado com Sucesso! ✅',
+        `Protocolo: #${protocol}\n\nRecebemos sua mensagem${
+          reportPayload.screenshotsCount > 0
+            ? ` e ${reportPayload.screenshotsCount} print(s) anexado(s)`
+            : ''
+        }. Obrigado por ajudar a melhorar o FINN!`
+      );
+    } catch (e) {
+      Alert.alert('Erro ao enviar', e.message || 'Tente novamente.');
+    } finally {
+      setSubmittingBug(false);
+    }
+  };
 
   useEffect(() => {
     loadSettings();
@@ -567,8 +697,177 @@ export default function SettingsScreen({ navigation }) {
               </View>
             )}
           </View>
+
+          {/* ================================================================= */}
+          {/* 5. BOTÃO: ACHOU ALGUM BUG? REPORTE AQUI (PRINTS + TEXTO)          */}
+          {/* ================================================================= */}
+          <TouchableOpacity
+            style={styles.bugReportButtonCard}
+            activeOpacity={0.82}
+            onPress={() => setBugModalVisible(true)}
+          >
+            <View style={styles.bugReportIconBox}>
+              <Ionicons name="bug-outline" size={22} color="#7C3AED" />
+            </View>
+            <View style={styles.bugReportInfo}>
+              <Text style={styles.bugReportTitle}>
+                Achou algum bug? Reporte aqui
+              </Text>
+              <Text style={styles.bugReportSubtitle}>
+                Envie prints da tela e descreva o problema encontrado
+              </Text>
+            </View>
+            <View style={styles.bugReportArrowPill}>
+              <Ionicons name="camera-outline" size={15} color="#7C3AED" />
+              <Ionicons name="chevron-forward" size={15} color="#7C3AED" />
+            </View>
+          </TouchableOpacity>
         </View>
       </ScrollView>
+
+      {/* ================================================================= */}
+      {/* MODAL DE REPORTAR BUG (TEXTO + PRINTS)                            */}
+      {/* ================================================================= */}
+      <Modal
+        visible={bugModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setBugModalVisible(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.bugModalOverlay}
+        >
+          <View style={styles.bugModalCard}>
+            <View style={styles.bugModalHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <View style={styles.bugModalHeaderIcon}>
+                  <Ionicons name="bug" size={20} color="#7C3AED" />
+                </View>
+                <View>
+                  <Text style={styles.bugModalTitle}>Reportar um Bug</Text>
+                  <Text style={styles.bugModalSubtitle}>
+                    Descreva o problema e anexe prints da tela
+                  </Text>
+                </View>
+              </View>
+
+              <TouchableOpacity
+                onPress={() => setBugModalVisible(false)}
+                style={styles.bugModalCloseBtn}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Ionicons name="close" size={22} color="#71717A" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={{ paddingBottom: 8 }}
+            >
+              <Text style={styles.bugInputLabel}>O QUE ACONTECEU?</Text>
+              <TextInput
+                style={styles.bugTextInput}
+                placeholder="Conte o que aconteceu, em qual tela você estava e o que esperava que acontecesse..."
+                placeholderTextColor="#9CA3AF"
+                multiline
+                numberOfLines={4}
+                textAlignVertical="top"
+                value={bugDescription}
+                onChangeText={setBugDescription}
+              />
+
+              <View style={styles.bugPrintsHeaderRow}>
+                <Text style={styles.bugInputLabel}>
+                  PRINTS DA TELA ({bugScreenshots.length}/5)
+                </Text>
+                <TouchableOpacity
+                  onPress={handlePickBugScreenshots}
+                  activeOpacity={0.75}
+                  style={styles.bugAddPrintMiniBtn}
+                >
+                  <Ionicons name="image-outline" size={14} color="#7C3AED" />
+                  <Text style={styles.bugAddPrintMiniText}>+ Adicionar print</Text>
+                </TouchableOpacity>
+              </View>
+
+              {bugScreenshots.length > 0 ? (
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.bugThumbsRow}
+                >
+                  {bugScreenshots.map((shot) => (
+                    <View key={shot.id} style={styles.bugThumbWrapper}>
+                      <Image source={{ uri: shot.uri }} style={styles.bugThumbImg} />
+                      <TouchableOpacity
+                        style={styles.bugThumbRemoveBtn}
+                        onPress={() => handleRemoveBugScreenshot(shot.id)}
+                      >
+                        <Ionicons name="close" size={13} color="#FFFFFF" />
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+
+                  {bugScreenshots.length < 5 && (
+                    <TouchableOpacity
+                      style={styles.bugThumbAddMore}
+                      onPress={handlePickBugScreenshots}
+                      activeOpacity={0.75}
+                    >
+                      <Ionicons name="add" size={24} color="#7C3AED" />
+                      <Text style={styles.bugThumbAddMoreText}>Mais</Text>
+                    </TouchableOpacity>
+                  )}
+                </ScrollView>
+              ) : (
+                <TouchableOpacity
+                  style={styles.bugEmptyPrintDropzone}
+                  onPress={handlePickBugScreenshots}
+                  activeOpacity={0.8}
+                >
+                  <View style={styles.bugEmptyPrintIconCircle}>
+                    <Ionicons name="images-outline" size={22} color="#7C3AED" />
+                  </View>
+                  <Text style={styles.bugEmptyPrintTitle}>
+                    Toque para anexar prints da tela
+                  </Text>
+                  <Text style={styles.bugEmptyPrintSub}>
+                    Você pode selecionar até 5 imagens da sua galeria
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </ScrollView>
+
+            <View style={styles.bugModalFooter}>
+              <TouchableOpacity
+                style={styles.bugCancelBtn}
+                onPress={() => setBugModalVisible(false)}
+                disabled={submittingBug}
+              >
+                <Text style={styles.bugCancelBtnText}>Cancelar</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.bugSubmitBtn, submittingBug && { opacity: 0.7 }]}
+                onPress={handleSubmitBugReport}
+                disabled={submittingBug}
+                activeOpacity={0.85}
+              >
+                {submittingBug ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <>
+                    <Ionicons name="send" size={15} color="#FFFFFF" />
+                    <Text style={styles.bugSubmitBtnText}>Enviar Relato</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </View>
   );
 }
@@ -1071,5 +1370,256 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     color: '#7C3AED',
+  },
+  bugReportButtonCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    borderWidth: 1.5,
+    borderColor: '#DDD6FE',
+    shadowColor: '#4C1D95',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 2,
+    gap: 14,
+  },
+  bugReportIconBox: {
+    width: 42,
+    height: 42,
+    borderRadius: 13,
+    backgroundColor: '#EDE9FE',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bugReportInfo: {
+    flex: 1,
+  },
+  bugReportTitle: {
+    fontSize: 15.5,
+    fontWeight: '800',
+    color: '#18181B',
+    marginBottom: 2,
+  },
+  bugReportSubtitle: {
+    fontSize: 12,
+    color: '#71717A',
+    fontWeight: '500',
+    lineHeight: 16,
+  },
+  bugReportArrowPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: '#F3E8FF',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+  },
+  bugModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.55)',
+    justifyContent: 'flex-end',
+  },
+  bugModalCard: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: Platform.OS === 'ios' ? 34 : 22,
+    maxHeight: '88%',
+    borderWidth: 1,
+    borderColor: '#EFEAF8',
+  },
+  bugModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+    paddingBottom: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  bugModalHeaderIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: '#EDE9FE',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bugModalTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#18181B',
+  },
+  bugModalSubtitle: {
+    fontSize: 12,
+    color: '#71717A',
+    marginTop: 1,
+  },
+  bugModalCloseBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#F4F4F5',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bugInputLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#6D28D9',
+    letterSpacing: 0.5,
+    marginBottom: 8,
+  },
+  bugTextInput: {
+    backgroundColor: '#FAF8FF',
+    borderWidth: 1,
+    borderColor: '#E9E5F5',
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 14,
+    color: '#18181B',
+    minHeight: 110,
+    marginBottom: 18,
+  },
+  bugPrintsHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  bugAddPrintMiniBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#F3E8FF',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 9,
+  },
+  bugAddPrintMiniText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#7C3AED',
+  },
+  bugThumbsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 6,
+  },
+  bugThumbWrapper: {
+    width: 88,
+    height: 88,
+    borderRadius: 14,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#DDD6FE',
+    position: 'relative',
+  },
+  bugThumbImg: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
+  },
+  bugThumbRemoveBtn: {
+    position: 'absolute',
+    top: 5,
+    right: 5,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: 'rgba(220, 38, 38, 0.92)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bugThumbAddMore: {
+    width: 88,
+    height: 88,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    borderColor: '#C4B5FD',
+    backgroundColor: '#FAF8FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
+  },
+  bugThumbAddMoreText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#7C3AED',
+  },
+  bugEmptyPrintDropzone: {
+    backgroundColor: '#FAF8FF',
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    borderColor: '#C4B5FD',
+    borderRadius: 16,
+    paddingVertical: 20,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bugEmptyPrintIconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#EDE9FE',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  bugEmptyPrintTitle: {
+    fontSize: 13.5,
+    fontWeight: '700',
+    color: '#5B21B6',
+  },
+  bugEmptyPrintSub: {
+    fontSize: 11.5,
+    color: '#71717A',
+    marginTop: 2,
+  },
+  bugModalFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 10,
+    marginTop: 16,
+    paddingTop: 14,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+  },
+  bugCancelBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 11,
+    borderRadius: 12,
+  },
+  bugCancelBtnText: {
+    fontSize: 13.5,
+    fontWeight: '700',
+    color: '#71717A',
+  },
+  bugSubmitBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    backgroundColor: '#7C3AED',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 14,
+  },
+  bugSubmitBtnText: {
+    fontSize: 13.5,
+    fontWeight: '800',
+    color: '#FFFFFF',
   },
 });
